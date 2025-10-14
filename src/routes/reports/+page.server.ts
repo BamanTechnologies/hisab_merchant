@@ -1,23 +1,6 @@
 import type { PageServerLoad, Actions } from './$types';
-import { env } from '$env/dynamic/private';
 import { getUserIdFromRequest } from '$lib/auth';
-
-// GraphQL endpoint configuration
-const GRAPHQL_ENDPOINT = env.GRAPHQL_ENDPOINT || 'http://localhost:8080/v1/graphql';
-const HASURA_ADMIN_SECRET = env.HASURA_ADMIN_SECRET || 'amanz55';
-
-// GraphQL headers
-const getGraphQLHeaders = () => {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-  
-  if (HASURA_ADMIN_SECRET) {
-    headers['x-hasura-admin-secret'] = HASURA_ADMIN_SECRET;
-  }
-  
-  return headers;
-};
+import { config, getGraphQLHeaders } from '$lib/config';
 
 // GraphQL query to fetch reports
 const FETCH_REPORTS_QUERY = `
@@ -116,7 +99,7 @@ const SEND_REPORT_MUTATION = `
 // Function to fetch reports from GraphQL
 async function fetchReports() {
   try {
-    const response = await fetch(GRAPHQL_ENDPOINT, {
+    const response = await fetch(config.graphql.endpoint, {
       method: 'POST',
       headers: getGraphQLHeaders(),
       body: JSON.stringify({
@@ -145,7 +128,7 @@ async function fetchReports() {
 // Function to fetch investors from GraphQL
 async function fetchInvestors() {
   try {
-    const response = await fetch(GRAPHQL_ENDPOINT, {
+    const response = await fetch(config.graphql.endpoint, {
       method: 'POST',
       headers: getGraphQLHeaders(),
       body: JSON.stringify({
@@ -182,7 +165,7 @@ async function generateInvestorReport(investorId: string, investorPhone: string,
 
     console.log('Generating investor report with variables:', variables);
 
-    const response = await fetch(GRAPHQL_ENDPOINT, {
+    const response = await fetch(config.graphql.endpoint, {
       method: 'POST',
       headers: getGraphQLHeaders(),
       body: JSON.stringify({
@@ -223,7 +206,7 @@ async function sendReport(reportData: any) {
 
     console.log('Sending report with data:', variables);
 
-    const response = await fetch(GRAPHQL_ENDPOINT, {
+    const response = await fetch(config.graphql.endpoint, {
       method: 'POST',
       headers: getGraphQLHeaders(),
       body: JSON.stringify({

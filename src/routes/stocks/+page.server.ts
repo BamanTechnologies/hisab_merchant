@@ -1,23 +1,6 @@
 import type { PageServerLoad, Actions } from './$types';
-import { env } from '$env/dynamic/private';
 import { getUserIdFromRequest } from '$lib/auth';
-
-// GraphQL endpoint configuration
-const GRAPHQL_ENDPOINT = env.GRAPHQL_ENDPOINT || 'http://localhost:8080/v1/graphql';
-const HASURA_ADMIN_SECRET = env.HASURA_ADMIN_SECRET || 'amanz55';
-
-// GraphQL headers
-const getGraphQLHeaders = () => {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-  
-  if (HASURA_ADMIN_SECRET) {
-    headers['x-hasura-admin-secret'] = HASURA_ADMIN_SECRET;
-  }
-  
-  return headers;
-};
+import { config, getGraphQLHeaders } from '$lib/config';
 
 // GraphQL query to fetch stocks
 const FETCH_STOCKS_QUERY = `
@@ -54,7 +37,7 @@ const FETCH_INVESTORS_QUERY = `
 // Function to fetch stocks from GraphQL
 async function fetchStocks() {
   try {
-    const response = await fetch(GRAPHQL_ENDPOINT, {
+    const response = await fetch(config.graphql.endpoint, {
       method: 'POST',
       headers: getGraphQLHeaders(),
       body: JSON.stringify({
@@ -83,7 +66,7 @@ async function fetchStocks() {
 // Function to fetch investors from GraphQL
 async function fetchInvestors() {
   try {
-    const response = await fetch(GRAPHQL_ENDPOINT, {
+    const response = await fetch(config.graphql.endpoint, {
       method: 'POST',
       headers: getGraphQLHeaders(),
       body: JSON.stringify({
@@ -158,10 +141,10 @@ async function createStock(stockData: {
     };
 
     console.log('Sending GraphQL mutation with variables:', variables);
-    console.log('GraphQL endpoint:', GRAPHQL_ENDPOINT);
+    console.log('GraphQL endpoint:', config.graphql.endpoint);
     console.log('Headers:', getGraphQLHeaders());
 
-    const response = await fetch(GRAPHQL_ENDPOINT, {
+    const response = await fetch(config.graphql.endpoint, {
       method: 'POST',
       headers: getGraphQLHeaders(),
       body: JSON.stringify({

@@ -9,6 +9,7 @@
     customer_name: string;
     customer_phone: string;
     order_quantity: number;
+    status: string;
     stock_id: string;
     total_amount: number;
     outstanding_amount: number;
@@ -17,16 +18,9 @@
   let { data }: { data: PageData } = $props();
   const orders = data.orders;
 
-  function getStatus(outstanding: number, total: number) {
-    if (outstanding === 0) return "fully paid";
-    if (outstanding < total) return "partially paid";
-    return "unpaid";
-  }
-
-  function statusClass(outstanding: number, total: number) {
-    const status = getStatus(outstanding, total);
-    if (status === "fully paid") return "ok";
-    if (status === "partially paid") return "warn";
+  function statusClass(status: string) {
+    if (status === "paid") return "ok";
+    if (status === "partially_paid") return "warn";
     return "bad";
   }
 </script>
@@ -58,12 +52,7 @@
         >
           <td>{o.customer_name}</td>
           <td class="right">{o.order_quantity}</td>
-          <td
-            ><span
-              class="chip {statusClass(o.outstanding_amount, o.total_amount)}"
-              >{getStatus(o.outstanding_amount, o.total_amount)}</span
-            ></td
-          >
+          <td><span class="chip {statusClass(o.status)}">{o.status}</span></td>
           <td class="right">Birr {o.total_amount.toLocaleString()}</td>
         </tr>
       {/each}

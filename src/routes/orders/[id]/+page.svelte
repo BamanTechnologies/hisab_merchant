@@ -8,6 +8,7 @@
     customer_name: string;
     customer_phone: string;
     order_quantity: number;
+    status: string;
     stock_id: string;
     total_amount: number;
     outstanding_amount: number;
@@ -16,16 +17,9 @@
   let { data, form }: { data: PageData; form?: any } = $props();
   const order = data.order;
 
-  function getStatus(outstanding: number, total: number) {
-    if (outstanding === 0) return "fully paid";
-    if (outstanding < total) return "partially paid";
-    return "unpaid";
-  }
-
-  function statusClass(outstanding: number, total: number) {
-    const status = getStatus(outstanding, total);
-    if (status === "fully paid") return "ok";
-    if (status === "partially paid") return "warn";
+  function statusClass(status: string) {
+    if (status === "paid") return "ok";
+    if (status === "partially_paid") return "warn";
     return "bad";
   }
 
@@ -82,7 +76,7 @@
     <div class="header-actions">
       <button
         class="primary"
-        disabled={order.outstanding_amount === 0}
+        disabled={order.status === "paid"}
         onclick={() => (showPay = true)}>Pay</button
       >
     </div>
@@ -111,10 +105,7 @@
         </div>
         <div>
           <span class="label">Status:</span><span
-            class="chip {statusClass(
-              order.outstanding_amount,
-              order.total_amount
-            )}">{getStatus(order.outstanding_amount, order.total_amount)}</span
+            class="chip {statusClass(order.status)}">{order.status}</span
           >
         </div>
         <div>
@@ -262,6 +253,14 @@
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.2) inset,
       0 8px 20px rgba(59, 130, 246, 0.2);
+  }
+  .primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: color-mix(in oklab, var(--surface-2), black 20%);
+    border-color: color-mix(in oklab, var(--surface-2), black 30%);
+    color: color-mix(in oklab, var(--text), black 40%);
+    box-shadow: none;
   }
   .ghost {
     appearance: none;
