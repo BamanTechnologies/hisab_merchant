@@ -20,7 +20,7 @@ const FETCH_ORDERS_QUERY = `
   }
 `;
 
-// GraphQL mutation to create a payment
+// GraphQL mutation to create a payment for a specific order
 const CREATE_PAYMENT_MUTATION = `
   mutation CreatePayment($amount: money, $created_by: uuid, $order_id: uuid, $payment_method: String) {
     insert_payment(objects: {amount: $amount, created_by: $created_by, order_id: $order_id, payment_method: $payment_method}) {
