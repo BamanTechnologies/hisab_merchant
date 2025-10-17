@@ -78,7 +78,7 @@ async function createPayment(paymentData: {
     };
 
     console.log('Sending GraphQL payment mutation with variables:', variables);
-    console.log('GraphQL endpoint:', GRAPHQL_ENDPOINT);
+    console.log('GraphQL endpoint:', config.graphql.endpoint);
     console.log('Headers:', getGraphQLHeaders());
 
     const response = await fetch(config.graphql.endpoint, {
