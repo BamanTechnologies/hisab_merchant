@@ -23,11 +23,34 @@
     return "bad";
   }
 
+  // Define bank list once as the single source of truth
+  const banks = [
+    "Commercial Bank of Ethiopia (CBE)",
+    "Awash International Bank",
+    "Dashen Bank",
+    "Bank of Abyssinia",
+    "Wegagen Bank",
+    "Nib International Bank",
+    "Cooperative Bank of Oromia",
+    "Zemen Bank",
+    "Bunna International Bank",
+    "Berhan International Bank",
+    "Enat Bank",
+    "Oromia International Bank",
+    "Hibret Bank",
+    "Abay Bank",
+    "Addis International Bank",
+    "Amhara Bank",
+    "Rammis Bank",
+    "Siinqee Bank",
+    "Shabelle Bank",
+    "ZamZam Bank",
+    "Hijra Bank",
+  ] as const;
+
   let showPay = $state(false);
   let payAmount = $state<number | undefined>(undefined);
-  let payMethod = $state<
-    "CBE" | "Telebirr" | "Awash" | "Dashen" | "Abay" | "Abyssinia" | ""
-  >("");
+  let payMethod = $state<(typeof banks)[number] | "">("");
   let errorMessage = $state("");
   let successMessage = $state("");
 
@@ -150,7 +173,7 @@
       >
         <div class="grid">
           <label>
-            <span>Amount</span>
+            <span class="label_text">Amount</span>
             <input
               type="number"
               name="amount"
@@ -160,21 +183,20 @@
               required
             />
           </label>
-          <fieldset class="methods">
-            <legend>Payment method</legend>
-            {#each ["CBE", "Telebirr", "Awash", "Dashen", "Abay", "Abyssinia"] as m}
-              <label class="method">
-                <input
-                  type="radio"
-                  name="payment_method"
-                  value={m}
-                  checked={payMethod === m}
-                  onchange={() => (payMethod = m as any)}
-                />
-                <span>{m}</span>
-              </label>
-            {/each}
-          </fieldset>
+          <label>
+            <span class="label_text">Payment method</span>
+            <select
+              class="label_text"
+              name="payment_method"
+              bind:value={payMethod}
+              required
+            >
+              <option value="">Select a bank</option>
+              {#each banks as bank}
+                <option value={bank}>{bank}</option>
+              {/each}
+            </select>
+          </label>
         </div>
         <footer>
           <button type="button" class="ghost" onclick={() => (showPay = false)}
@@ -311,17 +333,25 @@
   .form {
     padding: 1rem;
   }
-  .methods {
-    grid-column: 1 / -1;
+  select {
+    width: 100%;
+    padding: 0.75rem;
     border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
     border-radius: 0.6rem;
-    padding: 0.75rem;
+    background: var(--surface-1);
+    color: var(--text-1);
+    font-size: 1rem;
+    cursor: pointer;
   }
-  .method {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-    margin-right: 0.75rem;
+
+  select:focus {
+    outline: none;
+    border-color: var(--brand);
+  }
+
+  select option {
+    background: var(--surface-1);
+    color: var(--text-1);
   }
   footer {
     display: flex;
@@ -345,6 +375,11 @@
     background: rgba(34, 197, 94, 0.1);
     border: 1px solid rgba(34, 197, 94, 0.3);
     color: #86efac;
+  }
+
+  .label_text {
+    color: #e5e7eb;
+    font-weight: 700;
   }
 
   @media (max-width: 720px) {
