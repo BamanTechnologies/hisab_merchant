@@ -163,8 +163,6 @@ async function generateInvestorReport(investorId: string, investorPhone: string,
       investor_phone: investorPhone,
     };
 
-    console.log('Generating investor report with variables:', variables);
-
     const response = await fetch(config.graphql.endpoint, {
       method: 'POST',
       headers: getGraphQLHeaders(),
@@ -174,8 +172,6 @@ async function generateInvestorReport(investorId: string, investorPhone: string,
       }),
     });
 
-    console.log('Report generation response status:', response.status);
-
     if (!response.ok) {
       const errorText = await response.text();
       console.error('HTTP error response:', errorText);
@@ -183,7 +179,6 @@ async function generateInvestorReport(investorId: string, investorPhone: string,
     }
 
     const result = await response.json();
-    console.log('Report generation response:', result);
     
     if (result.errors) {
       console.error('GraphQL errors:', result.errors);

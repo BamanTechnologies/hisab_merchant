@@ -103,9 +103,16 @@
   <h1>Stock Details</h1>
   {#if stock}
     <div class="header-actions">
-      <button class="primary" onclick={() => (showOrderModal = true)}
-        >Create Order</button
+      <button
+        class="primary"
+        onclick={() => (showOrderModal = true)}
+        disabled={stock?.quantity <= 0}
+        title={stock?.quantity <= 0
+          ? "Cannot create order: Stock quantity is 0 or below"
+          : "Create a new order for this stock"}
       >
+        Create Order
+      </button>
     </div>
 
     {#if errorMessage}
@@ -297,6 +304,15 @@
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.2) inset,
       0 8px 20px rgba(59, 130, 246, 0.2);
+  }
+
+  .primary:disabled {
+    background: color-mix(in oklab, var(--surface-2), black 20%);
+    border-color: color-mix(in oklab, var(--surface-2), black 20%);
+    color: color-mix(in oklab, var(--text-2), black 30%);
+    cursor: not-allowed;
+    box-shadow: none;
+    opacity: 0.6;
   }
   .ghost {
     appearance: none;
