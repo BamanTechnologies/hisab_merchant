@@ -24,6 +24,8 @@
 
   let { data, form }: { data: PageData; form?: any } = $props();
   let showCreateModal = $state(false);
+  let showDeleteModal = $state(false);
+  let stockToDelete = $state<Stock | null>(null);
   let stocks = $state(data.stocks);
   let errorMessage = $state("");
   let successMessage = $state("");
@@ -92,6 +94,52 @@
       .filter((i: Investor) => ids.includes(i.id))
       .map((i: Investor) => `${i.first_name} ${i.last_name}`);
     return names.join(", ");
+  }
+
+  function openDeleteModal(stock: Stock, event: Event) {
+    event.stopPropagation();
+    stockToDelete = stock;
+    showDeleteModal = true;
+  }
+
+  function closeDeleteModal() {
+    showDeleteModal = false;
+    stockToDelete = null;
+  }
+
+  async function confirmDelete() {
+    if (!stockToDelete) return;
+
+    try {
+      const formData = new FormData();
+      formData.append("stockId", stockToDelete.id);
+
+      const response = await fetch("?/deleteStock", {
+        method: "POST",
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (result.type === "success") {
+        // Remove the stock from the local state
+        stocks = stocks.filter((s: Stock) => s.id !== stockToDelete!.id);
+        successMessage = result.message;
+        errorMessage = "";
+        closeDeleteModal();
+
+        // Clear success message after 3 seconds
+        setTimeout(() => {
+          successMessage = "";
+        }, 3000);
+      } else {
+        errorMessage = result.message;
+        successMessage = "";
+      }
+    } catch (error) {
+      errorMessage = "Failed to delete stock. Please try again.";
+      successMessage = "";
+    }
   }
 </script>
 
@@ -250,6 +298,43 @@
   </dialog>
 {/if}
 
+{#if showDeleteModal && stockToDelete}
+  <div
+    class="modal-overlay"
+    role="button"
+    tabindex="0"
+    onclick={closeDeleteModal}
+    onkeydown={(e) =>
+      (e.key === "Enter" || e.key === " ") && closeDeleteModal()}
+  ></div>
+  <dialog open class="modal" onclick={(e) => e.stopPropagation()}>
+    <header>
+      <h2 style="color: white;">Delete Stock</h2>
+      <button class="icon" aria-label="Close" onclick={closeDeleteModal}
+        >✕</button
+      >
+    </header>
+    <div class="modal-content">
+      <p>Are you sure you want to delete this stock?</p>
+      <div class="stock-details">
+        <p><strong>Thickness:</strong> {stockToDelete.thickness}</p>
+        <p><strong>Color:</strong> {stockToDelete.color}</p>
+        <p><strong>Figure:</strong> {stockToDelete.figure}</p>
+        <p><strong>Quantity:</strong> {stockToDelete.quantity}</p>
+      </div>
+      <p class="warning">This action cannot be undone.</p>
+    </div>
+    <footer>
+      <button type="button" class="ghost" onclick={closeDeleteModal}
+        >Cancel</button
+      >
+      <button type="button" class="danger" onclick={confirmDelete}
+        >Delete</button
+      >
+    </footer>
+  </dialog>
+{/if}
+
 <section class="table-wrap">
   <table class="data-table">
     <thead>
@@ -258,6 +343,7 @@
         <th>Color</th>
         <th>Figure</th>
         <th class="right">Quantity</th>
+        <th class="center">Actions</th>
       </tr>
     </thead>
     <tbody>
@@ -272,11 +358,21 @@
           <td>{s.color}</td>
           <td>{s.figure}</td>
           <td class="right">{s.quantity}</td>
+          <td class="center">
+            <button
+              class="delete-btn"
+              onclick={(e) => openDeleteModal(s, e)}
+              aria-label="Delete stock"
+              title="Delete stock"
+            >
+              🗑️
+            </button>
+          </td>
         </tr>
       {/each}
       {#if stocks.length === 0}
         <tr>
-          <td colspan="4" class="empty-state">
+          <td colspan="5" class="empty-state">
             <p class="muted">
               No stocks found. Create your first stock to get started.
             </p>
@@ -357,6 +453,9 @@
   }
   .right {
     text-align: right;
+  }
+  .center {
+    text-align: center;
   }
   .row {
     cursor: pointer;
@@ -494,6 +593,61 @@
     gap: 0.6rem;
     padding: 1rem;
     border-top: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
+  }
+
+  .delete-btn {
+    background: transparent;
+    border: none;
+    color: #ef4444;
+    font-size: 1.1rem;
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 0.25rem;
+    transition: background-color 0.2s;
+  }
+
+  .delete-btn:hover {
+    background: color-mix(in oklab, #ef4444, white 90%);
+  }
+
+  .danger {
+    appearance: none;
+    background: #ef4444;
+    color: white;
+    border: 1px solid #dc2626;
+    padding: 0.5rem 0.9rem;
+    border-radius: 0.6rem;
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .danger:hover {
+    background: #dc2626;
+  }
+
+  .modal-content {
+    padding: 1rem;
+    color: white;
+  }
+
+  .stock-details {
+    background: color-mix(in oklab, var(--surface-2), white 2%);
+    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    margin: 0.75rem 0;
+  }
+
+  .stock-details p {
+    margin: 0.25rem 0;
+    font-size: 0.9rem;
+  }
+
+  .warning {
+    color: #ef4444;
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin: 0.75rem 0 0;
   }
 
   @media (max-width: 720px) {

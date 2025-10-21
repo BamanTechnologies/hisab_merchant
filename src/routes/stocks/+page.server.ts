@@ -115,6 +115,15 @@ const CREATE_STOCK_MUTATION = `
   }
 `;
 
+// GraphQL mutation to delete a stock
+const DELETE_STOCK_MUTATION = `
+  mutation DeleteStockById($id: uuid!) {
+    delete_stock_by_pk(id: $id) {
+      id
+    }
+  }
+`;
+
 // Function to create a stock via GraphQL mutation
 async function createStock(stockData: {
   color: string;
@@ -172,6 +181,47 @@ async function createStock(stockData: {
     return result.data.insert_stock.returning[0];
   } catch (error) {
     console.error('Error creating stock:', error);
+    throw error;
+  }
+}
+
+// Function to delete a stock via GraphQL mutation
+async function deleteStock(stockId: string) {
+  try {
+    const variables = {
+      id: stockId,
+    };
+
+    console.log('Deleting stock with ID:', stockId);
+
+    const response = await fetch(config.graphql.endpoint, {
+      method: 'POST',
+      headers: getGraphQLHeaders(),
+      body: JSON.stringify({
+        query: DELETE_STOCK_MUTATION,
+        variables,
+      }),
+    });
+
+    console.log('Delete stock response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('HTTP error response:', errorText);
+      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+    }
+
+    const result = await response.json();
+    console.log('Delete stock response:', result);
+    
+    if (result.errors) {
+      console.error('GraphQL errors:', result.errors);
+      throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
+    }
+
+    return result.data.delete_stock_by_pk;
+  } catch (error) {
+    console.error('Error deleting stock:', error);
     throw error;
   }
 }
@@ -238,6 +288,35 @@ export const actions: Actions = {
       return {
         success: false,
         message: `Failed to create stock: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      };
+    }
+  },
+  deleteStock: async ({ request }) => {
+    const formData = await request.formData();
+    const stockId = formData.get('stockId') as string;
+
+    if (!stockId) {
+      return {
+        success: false,
+        message: 'Stock ID is required',
+      };
+    }
+
+    try {
+      const result = await deleteStock(stockId);
+
+      console.log('Stock deleted successfully:', result);
+
+      return {
+        success: true,
+        message: 'Stock deleted successfully',
+        deletedId: result.id,
+      };
+    } catch (error) {
+      console.error('Failed to delete stock:', error);
+      return {
+        success: false,
+        message: `Failed to delete stock: ${error instanceof Error ? error.message : 'Unknown error'}`,
       };
     }
   },
