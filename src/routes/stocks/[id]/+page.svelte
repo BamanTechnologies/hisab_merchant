@@ -31,9 +31,20 @@
 
   const investorNames = $derived(
     stock
-      ? investors
-          .filter((i: Investor) => stock.investors.includes(i.id))
-          .map((i: Investor) => `${i.first_name} ${i.last_name}`)
+      ? stock.investors
+          .map((investorId: string) => {
+            // If the investor ID is the merchant's ID, show "Myself"
+            if (investorId === (data as any).merchantId) {
+              return "Myself";
+            }
+            // Otherwise, find the investor in the investors list
+            const investor = investors.find(
+              (i: Investor) => i.id === investorId
+            );
+            return investor
+              ? `${investor.first_name} ${investor.last_name}`
+              : "Unknown";
+          })
           .join(", ")
       : "-"
   );

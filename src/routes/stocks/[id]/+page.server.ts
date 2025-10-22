@@ -95,7 +95,7 @@ async function fetchInvestors() {
   }
 }
 
-export const load: PageServerLoad = async ({ params }) => {
+export const load: PageServerLoad = async ({ params, request }) => {
   const [stock, investors] = await Promise.all([
     fetchStock(params.id),
     fetchInvestors(),
@@ -105,9 +105,13 @@ export const load: PageServerLoad = async ({ params }) => {
     throw new Error('Stock not found');
   }
 
+  // Get the authenticated user ID (merchant ID)
+  const merchantId = getUserIdFromRequest(request);
+
   return {
     stock,
     investors,
+    merchantId,
   };
 };
 
