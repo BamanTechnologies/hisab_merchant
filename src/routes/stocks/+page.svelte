@@ -78,14 +78,6 @@
     // Clear previous messages
     errorMessage = "";
     successMessage = "";
-
-    // Validate investor selection
-    if (selectedInvestorIds.length === 0) {
-      e.preventDefault();
-      errorMessage = "Please select at least one investor.";
-      return;
-    }
-
     // The form will be submitted to the server action naturally
   }
 
@@ -263,7 +255,7 @@
         </label>
 
         <div class="field">
-          <span>Investors <span class="required">*</span></span>
+          <span>Investors</span>
           <input
             type="hidden"
             name="investors"
@@ -554,9 +546,6 @@
   label span {
     color: #94a3b8;
     font-weight: 600;
-  }
-  .required {
-    color: #ef4444;
   }
   input,
   .select-trigger {

@@ -250,8 +250,13 @@ export const actions: Actions = {
     const thickness = Number(formData.get('thickness'));
     const color = formData.get('color') as string;
     const figure = formData.get('figure') as string;
-    const investors = JSON.parse(formData.get('investors') as string);
+    let investors = JSON.parse(formData.get('investors') as string);
     const factor = Number(formData.get('factor'));
+    
+    // If no investors selected, use merchant as investor
+    if (!investors || investors.length === 0) {
+      investors = [userId]; // Use merchant ID as investor
+    }
     console.log('Form data received:', {
       purchased_price,
       selling_price,
