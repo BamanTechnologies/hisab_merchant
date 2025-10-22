@@ -92,15 +92,19 @@ async function fetchInvestors() {
   }
 }
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async ({ request }) => {
   const [stocks, investors] = await Promise.all([
     fetchStocks(),
     fetchInvestors(),
   ]);
 
+  // Get the authenticated user ID (merchant ID)
+  const merchantId = getUserIdFromRequest(request);
+
   return {
     stocks,
     investors,
+    merchantId,
   };
 };
 
@@ -250,13 +254,8 @@ export const actions: Actions = {
     const thickness = Number(formData.get('thickness'));
     const color = formData.get('color') as string;
     const figure = formData.get('figure') as string;
-    let investors = JSON.parse(formData.get('investors') as string);
+    const investors = JSON.parse(formData.get('investors') as string);
     const factor = Number(formData.get('factor'));
-    
-    // If no investors selected, use merchant as investor
-    if (!investors || investors.length === 0) {
-      investors = [userId]; // Use merchant ID as investor
-    }
     console.log('Form data received:', {
       purchased_price,
       selling_price,
@@ -267,6 +266,10 @@ export const actions: Actions = {
       investors,
       factor,
     });
+    
+    console.log('Investors array:', investors);
+    console.log('Investors type:', typeof investors);
+    console.log('Investors length:', investors?.length);
 
     try {
       const result = await createStock({

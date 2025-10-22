@@ -25,6 +25,7 @@
   let { data, form }: { data: PageData; form?: any } = $props();
   let showCreateModal = $state(false);
   let showDeleteModal = $state(false);
+  let showInvestorConfirmModal = $state(false);
   let stockToDelete = $state<Stock | null>(null);
   let stocks = $state(data.stocks);
   let errorMessage = $state("");
@@ -78,7 +79,43 @@
     // Clear previous messages
     errorMessage = "";
     successMessage = "";
+
+    // Check if no investors are selected
+    if (selectedInvestorIds.length === 0) {
+      e.preventDefault(); // Prevent form submission
+      showInvestorConfirmModal = true; // Show confirmation dialog
+      return;
+    }
+
     // The form will be submitted to the server action naturally
+  }
+
+  function confirmAsOwnInvestor() {
+    // Set merchant as investor
+    selectedInvestorIds = [(data as any).merchantId]; // Use merchant ID as investor
+    console.log("Setting merchant as investor:", selectedInvestorIds);
+    showInvestorConfirmModal = false;
+
+    // Update the hidden input with the new investor data
+    const hiddenInput = document.querySelector(
+      'input[name="investors"]'
+    ) as HTMLInputElement;
+    if (hiddenInput) {
+      hiddenInput.value = JSON.stringify(selectedInvestorIds);
+      console.log("Updated hidden input value:", hiddenInput.value);
+    }
+
+    // Submit the form programmatically
+    const form = document.querySelector(
+      'form[action="?/createStock"]'
+    ) as HTMLFormElement;
+    if (form) {
+      form.requestSubmit();
+    }
+  }
+
+  function cancelInvestorConfirm() {
+    showInvestorConfirmModal = false;
   }
 
   function toggleInvestor(id: string) {
@@ -295,6 +332,39 @@
         <button type="submit" class="primary">Create</button>
       </footer>
     </form>
+  </dialog>
+{/if}
+
+{#if showInvestorConfirmModal}
+  <div
+    class="modal-overlay"
+    role="button"
+    tabindex="0"
+    onclick={cancelInvestorConfirm}
+    onkeydown={(e) =>
+      (e.key === "Enter" || e.key === " ") && cancelInvestorConfirm()}
+  ></div>
+  <dialog open class="modal" onclick={(e) => e.stopPropagation()}>
+    <header>
+      <h2 style="color: white;">Confirm Investor</h2>
+      <button class="icon" aria-label="Close" onclick={cancelInvestorConfirm}
+        >✕</button
+      >
+    </header>
+    <div class="modal-content">
+      <p>You haven't selected any investors. Are you your own investor?</p>
+      <p class="info">
+        This means you will be the sole investor for this stock item.
+      </p>
+    </div>
+    <footer>
+      <button type="button" class="ghost" onclick={cancelInvestorConfirm}
+        >Cancel</button
+      >
+      <button type="button" class="primary" onclick={confirmAsOwnInvestor}
+        >Yes, I'm my own investor</button
+      >
+    </footer>
   </dialog>
 {/if}
 
@@ -628,6 +698,12 @@
   .modal-content {
     padding: 1rem;
     color: white;
+  }
+  .info {
+    color: #94a3b8;
+    font-size: 0.9rem;
+    margin: 0.5rem 0 0;
+    font-style: italic;
   }
 
   .stock-details {
