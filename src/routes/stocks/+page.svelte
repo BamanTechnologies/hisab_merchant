@@ -12,18 +12,21 @@
     id: string;
     color: string;
     created_by: string;
+    factor: number;
     figure: string;
     investors: string[];
     merchant: {
       id: string;
     };
+    purchased_price: number | string | null;
     quantity: number;
-    selling_price: number;
-    thickness: string;
+    selling_price: number | string | null;
+    thickness: number;
   };
 
   let { data, form }: { data: PageData; form?: any } = $props();
   let showCreateModal = $state(false);
+  let editingStockId = $state<string | null>(null);
   let showDeleteModal = $state(false);
   let showInvestorConfirmModal = $state(false);
   let stockToDelete = $state<Stock | null>(null);
@@ -44,6 +47,16 @@
   let selectedInvestorIds = $state<string[]>([]);
   let investorDropdownOpen = $state(false);
 
+  function parseMoneyValue(value: number | string | null | undefined): number | undefined {
+    if (value === null || value === undefined || value === "") return undefined;
+    if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+
+    // Handles money strings like "$1,234.50" or "ETB 1,234.50"
+    const normalized = value.replace(/[^0-9.-]/g, "");
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+
   function resetForm() {
     purchasedPrice = undefined;
     sellingPrice = undefined;
@@ -54,6 +67,7 @@
     figure = "";
     selectedInvestorIds = [];
     investorDropdownOpen = false;
+    editingStockId = null;
   }
 
   // Handle form response
@@ -75,13 +89,38 @@
     }
   });
 
-  function onSubmitCreate(e: Event) {
+  function openCreateModal() {
+    resetForm();
+    showCreateModal = true;
+  }
+
+  function openEditModal(stock: Stock, event: Event) {
+    event.stopPropagation();
+    editingStockId = stock.id;
+    purchasedPrice = parseMoneyValue(stock.purchased_price);
+    sellingPrice = parseMoneyValue(stock.selling_price);
+    quantity = Number(stock.quantity);
+    thickness = Number(stock.thickness);
+    factor = Number(stock.factor);
+    color = stock.color;
+    figure = stock.figure;
+    selectedInvestorIds = [];
+    investorDropdownOpen = false;
+    showCreateModal = true;
+  }
+
+  function closeCreateModal() {
+    showCreateModal = false;
+    resetForm();
+  }
+
+  function onSubmitStock(e: Event) {
     // Clear previous messages
     errorMessage = "";
     successMessage = "";
 
     // Check if no investors are selected
-    if (selectedInvestorIds.length === 0) {
+    if (!editingStockId && selectedInvestorIds.length === 0) {
       e.preventDefault(); // Prevent form submission
       showInvestorConfirmModal = true; // Show confirmation dialog
       return;
@@ -106,9 +145,7 @@
     }
 
     // Submit the form programmatically
-    const form = document.querySelector(
-      'form[action="?/createStock"]'
-    ) as HTMLFormElement;
+    const form = document.querySelector('form.stock-form') as HTMLFormElement;
     if (form) {
       form.requestSubmit();
     }
@@ -185,7 +222,7 @@
     <h1>Stocks</h1>
     <p class="muted">Inventory overview. Click a row to view details.</p>
   </div>
-  <button class="primary" onclick={() => (showCreateModal = true)}
+  <button class="primary" onclick={openCreateModal}
     >New Stock</button
   >
 </section>
@@ -207,25 +244,28 @@
     class="modal-overlay"
     role="button"
     tabindex="0"
-    onclick={() => (showCreateModal = false)}
+    onclick={closeCreateModal}
     onkeydown={(e) =>
-      (e.key === "Enter" || e.key === " ") && (showCreateModal = false)}
+      (e.key === "Enter" || e.key === " ") && closeCreateModal()}
   ></div>
   <dialog open class="modal" onclick={(e) => e.stopPropagation()}>
     <header>
-      <h2>Create New Stock</h2>
+      <h2>{editingStockId ? "Edit Stock" : "Create New Stock"}</h2>
       <button
         class="icon"
         aria-label="Close"
-        onclick={() => (showCreateModal = false)}>✕</button
+        onclick={closeCreateModal}>✕</button
       >
     </header>
     <form
-      class="form"
+      class="form stock-form"
       method="POST"
-      action="?/createStock"
-      onsubmit={onSubmitCreate}
+      action={editingStockId ? "?/updateStock" : "?/createStock"}
+      onsubmit={onSubmitStock}
     >
+      {#if editingStockId}
+        <input type="hidden" name="id" value={editingStockId} />
+      {/if}
       <div class="grid">
         <label>
           <span>Purchased price</span>
@@ -291,45 +331,47 @@
           <input type="text" name="figure" bind:value={figure} required />
         </label>
 
-        <div class="field">
-          <span>Investors</span>
-          <input
-            type="hidden"
-            name="investors"
-            value={JSON.stringify(selectedInvestorIds)}
-          />
-          <div class="multiselect">
-            <button
-              type="button"
-              class="select-trigger"
-              onclick={() => (investorDropdownOpen = !investorDropdownOpen)}
-            >
-              {investorLabel(selectedInvestorIds)}
-            </button>
-            {#if investorDropdownOpen}
-              <div class="select-menu">
-                {#each investors as inv}
-                  <label class="option">
-                    <input
-                      type="checkbox"
-                      checked={selectedInvestorIds.includes(inv.id)}
-                      onchange={() => toggleInvestor(inv.id)}
-                    />
-                    <span>{inv.first_name} {inv.last_name}</span>
-                  </label>
-                {/each}
-              </div>
-            {/if}
+        {#if !editingStockId}
+          <div class="field">
+            <span>Investors</span>
+            <input
+              type="hidden"
+              name="investors"
+              value={JSON.stringify(selectedInvestorIds)}
+            />
+            <div class="multiselect">
+              <button
+                type="button"
+                class="select-trigger"
+                onclick={() => (investorDropdownOpen = !investorDropdownOpen)}
+              >
+                {investorLabel(selectedInvestorIds)}
+              </button>
+              {#if investorDropdownOpen}
+                <div class="select-menu">
+                  {#each investors as inv}
+                    <label class="option">
+                      <input
+                        type="checkbox"
+                        checked={selectedInvestorIds.includes(inv.id)}
+                        onchange={() => toggleInvestor(inv.id)}
+                      />
+                      <span>{inv.first_name} {inv.last_name}</span>
+                    </label>
+                  {/each}
+                </div>
+              {/if}
+            </div>
           </div>
-        </div>
+        {/if}
       </div>
       <footer>
         <button
           type="button"
           class="ghost"
-          onclick={() => (showCreateModal = false)}>Cancel</button
+          onclick={closeCreateModal}>Cancel</button
         >
-        <button type="submit" class="primary">Create</button>
+        <button type="submit" class="primary">{editingStockId ? "Update" : "Create"}</button>
       </footer>
     </form>
   </dialog>
@@ -429,6 +471,14 @@
           <td>{s.figure}</td>
           <td class="right">{s.quantity}</td>
           <td class="center">
+            <button
+              class="edit-btn"
+              onclick={(e) => openEditModal(s, e)}
+              aria-label="Edit stock"
+              title="Edit stock"
+            >
+              ✏️
+            </button>
             <button
               class="delete-btn"
               onclick={(e) => openDeleteModal(s, e)}
@@ -674,6 +724,22 @@
     padding: 0.25rem;
     border-radius: 0.25rem;
     transition: background-color 0.2s;
+  }
+
+  .edit-btn {
+    background: transparent;
+    border: none;
+    color: #f59e0b;
+    font-size: 1.1rem;
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 0.25rem;
+    transition: background-color 0.2s;
+    margin-right: 0.4rem;
+  }
+
+  .edit-btn:hover {
+    background: color-mix(in oklab, #f59e0b, white 90%);
   }
 
   .delete-btn:hover {

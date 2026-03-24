@@ -14,6 +14,7 @@ const FETCH_STOCKS_QUERY = `
       merchant {
         id
       }
+      purchased_price
       quantity
       selling_price
       thickness
@@ -128,6 +129,15 @@ const DELETE_STOCK_MUTATION = `
   }
 `;
 
+// GraphQL mutation to update a stock
+const UPDATE_STOCK_MUTATION = `
+  mutation UpdateStock($id: uuid!, $color: String, $factor: numeric, $figure: String, $purchased_price: money, $quantity: numeric, $selling_price: money, $thickness: numeric, $updated_at: timestamptz, $updated_by: uuid) {
+    update_stock_by_pk(pk_columns: {id: $id}, _set: {color: $color, factor: $factor, figure: $figure, purchased_price: $purchased_price, quantity: $quantity, selling_price: $selling_price, thickness: $thickness, updated_at: $updated_at, updated_by: $updated_by}) {
+      id
+    }
+  }
+`;
+
 // Function to create a stock via GraphQL mutation
 async function createStock(stockData: {
   color: string;
@@ -230,6 +240,58 @@ async function deleteStock(stockId: string) {
   }
 }
 
+// Function to update a stock via GraphQL mutation
+async function updateStock(stockData: {
+  id: string;
+  color: string;
+  factor: number;
+  figure: string;
+  purchased_price: number;
+  quantity: number;
+  selling_price: number;
+  thickness: number;
+  updated_by: string;
+}) {
+  try {
+    const variables = {
+      id: stockData.id,
+      color: stockData.color,
+      factor: stockData.factor,
+      figure: stockData.figure,
+      purchased_price: stockData.purchased_price,
+      quantity: stockData.quantity,
+      selling_price: stockData.selling_price,
+      thickness: stockData.thickness,
+      updated_at: new Date().toISOString(),
+      updated_by: stockData.updated_by,
+    };
+
+    const response = await fetch(config.graphql.endpoint, {
+      method: 'POST',
+      headers: getGraphQLHeaders(),
+      body: JSON.stringify({
+        query: UPDATE_STOCK_MUTATION,
+        variables,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+    }
+
+    const result = await response.json();
+    if (result.errors) {
+      throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
+    }
+
+    return result.data.update_stock_by_pk;
+  } catch (error) {
+    console.error('Error updating stock:', error);
+    throw error;
+  }
+}
+
 export const actions: Actions = {
   createStock: async ({ request }) => {
     const formData = await request.formData();
@@ -325,6 +387,58 @@ export const actions: Actions = {
       return {
         success: false,
         message: `Failed to delete stock: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      };
+    }
+  },
+  updateStock: async ({ request }) => {
+    const formData = await request.formData();
+
+    const userId = getUserIdFromRequest(request);
+    if (!userId) {
+      return {
+        success: false,
+        message: 'Authentication required',
+      };
+    }
+
+    const id = formData.get('id') as string;
+    const purchased_price = Number(formData.get('purchased_price'));
+    const selling_price = Number(formData.get('selling_price'));
+    const quantity = Number(formData.get('quantity'));
+    const thickness = Number(formData.get('thickness'));
+    const factor = Number(formData.get('factor'));
+    const color = formData.get('color') as string;
+    const figure = formData.get('figure') as string;
+
+    if (!id) {
+      return {
+        success: false,
+        message: 'Stock ID is required',
+      };
+    }
+
+    try {
+      const result = await updateStock({
+        id,
+        color,
+        factor,
+        figure,
+        purchased_price,
+        quantity,
+        selling_price,
+        thickness,
+        updated_by: userId,
+      });
+
+      return {
+        success: true,
+        message: 'Stock updated successfully',
+        stockId: result.id,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to update stock: ${error instanceof Error ? error.message : 'Unknown error'}`,
       };
     }
   },
