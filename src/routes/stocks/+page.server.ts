@@ -1,12 +1,14 @@
 import type { PageServerLoad, Actions } from './$types';
 import { getUserIdFromRequest } from '$lib/auth';
+import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
 import { config, getGraphQLHeaders } from '$lib/config';
 
-// GraphQL query to fetch stocks
-const FETCH_STOCKS_QUERY = `
-  query GetStocks {
-    stock {
+const STOCK_FIELDS = `
       id
+      model_number
+      country
+      branch
+      type
       color
       created_by
       figure
@@ -19,11 +21,25 @@ const FETCH_STOCKS_QUERY = `
       selling_price
       thickness
       factor
+`;
+
+// GraphQL query to fetch stocks (optionally scoped to a branch)
+const FETCH_STOCKS_BY_BRANCH_QUERY = `
+  query GetStocksByBranch($branchId: uuid!) {
+    stock(where: { branch: { _eq: $branchId } }) {
+${STOCK_FIELDS}
     }
   }
 `;
 
-// GraphQL query to fetch investors
+const FETCH_STOCKS_ALL_QUERY = `
+  query GetStocksAll {
+    stock {
+${STOCK_FIELDS}
+    }
+  }
+`;
+
 const FETCH_INVESTORS_QUERY = `
   query GetInvestors {
     investor {
@@ -35,15 +51,27 @@ const FETCH_INVESTORS_QUERY = `
   }
 `;
 
-// Function to fetch stocks from GraphQL
-async function fetchStocks() {
+const FETCH_BRANCHES_QUERY = `
+  query GetBranches {
+    branches {
+      id
+      name
+    }
+  }
+`;
+
+async function fetchStocks(merchantBranchId: string | null) {
   try {
+    const query = merchantBranchId ? FETCH_STOCKS_BY_BRANCH_QUERY : FETCH_STOCKS_ALL_QUERY;
+    const body: Record<string, unknown> = { query };
+    if (merchantBranchId) {
+      body.variables = { branchId: merchantBranchId };
+    }
+
     const response = await fetch(config.graphql.endpoint, {
       method: 'POST',
       headers: getGraphQLHeaders(),
-      body: JSON.stringify({
-        query: FETCH_STOCKS_QUERY,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -51,7 +79,7 @@ async function fetchStocks() {
     }
 
     const result = await response.json();
-    
+
     if (result.errors) {
       throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
     }
@@ -59,12 +87,10 @@ async function fetchStocks() {
     return result.data.stock;
   } catch (error) {
     console.error('Error fetching stocks:', error);
-    // Return empty array if API fails
     return [];
   }
 }
 
-// Function to fetch investors from GraphQL
 async function fetchInvestors() {
   try {
     const response = await fetch(config.graphql.endpoint, {
@@ -80,7 +106,7 @@ async function fetchInvestors() {
     }
 
     const result = await response.json();
-    
+
     if (result.errors) {
       throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
     }
@@ -88,31 +114,89 @@ async function fetchInvestors() {
     return result.data.investor;
   } catch (error) {
     console.error('Error fetching investors:', error);
-    // Return empty array if API fails
+    return [];
+  }
+}
+
+async function fetchBranches() {
+  try {
+    const response = await fetch(config.graphql.endpoint, {
+      method: 'POST',
+      headers: getGraphQLHeaders(),
+      body: JSON.stringify({
+        query: FETCH_BRANCHES_QUERY,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    if (result.errors) {
+      throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
+    }
+
+    return result.data.branches ?? [];
+  } catch (error) {
+    console.error('Error fetching branches:', error);
     return [];
   }
 }
 
 export const load: PageServerLoad = async ({ request }) => {
-  const [stocks, investors] = await Promise.all([
-    fetchStocks(),
-    fetchInvestors(),
-  ]);
-
-  // Get the authenticated user ID (merchant ID)
   const merchantId = getUserIdFromRequest(request);
+  const merchantBranchId = merchantId ? await fetchMerchantBranchId(merchantId) : null;
+
+  const [stocks, investors, branches] = await Promise.all([
+    fetchStocks(merchantBranchId),
+    fetchInvestors(),
+    fetchBranches(),
+  ]);
 
   return {
     stocks,
     investors,
+    branches,
     merchantId,
+    merchantBranchId,
   };
 };
 
-// GraphQL mutation to create a stock
 const CREATE_STOCK_MUTATION = `
-  mutation CreateStock($color: String, $created_by: uuid, $figure: String, $investors: [uuid!], $purchased_price: money, $quantity: numeric, $selling_price: money, $thickness: numeric, $factor: numeric) {
-    insert_stock(objects: {color: $color, created_by: $created_by, figure: $figure, investors: $investors, purchased_price: $purchased_price, quantity: $quantity, selling_price: $selling_price, thickness: $thickness, factor: $factor}) {
+  mutation CreateStock(
+    $branch: uuid
+    $color: String
+    $country: String
+    $created_by: uuid
+    $factor: numeric
+    $figure: String
+    $investors: [uuid!]
+    $model_number: String
+    $purchased_price: money
+    $quantity: numeric
+    $selling_price: money
+    $thickness: numeric
+    $type: String
+  ) {
+    insert_stock(
+      objects: {
+        branch: $branch
+        color: $color
+        country: $country
+        created_by: $created_by
+        factor: $factor
+        figure: $figure
+        investors: $investors
+        model_number: $model_number
+        purchased_price: $purchased_price
+        quantity: $quantity
+        selling_price: $selling_price
+        thickness: $thickness
+        type: $type
+      }
+    ) {
       returning {
         id
       }
@@ -120,7 +204,6 @@ const CREATE_STOCK_MUTATION = `
   }
 `;
 
-// GraphQL mutation to delete a stock
 const DELETE_STOCK_MUTATION = `
   mutation DeleteStockById($id: uuid!) {
     delete_stock_by_pk(id: $id) {
@@ -129,166 +212,199 @@ const DELETE_STOCK_MUTATION = `
   }
 `;
 
-// GraphQL mutation to update a stock
 const UPDATE_STOCK_MUTATION = `
-  mutation UpdateStock($id: uuid!, $color: String, $factor: numeric, $figure: String, $purchased_price: money, $quantity: numeric, $selling_price: money, $thickness: numeric, $updated_at: timestamptz, $updated_by: uuid) {
-    update_stock_by_pk(pk_columns: {id: $id}, _set: {color: $color, factor: $factor, figure: $figure, purchased_price: $purchased_price, quantity: $quantity, selling_price: $selling_price, thickness: $thickness, updated_at: $updated_at, updated_by: $updated_by}) {
+  mutation UpdateStock(
+    $id: uuid!
+    $branch: uuid
+    $color: String
+    $country: String
+    $factor: numeric
+    $figure: String
+    $model_number: String
+    $purchased_price: money
+    $quantity: numeric
+    $selling_price: money
+    $thickness: numeric
+    $type: String
+    $updated_at: timestamptz
+    $updated_by: uuid
+  ) {
+    update_stock_by_pk(
+      pk_columns: { id: $id }
+      _set: {
+        branch: $branch
+        color: $color
+        country: $country
+        factor: $factor
+        figure: $figure
+        model_number: $model_number
+        purchased_price: $purchased_price
+        quantity: $quantity
+        selling_price: $selling_price
+        thickness: $thickness
+        type: $type
+        updated_at: $updated_at
+        updated_by: $updated_by
+      }
+    ) {
       id
     }
   }
 `;
 
-// Function to create a stock via GraphQL mutation
+function parseOptionalString(raw: FormDataEntryValue | null): string | null {
+  if (raw === null || raw === undefined) return null;
+  const s = String(raw).trim();
+  return s === '' ? null : s;
+}
+
+function parseOptionalNumber(raw: FormDataEntryValue | null): number | null {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
 async function createStock(stockData: {
-  color: string;
-  figure: string;
+  branch: string | null;
+  color: string | null;
+  country: string | null;
+  factor: number | null;
+  figure: string | null;
   investors: string[];
+  model_number: string | null;
   purchased_price: number;
   quantity: number;
   selling_price: number;
-  thickness: number;
-  factor: number;
+  thickness: number | null;
+  type: string;
   userId: string;
 }) {
-  try {
-    const variables = {
-      color: stockData.color,
-      created_by: stockData.userId, // Use the authenticated user ID
-      figure: stockData.figure,
-      investors: stockData.investors,
-      purchased_price: stockData.purchased_price,
-      quantity: stockData.quantity,
-      selling_price: stockData.selling_price,
-      thickness: stockData.thickness,
-      factor: stockData.factor,
-    };
+  const variables = {
+    branch: stockData.branch,
+    color: stockData.color,
+    country: stockData.country,
+    created_by: stockData.userId,
+    factor: stockData.factor,
+    figure: stockData.figure,
+    investors: stockData.investors,
+    model_number: stockData.model_number,
+    purchased_price: stockData.purchased_price,
+    quantity: stockData.quantity,
+    selling_price: stockData.selling_price,
+    thickness: stockData.thickness,
+    type: stockData.type,
+  };
 
-    console.log('Sending GraphQL mutation with variables:', variables);
-    console.log('GraphQL endpoint:', config.graphql.endpoint);
-    console.log('Headers:', getGraphQLHeaders());
+  const response = await fetch(config.graphql.endpoint, {
+    method: 'POST',
+    headers: getGraphQLHeaders(),
+    body: JSON.stringify({
+      query: CREATE_STOCK_MUTATION,
+      variables,
+    }),
+  });
 
-    const response = await fetch(config.graphql.endpoint, {
-      method: 'POST',
-      headers: getGraphQLHeaders(),
-      body: JSON.stringify({
-        query: CREATE_STOCK_MUTATION,
-        variables,
-      }),
-    });
-
-    console.log('GraphQL response status:', response.status);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('HTTP error response:', errorText);
-      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
-    }
-
-    const result = await response.json();
-    console.log('GraphQL response:', result);
-    
-    if (result.errors) {
-      console.error('GraphQL errors:', result.errors);
-      throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
-    }
-
-    return result.data.insert_stock.returning[0];
-  } catch (error) {
-    console.error('Error creating stock:', error);
-    throw error;
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
   }
+
+  const result = await response.json();
+
+  if (result.errors) {
+    throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
+  }
+
+  return result.data.insert_stock.returning[0];
 }
 
-// Function to delete a stock via GraphQL mutation
 async function deleteStock(stockId: string) {
-  try {
-    const variables = {
-      id: stockId,
-    };
+  const variables = {
+    id: stockId,
+  };
 
-    console.log('Deleting stock with ID:', stockId);
+  const response = await fetch(config.graphql.endpoint, {
+    method: 'POST',
+    headers: getGraphQLHeaders(),
+    body: JSON.stringify({
+      query: DELETE_STOCK_MUTATION,
+      variables,
+    }),
+  });
 
-    const response = await fetch(config.graphql.endpoint, {
-      method: 'POST',
-      headers: getGraphQLHeaders(),
-      body: JSON.stringify({
-        query: DELETE_STOCK_MUTATION,
-        variables,
-      }),
-    });
-
-    console.log('Delete stock response status:', response.status);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('HTTP error response:', errorText);
-      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
-    }
-
-    const result = await response.json();
-    console.log('Delete stock response:', result);
-    
-    if (result.errors) {
-      console.error('GraphQL errors:', result.errors);
-      throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
-    }
-
-    return result.data.delete_stock_by_pk;
-  } catch (error) {
-    console.error('Error deleting stock:', error);
-    throw error;
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
   }
+
+  const result = await response.json();
+
+  if (result.errors) {
+    throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
+  }
+
+  return result.data.delete_stock_by_pk;
 }
 
-// Function to update a stock via GraphQL mutation
 async function updateStock(stockData: {
   id: string;
-  color: string;
-  factor: number;
-  figure: string;
+  branch: string | null;
+  color: string | null;
+  country: string | null;
+  factor: number | null;
+  figure: string | null;
+  model_number: string | null;
   purchased_price: number;
   quantity: number;
   selling_price: number;
-  thickness: number;
+  thickness: number | null;
+  type: string;
   updated_by: string;
 }) {
-  try {
-    const variables = {
-      id: stockData.id,
-      color: stockData.color,
-      factor: stockData.factor,
-      figure: stockData.figure,
-      purchased_price: stockData.purchased_price,
-      quantity: stockData.quantity,
-      selling_price: stockData.selling_price,
-      thickness: stockData.thickness,
-      updated_at: new Date().toISOString(),
-      updated_by: stockData.updated_by,
-    };
+  const variables = {
+    id: stockData.id,
+    branch: stockData.branch,
+    color: stockData.color,
+    country: stockData.country,
+    factor: stockData.factor,
+    figure: stockData.figure,
+    model_number: stockData.model_number,
+    purchased_price: stockData.purchased_price,
+    quantity: stockData.quantity,
+    selling_price: stockData.selling_price,
+    thickness: stockData.thickness,
+    type: stockData.type,
+    updated_at: new Date().toISOString(),
+    updated_by: stockData.updated_by,
+  };
 
-    const response = await fetch(config.graphql.endpoint, {
-      method: 'POST',
-      headers: getGraphQLHeaders(),
-      body: JSON.stringify({
-        query: UPDATE_STOCK_MUTATION,
-        variables,
-      }),
-    });
+  const response = await fetch(config.graphql.endpoint, {
+    method: 'POST',
+    headers: getGraphQLHeaders(),
+    body: JSON.stringify({
+      query: UPDATE_STOCK_MUTATION,
+      variables,
+    }),
+  });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
-    }
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+  }
 
-    const result = await response.json();
-    if (result.errors) {
-      throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
-    }
+  const result = await response.json();
+  if (result.errors) {
+    throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
+  }
 
-    return result.data.update_stock_by_pk;
-  } catch (error) {
-    console.error('Error updating stock:', error);
-    throw error;
+  return result.data.update_stock_by_pk;
+}
+
+const VALID_TYPES = new Set(['glass', 'brake_pad']);
+
+function assertBranchAllowed(branchId: string | null, merchantBranchId: string | null) {
+  if (merchantBranchId && branchId && branchId !== merchantBranchId) {
+    throw new Error('You can only manage stock for your assigned branch');
   }
 }
 
@@ -296,7 +412,6 @@ export const actions: Actions = {
   createStock: async ({ request }) => {
     const formData = await request.formData();
 
-    // Get authenticated user ID
     const userId = getUserIdFromRequest(request);
     if (!userId) {
       return {
@@ -304,49 +419,66 @@ export const actions: Actions = {
         message: 'Authentication required',
       };
     }
-    
-    console.log('Authenticated user ID:', userId);
 
-    console.log(formData);
-    
-    // Extract form data
+    const merchantBranchId = await fetchMerchantBranchId(userId);
+
     const purchased_price = Number(formData.get('purchased_price'));
     const selling_price = Number(formData.get('selling_price'));
     const quantity = Number(formData.get('quantity'));
-    const thickness = Number(formData.get('thickness'));
-    const color = formData.get('color') as string;
-    const figure = formData.get('figure') as string;
-    const investors = JSON.parse(formData.get('investors') as string);
-    const factor = Number(formData.get('factor'));
-    console.log('Form data received:', {
-      purchased_price,
-      selling_price,
-      quantity,
-      thickness,
-      color,
-      figure,
-      investors,
-      factor,
-    });
-    
-    console.log('Investors array:', investors);
-    console.log('Investors type:', typeof investors);
-    console.log('Investors length:', investors?.length);
+    const thickness = parseOptionalNumber(formData.get('thickness'));
+    const factor = parseOptionalNumber(formData.get('factor'));
+    const color = parseOptionalString(formData.get('color'));
+    const figure = parseOptionalString(formData.get('figure'));
+    const model_number = parseOptionalString(formData.get('model_number'));
+    const country = parseOptionalString(formData.get('country'));
+    const branchRaw = parseOptionalString(formData.get('branch'));
+    const type = String(formData.get('type') ?? '').trim();
+
+    let investors: string[] = [];
+    try {
+      investors = JSON.parse(formData.get('investors') as string) as string[];
+      if (!Array.isArray(investors)) investors = [];
+    } catch {
+      investors = [];
+    }
+
+    if (!VALID_TYPES.has(type)) {
+      return { success: false, message: 'Invalid stock type' };
+    }
+
+    if (!branchRaw) {
+      return { success: false, message: 'Branch is required' };
+    }
+
+    try {
+      assertBranchAllowed(branchRaw, merchantBranchId);
+    } catch (e) {
+      return {
+        success: false,
+        message: e instanceof Error ? e.message : 'Branch not allowed',
+      };
+    }
+
+    if (!Number.isFinite(purchased_price) || !Number.isFinite(selling_price) || !Number.isFinite(quantity)) {
+      return { success: false, message: 'Purchased price, selling price, and quantity are required' };
+    }
 
     try {
       const result = await createStock({
+        branch: branchRaw,
         color,
+        country,
+        factor,
         figure,
         investors,
+        model_number,
         purchased_price,
         quantity,
         selling_price,
         thickness,
-        factor,
-        userId, // Pass the authenticated user ID
+        type,
+        userId,
       });
-
-      console.log('Stock created successfully:', result);
 
       return {
         success: true,
@@ -375,8 +507,6 @@ export const actions: Actions = {
     try {
       const result = await deleteStock(stockId);
 
-      console.log('Stock deleted successfully:', result);
-
       return {
         success: true,
         message: 'Stock deleted successfully',
@@ -401,14 +531,20 @@ export const actions: Actions = {
       };
     }
 
+    const merchantBranchId = await fetchMerchantBranchId(userId);
+
     const id = formData.get('id') as string;
     const purchased_price = Number(formData.get('purchased_price'));
     const selling_price = Number(formData.get('selling_price'));
     const quantity = Number(formData.get('quantity'));
-    const thickness = Number(formData.get('thickness'));
-    const factor = Number(formData.get('factor'));
-    const color = formData.get('color') as string;
-    const figure = formData.get('figure') as string;
+    const thickness = parseOptionalNumber(formData.get('thickness'));
+    const factor = parseOptionalNumber(formData.get('factor'));
+    const color = parseOptionalString(formData.get('color'));
+    const figure = parseOptionalString(formData.get('figure'));
+    const model_number = parseOptionalString(formData.get('model_number'));
+    const country = parseOptionalString(formData.get('country'));
+    const branchRaw = parseOptionalString(formData.get('branch'));
+    const type = String(formData.get('type') ?? '').trim();
 
     if (!id) {
       return {
@@ -417,16 +553,41 @@ export const actions: Actions = {
       };
     }
 
+    if (!VALID_TYPES.has(type)) {
+      return { success: false, message: 'Invalid stock type' };
+    }
+
+    if (!branchRaw) {
+      return { success: false, message: 'Branch is required' };
+    }
+
+    try {
+      assertBranchAllowed(branchRaw, merchantBranchId);
+    } catch (e) {
+      return {
+        success: false,
+        message: e instanceof Error ? e.message : 'Branch not allowed',
+      };
+    }
+
+    if (!Number.isFinite(purchased_price) || !Number.isFinite(selling_price) || !Number.isFinite(quantity)) {
+      return { success: false, message: 'Purchased price, selling price, and quantity are required' };
+    }
+
     try {
       const result = await updateStock({
         id,
+        branch: branchRaw,
         color,
+        country,
         factor,
         figure,
+        model_number,
         purchased_price,
         quantity,
         selling_price,
         thickness,
+        type,
         updated_by: userId,
       });
 

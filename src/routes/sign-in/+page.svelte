@@ -30,6 +30,14 @@
 
         // Store token in localStorage
         localStorage.setItem("authToken", form.token);
+        if (form.merchantBranchId) {
+          localStorage.setItem("merchantBranchId", form.merchantBranchId);
+          document.cookie = `merchantBranchId=${form.merchantBranchId}; path=/; secure; samesite=strict`;
+        } else {
+          localStorage.removeItem("merchantBranchId");
+          document.cookie =
+            "merchantBranchId=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+        }
         // Redirect to dashboard
         goto("/");
       } else {
@@ -54,6 +62,15 @@
 
         // Store token in localStorage
         localStorage.setItem("authToken", (data as any).form.token);
+        const b = (data as any).form.merchantBranchId;
+        if (b) {
+          localStorage.setItem("merchantBranchId", b);
+          document.cookie = `merchantBranchId=${b}; path=/; secure; samesite=strict`;
+        } else {
+          localStorage.removeItem("merchantBranchId");
+          document.cookie =
+            "merchantBranchId=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+        }
         // Redirect to dashboard
         goto("/");
       } else {

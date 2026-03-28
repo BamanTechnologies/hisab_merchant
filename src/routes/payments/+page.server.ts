@@ -1,10 +1,10 @@
 import type { PageServerLoad, Actions } from './$types';
+import { getUserIdFromRequest } from '$lib/auth';
 import { config, getGraphQLHeaders } from '$lib/config';
 
-// GraphQL query to fetch payments
 const FETCH_PAYMENTS_QUERY = `
-  query GetPayments {
-    payment {
+  query GetPayments($merchantId: uuid!) {
+    payment(where: { created_by: { _eq: $merchantId } }) {
       amount
       created_by
       id
@@ -14,14 +14,14 @@ const FETCH_PAYMENTS_QUERY = `
   }
 `;
 
-// Function to fetch payments from GraphQL
-async function fetchPayments() {
+async function fetchPayments(merchantId: string) {
   try {
     const response = await fetch(config.graphql.endpoint, {
       method: 'POST',
       headers: getGraphQLHeaders(),
       body: JSON.stringify({
         query: FETCH_PAYMENTS_QUERY,
+        variables: { merchantId },
       }),
     });
 
@@ -35,16 +35,16 @@ async function fetchPayments() {
       throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
     }
 
-    return result.data.payment;
+    return result.data.payment ?? [];
   } catch (error) {
     console.error('Error fetching payments:', error);
-    // Return empty array if API fails
     return [];
   }
 }
 
-export const load: PageServerLoad = async () => {
-  const payments = await fetchPayments();
+export const load: PageServerLoad = async ({ request }) => {
+  const merchantId = getUserIdFromRequest(request);
+  const payments = merchantId ? await fetchPayments(merchantId) : [];
 
   return {
     payments,

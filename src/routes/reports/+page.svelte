@@ -19,12 +19,15 @@
   type ReportData = {
     stocks: Array<{
       id: string;
-      thickness: number;
-      color: string;
-      figure: string;
+      type?: string | null;
+      model_number?: string | null;
+      country?: string | null;
+      thickness?: number | string | null;
+      color?: string | null;
+      figure?: string | null;
       quantity: number;
       selling_price: string;
-      factor: number;
+      factor?: number | string | null;
     }>;
     orders: Array<{
       id: string;
@@ -95,6 +98,17 @@
     } catch (error) {
       return "Invalid Date";
     }
+  }
+
+  function reportStockTypeLabel(t: string | null | undefined) {
+    if (t === "glass") return "Glass";
+    if (t === "brake_pad" || t === "break_pad") return "Brake pads";
+    return t && String(t).trim() !== "" ? String(t) : "—";
+  }
+
+  function reportDash(v: unknown) {
+    if (v === null || v === undefined || v === "") return "—";
+    return String(v);
   }
 
   function getStatusClass(status: string) {
@@ -406,6 +420,9 @@
               <table>
                 <thead>
                   <tr>
+                    <th>Type</th>
+                    <th>Model #</th>
+                    <th>Country</th>
                     <th>Color</th>
                     <th>Figure</th>
                     <th>Thickness</th>
@@ -417,12 +434,15 @@
                 <tbody>
                   {#each generatedReportData.stocks as stock (stock.id)}
                     <tr>
-                      <td>{stock.color}</td>
-                      <td>{stock.figure}</td>
-                      <td>{stock.thickness}</td>
+                      <td>{reportStockTypeLabel(stock.type)}</td>
+                      <td>{reportDash(stock.model_number)}</td>
+                      <td>{reportDash(stock.country)}</td>
+                      <td>{reportDash(stock.color)}</td>
+                      <td>{reportDash(stock.figure)}</td>
+                      <td>{reportDash(stock.thickness)}</td>
                       <td>{stock.quantity}</td>
                       <td>{stock.selling_price}</td>
-                      <td>{stock.factor}</td>
+                      <td>{reportDash(stock.factor)}</td>
                     </tr>
                   {/each}
                 </tbody>
@@ -866,7 +886,7 @@
   .data-table {
     background: var(--surface-2);
     border-radius: 0.5rem;
-    overflow: hidden;
+    overflow-x: auto;
     border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
     margin-bottom: 1rem;
   }

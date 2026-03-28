@@ -2,10 +2,9 @@ import type { PageServerLoad, Actions } from './$types';
 import { getUserIdFromRequest } from '$lib/auth';
 import { config, getGraphQLHeaders } from '$lib/config';
 
-// GraphQL query to fetch reports
 const FETCH_REPORTS_QUERY = `
-  query GetReports {
-    reports {
+  query GetReports($merchantId: uuid!) {
+    reports(where: { merchant_id: { _eq: $merchantId } }) {
       id
       investor_phone
       sms_status
@@ -32,6 +31,9 @@ const GENERATE_INVESTOR_REPORT_QUERY = `
   query GenerateInvestorReport($merchant_id: uuid!, $investor_phone: String!, $investor_id: uuid!) {
     stocks: stock(where: {_and: {created_by: {_eq: $merchant_id}, investors: {_contains: [$investor_id]}}}) {
       id
+      type
+      model_number
+      country
       thickness
       color
       figure
@@ -96,14 +98,14 @@ const SEND_REPORT_MUTATION = `
   }
 `;
 
-// Function to fetch reports from GraphQL
-async function fetchReports() {
+async function fetchReports(merchantId: string) {
   try {
     const response = await fetch(config.graphql.endpoint, {
       method: 'POST',
       headers: getGraphQLHeaders(),
       body: JSON.stringify({
         query: FETCH_REPORTS_QUERY,
+        variables: { merchantId },
       }),
     });
 
@@ -233,9 +235,12 @@ async function sendReport(reportData: any) {
   }
 }
 
-export const load: PageServerLoad = async () => {
-  const reports = await fetchReports();
-  const investors = await fetchInvestors();
+export const load: PageServerLoad = async ({ request }) => {
+  const merchantId = getUserIdFromRequest(request);
+  const [reports, investors] = await Promise.all([
+    merchantId ? fetchReports(merchantId) : Promise.resolve([]),
+    fetchInvestors(),
+  ]);
 
   return {
     reports,

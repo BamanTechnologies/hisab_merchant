@@ -8,12 +8,17 @@
     last_name: string;
     phone_number: string;
   };
+  type Branch = { id: string; name?: string | null };
   type Stock = {
     id: string;
-    color: string;
+    model_number?: string | null;
+    country?: string | null;
+    branch?: string | null;
+    type?: string | null;
+    color?: string | null;
     created_by: string;
-    factor: number;
-    figure: string;
+    factor?: number | null;
+    figure?: string | null;
     investors: string[];
     merchant: {
       id: string;
@@ -21,7 +26,7 @@
     purchased_price: number | string | null;
     quantity: number;
     selling_price: number | string | null;
-    thickness: number;
+    thickness?: number | null;
   };
 
   let { data, form }: { data: PageData; form?: any } = $props();
@@ -35,6 +40,19 @@
   let successMessage = $state("");
 
   const investors = data.investors;
+  const branches = data.branches as Branch[];
+  const merchantBranchId = data.merchantBranchId as string | null;
+
+  let typeFilter = $state<"all" | "glass" | "brake_pad">("all");
+  const filteredStocks = $derived(
+    typeFilter === "all"
+      ? stocks
+      : typeFilter === "brake_pad"
+        ? stocks.filter(
+            (s: Stock) => s.type === "brake_pad" || s.type === "break_pad",
+          )
+        : stocks.filter((s: Stock) => s.type === typeFilter),
+  );
 
   // Create form state
   let purchasedPrice = $state<number | undefined>(undefined);
@@ -44,12 +62,20 @@
   let factor = $state<number | undefined>(undefined);
   let color = $state("");
   let figure = $state("");
+  let modelNumber = $state("");
+  let country = $state("");
+  let selectedBranchId = $state("");
+  let stockType = $state<"glass" | "brake_pad">("glass");
   let selectedInvestorIds = $state<string[]>([]);
   let investorDropdownOpen = $state(false);
+  let branchDropdownOpen = $state(false);
 
-  function parseMoneyValue(value: number | string | null | undefined): number | undefined {
+  function parseMoneyValue(
+    value: number | string | null | undefined,
+  ): number | undefined {
     if (value === null || value === undefined || value === "") return undefined;
-    if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+    if (typeof value === "number")
+      return Number.isFinite(value) ? value : undefined;
 
     // Handles money strings like "$1,234.50" or "ETB 1,234.50"
     const normalized = value.replace(/[^0-9.-]/g, "");
@@ -65,8 +91,13 @@
     factor = undefined;
     color = "";
     figure = "";
+    modelNumber = "";
+    country = "";
+    selectedBranchId = "";
+    stockType = "glass";
     selectedInvestorIds = [];
     investorDropdownOpen = false;
+    branchDropdownOpen = false;
     editingStockId = null;
   }
 
@@ -91,6 +122,7 @@
 
   function openCreateModal() {
     resetForm();
+    if (merchantBranchId) selectedBranchId = merchantBranchId;
     showCreateModal = true;
   }
 
@@ -100,12 +132,30 @@
     purchasedPrice = parseMoneyValue(stock.purchased_price);
     sellingPrice = parseMoneyValue(stock.selling_price);
     quantity = Number(stock.quantity);
-    thickness = Number(stock.thickness);
-    factor = Number(stock.factor);
-    color = stock.color;
-    figure = stock.figure;
+    thickness =
+      stock.thickness != null && String(stock.thickness).trim() !== ""
+        ? Number(stock.thickness)
+        : undefined;
+    factor =
+      stock.factor != null && String(stock.factor).trim() !== ""
+        ? Number(stock.factor)
+        : undefined;
+    color = stock.color ?? "";
+    figure = stock.figure ?? "";
+    modelNumber = stock.model_number ?? "";
+    country = stock.country ?? "";
+    selectedBranchId = stock.branch ?? "";
+    stockType =
+      stock.type === "brake_pad" ||
+      stock.type === "break_pad" ||
+      stock.type === "glass"
+        ? stock.type === "break_pad"
+          ? "brake_pad"
+          : (stock.type as "glass" | "brake_pad")
+        : "glass";
     selectedInvestorIds = [];
     investorDropdownOpen = false;
+    branchDropdownOpen = false;
     showCreateModal = true;
   }
 
@@ -118,6 +168,12 @@
     // Clear previous messages
     errorMessage = "";
     successMessage = "";
+
+    if (!selectedBranchId) {
+      e.preventDefault();
+      errorMessage = "Please select a branch";
+      return;
+    }
 
     // Check if no investors are selected
     if (!editingStockId && selectedInvestorIds.length === 0) {
@@ -137,7 +193,7 @@
 
     // Update the hidden input with the new investor data
     const hiddenInput = document.querySelector(
-      'input[name="investors"]'
+      'input[name="investors"]',
     ) as HTMLInputElement;
     if (hiddenInput) {
       hiddenInput.value = JSON.stringify(selectedInvestorIds);
@@ -145,7 +201,7 @@
     }
 
     // Submit the form programmatically
-    const form = document.querySelector('form.stock-form') as HTMLFormElement;
+    const form = document.querySelector("form.stock-form") as HTMLFormElement;
     if (form) {
       form.requestSubmit();
     }
@@ -168,6 +224,34 @@
       .filter((i: Investor) => ids.includes(i.id))
       .map((i: Investor) => `${i.first_name} ${i.last_name}`);
     return names.join(", ");
+  }
+
+  function branchLabel(branchId: string | null | undefined) {
+    if (!branchId) return "—";
+    const b = branches.find((x) => x.id === branchId);
+    if (b?.name) return b.name;
+    return branchId.slice(0, 8) + "…";
+  }
+
+  function branchPickerLabel(id: string) {
+    if (!id) return "Select branch";
+    return branchLabel(id);
+  }
+
+  function selectBranch(id: string) {
+    selectedBranchId = id;
+    branchDropdownOpen = false;
+  }
+
+  function typeDisplay(t: string | null | undefined) {
+    if (t === "glass") return "Glass";
+    if (t === "brake_pad" || t === "break_pad") return "Brake pads";
+    return t ?? "—";
+  }
+
+  function dash(v: unknown) {
+    if (v === null || v === undefined || v === "") return "—";
+    return String(v);
   }
 
   function openDeleteModal(stock: Stock, event: Event) {
@@ -222,9 +306,17 @@
     <h1>Stocks</h1>
     <p class="muted">Inventory overview. Click a row to view details.</p>
   </div>
-  <button class="primary" onclick={openCreateModal}
-    >New Stock</button
-  >
+  <div class="header-actions">
+    <label class="filter-field">
+      <span class="filter-label">Type</span>
+      <select class="filter-select" bind:value={typeFilter}>
+        <option value="all">All</option>
+        <option value="glass">Glass</option>
+        <option value="brake_pad">Brake pads</option>
+      </select>
+    </label>
+    <button class="primary" onclick={openCreateModal}>New Stock</button>
+  </div>
 </section>
 
 {#if errorMessage}
@@ -250,11 +342,11 @@
   ></div>
   <dialog open class="modal" onclick={(e) => e.stopPropagation()}>
     <header>
-      <h2>{editingStockId ? "Edit Stock" : "Create New Stock"}</h2>
-      <button
-        class="icon"
-        aria-label="Close"
-        onclick={closeCreateModal}>✕</button
+      <h2 style="color: white;">
+        {editingStockId ? "Edit Stock" : "Create New Stock"}
+      </h2>
+      <button class="icon" aria-label="Close" onclick={closeCreateModal}
+        >✕</button
       >
     </header>
     <form
@@ -267,6 +359,54 @@
         <input type="hidden" name="id" value={editingStockId} />
       {/if}
       <div class="grid">
+        <label>
+          <span>Type</span>
+          <select
+            name="type"
+            bind:value={stockType}
+            required
+            class="native-select"
+          >
+            <option value="glass">Glass</option>
+            <option value="brake_pad">Brake pads</option>
+          </select>
+        </label>
+        <div class="field">
+          <span style="color: white;">Branch</span>
+          <input type="hidden" name="branch" bind:value={selectedBranchId} />
+          <div class="multiselect">
+            <button
+              type="button"
+              class="select-trigger"
+              onclick={() => (branchDropdownOpen = !branchDropdownOpen)}
+            >
+              {branchPickerLabel(selectedBranchId)}
+            </button>
+            {#if branchDropdownOpen}
+              <div class="select-menu">
+                {#each branches as br}
+                  <button
+                    type="button"
+                    class="option option-btn"
+                    style="color: white;"
+                    class:option-active={selectedBranchId === br.id}
+                    onclick={() => selectBranch(br.id)}
+                  >
+                    {br.name ?? br.id}
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        </div>
+        <label>
+          <span>Model number</span>
+          <input type="text" name="model_number" bind:value={modelNumber} />
+        </label>
+        <label>
+          <span>Country</span>
+          <input type="text" name="country" bind:value={country} />
+        </label>
         <label>
           <span>Purchased price</span>
           <input
@@ -308,27 +448,25 @@
             step="0.01"
             name="thickness"
             bind:value={thickness}
-            required
           />
         </label>
         <label>
           <span>Factor</span>
           <input
             type="number"
-            min="1"
+            min="0"
             step="0.00001"
             name="factor"
             bind:value={factor}
-            required
           />
         </label>
         <label>
           <span>Color</span>
-          <input type="text" name="color" bind:value={color} required />
+          <input type="text" name="color" bind:value={color} />
         </label>
         <label>
           <span>Figure</span>
-          <input type="text" name="figure" bind:value={figure} required />
+          <input type="text" name="figure" bind:value={figure} />
         </label>
 
         {#if !editingStockId}
@@ -366,12 +504,12 @@
         {/if}
       </div>
       <footer>
-        <button
-          type="button"
-          class="ghost"
-          onclick={closeCreateModal}>Cancel</button
+        <button type="button" class="ghost" onclick={closeCreateModal}
+          >Cancel</button
         >
-        <button type="submit" class="primary">{editingStockId ? "Update" : "Create"}</button>
+        <button type="submit" class="primary"
+          >{editingStockId ? "Update" : "Create"}</button
+        >
       </footer>
     </form>
   </dialog>
@@ -429,9 +567,12 @@
     <div class="modal-content">
       <p>Are you sure you want to delete this stock?</p>
       <div class="stock-details">
-        <p><strong>Thickness:</strong> {stockToDelete.thickness}</p>
-        <p><strong>Color:</strong> {stockToDelete.color}</p>
-        <p><strong>Figure:</strong> {stockToDelete.figure}</p>
+        <p><strong>Type:</strong> {typeDisplay(stockToDelete.type)}</p>
+        <p><strong>Branch:</strong> {branchLabel(stockToDelete.branch)}</p>
+        <p><strong>Model:</strong> {dash(stockToDelete.model_number)}</p>
+        <p><strong>Thickness:</strong> {dash(stockToDelete.thickness)}</p>
+        <p><strong>Color:</strong> {dash(stockToDelete.color)}</p>
+        <p><strong>Figure:</strong> {dash(stockToDelete.figure)}</p>
         <p><strong>Quantity:</strong> {stockToDelete.quantity}</p>
       </div>
       <p class="warning">This action cannot be undone.</p>
@@ -451,6 +592,9 @@
   <table class="data-table">
     <thead>
       <tr>
+        <th>Type</th>
+        <th>Branch</th>
+        <th>Model #</th>
         <th>Thickness</th>
         <th>Color</th>
         <th>Figure</th>
@@ -459,16 +603,19 @@
       </tr>
     </thead>
     <tbody>
-      {#each stocks as s}
+      {#each filteredStocks as s}
         <tr
           class="row"
           onclick={() => goto(`/stocks/${s.id}`)}
           tabindex="0"
           role="button"
         >
-          <td>{s.thickness}</td>
-          <td>{s.color}</td>
-          <td>{s.figure}</td>
+          <td>{typeDisplay(s.type)}</td>
+          <td>{branchLabel(s.branch)}</td>
+          <td>{dash(s.model_number)}</td>
+          <td>{dash(s.thickness)}</td>
+          <td>{dash(s.color)}</td>
+          <td>{dash(s.figure)}</td>
           <td class="right">{s.quantity}</td>
           <td class="center">
             <button
@@ -490,11 +637,15 @@
           </td>
         </tr>
       {/each}
-      {#if stocks.length === 0}
+      {#if filteredStocks.length === 0}
         <tr>
-          <td colspan="5" class="empty-state">
+          <td colspan="8" class="empty-state">
             <p class="muted">
-              No stocks found. Create your first stock to get started.
+              {#if stocks.length === 0}
+                No stocks found. Create your first stock to get started.
+              {:else}
+                No stocks match this type filter.
+              {/if}
             </p>
           </td>
         </tr>
@@ -513,10 +664,36 @@
   }
   .header {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     gap: 1rem;
     margin-bottom: 1rem;
+    flex-wrap: wrap;
+  }
+  .header-actions {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .filter-label {
+    color: #94a3b8;
+    font-weight: 600;
+    font-size: 0.85rem;
+  }
+  .filter-select {
+    min-width: 10rem;
+    background: color-mix(in oklab, var(--surface-2), white 2%);
+    color: #e5e7eb;
+    border: 1px solid color-mix(in oklab, var(--surface-2), white 12%);
+    border-radius: 0.6rem;
+    padding: 0.55rem 0.7rem;
+    font-weight: 600;
   }
 
   .primary {
@@ -668,12 +845,16 @@
     font-weight: 600;
   }
   input,
-  .select-trigger {
+  .select-trigger,
+  .native-select {
     background: color-mix(in oklab, var(--surface-2), white 2%);
     color: #e5e7eb;
     border: 1px solid color-mix(in oklab, var(--surface-2), white 12%);
     border-radius: 0.6rem;
     padding: 0.55rem 0.7rem;
+  }
+  .native-select {
+    cursor: pointer;
   }
   .field {
     display: flex;
@@ -706,6 +887,22 @@
   }
   .option:hover {
     background: color-mix(in oklab, var(--surface-2), white 6%);
+  }
+  .option-btn {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    width: 100%;
+    display: block;
+  }
+  .option-active {
+    background: color-mix(in oklab, var(--brand), black 70%);
+    color: #0b1220;
+    font-weight: 700;
   }
   footer {
     display: flex;

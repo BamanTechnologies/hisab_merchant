@@ -9,22 +9,38 @@
   };
   type Stock = {
     id: string;
-    color: string;
+    model_number?: string | null;
+    country?: string | null;
+    branch?: string | null;
+    type?: string | null;
+    color?: string | null;
     created_by: string;
-    figure: string;
+    figure?: string | null;
     investors: string[];
     merchant: {
       id: string;
     };
     quantity: number;
-    selling_price: number;
-    factor: number;
-    thickness: string;
+    selling_price: number | string;
+    factor?: number | null;
+    thickness?: number | string | null;
+  };
+
+  type TransferBranch = { id: string; name?: string | null };
+  type TransferMerchant = {
+    id: string;
+    first_name?: string | null;
+    last_name?: string | null;
+    branch: string;
   };
 
   let { data, form }: { data: PageData; form?: any } = $props();
   const stock = data.stock;
   const investors = data.investors;
+  const transferTargetBranches = (data.transferTargetBranches ??
+    []) as TransferBranch[];
+  const merchantsInTransferBranches = (data.merchantsInTransferBranches ??
+    []) as TransferMerchant[];
 
   let errorMessage = $state("");
   let successMessage = $state("");
@@ -56,11 +72,62 @@
   let customerPhone = $state("");
   let orderQuantity = $state(0);
 
-  const sellingPriceString = $derived(stock?.selling_price ?? "0");
-  const sellingPrice = $derived(
-    Number(sellingPriceString.replace("$", "").replace(",", "")) || 0
+  let showTransferModal = $state(false);
+  let transferQuantity = $state(0);
+  let transferToBranchId = $state("");
+  let transferNewMerchantId = $state("");
+
+  const merchantsForDestinationBranch = $derived(
+    transferToBranchId
+      ? merchantsInTransferBranches.filter(
+          (m) => m.branch === transferToBranchId
+        )
+      : []
   );
-  const factor = $derived(stock?.factor ?? 1);
+
+  const canSubmitTransfer = $derived(
+    !!transferToBranchId &&
+      merchantsForDestinationBranch.length > 0 &&
+      !!transferNewMerchantId
+  );
+
+  const canTransferStock = $derived(
+    !!stock &&
+      Number(stock.quantity) > 0 &&
+      !!stock.branch &&
+      transferTargetBranches.length > 0
+  );
+
+  function merchantOptionLabel(m: TransferMerchant) {
+    const name = [m.first_name, m.last_name].filter(Boolean).join(" ").trim();
+    return name || m.id;
+  }
+
+  const sellingPriceString = $derived(String(stock?.selling_price ?? "0"));
+  const sellingPrice = $derived(
+    Number(sellingPriceString.replace(/[^0-9.-]/g, "")) || 0
+  );
+  const factor = $derived(
+    stock?.factor != null && String(stock.factor).trim() !== ""
+      ? Number(stock.factor)
+      : 1
+  );
+  const sellingPriceDisplay = $derived(
+    sellingPrice.toLocaleString(undefined, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    })
+  );
+
+  function typeDisplay(t: string | null | undefined) {
+    if (t === "glass") return "Glass";
+    if (t === "brake_pad" || t === "break_pad") return "Brake pads";
+    return t ?? "—";
+  }
+  function dash(v: unknown) {
+    if (v === null || v === undefined || v === "") return "—";
+    return String(v);
+  }
   const maxAvailable = $derived(stock?.quantity ?? 0);
   const totalAmount = $derived(orderQuantity * sellingPrice * factor);
   const outstandingAmount = $derived(totalAmount);
@@ -74,20 +141,16 @@
 
   // Handle form response
   $effect(() => {
-    if (form) {
-      if (form.success) {
-        successMessage = form.message;
-        errorMessage = "";
-        showOrderModal = false;
-        resetOrderForm();
-        // Refresh the page to show new order
-        setTimeout(() => {
-          window.location.reload();
-        }, 1000);
-      } else {
-        errorMessage = form.message;
-        successMessage = "";
-      }
+    if (!form) return;
+    if (form.success) {
+      successMessage = form.message;
+      errorMessage = "";
+      showOrderModal = false;
+      resetOrderForm();
+      setTimeout(() => window.location.reload(), 1000);
+    } else {
+      errorMessage = form.message;
+      successMessage = "";
     }
   });
 
@@ -96,6 +159,39 @@
     errorMessage = "";
     successMessage = "";
     // The form will be submitted to the server action naturally
+  }
+
+  function openTransferModal() {
+    errorMessage = "";
+    successMessage = "";
+    transferQuantity = Number(stock?.quantity ?? 0);
+    transferToBranchId = "";
+    transferNewMerchantId = "";
+    showTransferModal = true;
+  }
+
+  function closeTransferModal() {
+    showTransferModal = false;
+    transferToBranchId = "";
+    transferNewMerchantId = "";
+  }
+
+  function onTransferBranchChange() {
+    transferNewMerchantId = "";
+  }
+
+  function submitTransfer(e: Event) {
+    errorMessage = "";
+    successMessage = "";
+    if (!canSubmitTransfer) {
+      e.preventDefault();
+      if (transferToBranchId && merchantsForDestinationBranch.length === 0) {
+        errorMessage =
+          "No merchants are assigned to the selected branch. Add a merchant first.";
+      } else if (!transferNewMerchantId) {
+        errorMessage = "Select a merchant for the destination branch.";
+      }
+    }
   }
 
   function statusClass(s: string) {
@@ -124,6 +220,23 @@
       >
         Create Order
       </button>
+      <button
+        type="button"
+        class="secondary"
+        onclick={openTransferModal}
+        disabled={!canTransferStock}
+        title={!canTransferStock
+          ? !stock?.branch
+            ? "Stock has no branch"
+            : transferTargetBranches.length === 0
+              ? "No other branches in the same company"
+              : Number(stock?.quantity) <= 0
+                ? "No quantity to transfer"
+                : "Cannot transfer"
+          : "Move this stock to another branch in the same company"}
+      >
+        Transfer stock
+      </button>
     </div>
 
     {#if errorMessage}
@@ -140,18 +253,27 @@
 
     <div class="detail">
       <div>
+        <span class="label">Type:</span><span>{typeDisplay(stock.type)}</span>
+      </div>
+      <div>
+        <span class="label">Model #:</span><span>{dash(stock.model_number)}</span>
+      </div>
+      <div>
+        <span class="label">Country:</span><span>{dash(stock.country)}</span>
+      </div>
+      <div>
         <span class="label">Selling price:</span><span
-          >Birr {stock.selling_price.toLocaleString()}</span
+          >Birr {sellingPriceDisplay}</span
         >
       </div>
       <div>
         <span class="label">Quantity:</span><span>{stock.quantity}</span>
       </div>
       <div>
-        <span class="label">Thickness:</span><span>{stock.thickness}</span>
+        <span class="label">Thickness:</span><span>{dash(stock.thickness)}</span>
       </div>
-      <div><span class="label">Color:</span><span>{stock.color}</span></div>
-      <div><span class="label">Figure:</span><span>{stock.figure}</span></div>
+      <div><span class="label">Color:</span><span>{dash(stock.color)}</span></div>
+      <div><span class="label">Figure:</span><span>{dash(stock.figure)}</span></div>
       <div>
         <span class="label">Investors:</span><span>{investorNames}</span>
       </div>
@@ -273,6 +395,97 @@
       </form>
     </dialog>
   {/if}
+
+  {#if showTransferModal && stock}
+    <div
+      class="modal-overlay"
+      role="button"
+      tabindex="0"
+      onclick={closeTransferModal}
+      onkeydown={(e) =>
+        (e.key === "Enter" || e.key === " ") && closeTransferModal()}
+    ></div>
+    <dialog open class="modal modal-compact" onclick={(e) => e.stopPropagation()}>
+      <header>
+        <h2>Transfer stock</h2>
+        <button class="icon" aria-label="Close" onclick={closeTransferModal}
+          >✕</button
+        >
+      </header>
+      <form
+        class="form transfer-form"
+        method="POST"
+        action="?/transferStock"
+        onsubmit={submitTransfer}
+      >
+        <div class="grid grid-single">
+          <label>
+            <span>Quantity</span>
+            <input
+              type="number"
+              name="quantity"
+              bind:value={transferQuantity}
+              min="1"
+              step="1"
+              readonly
+              class="readonly-field"
+              title="The full stock line is moved; quantity must match inventory"
+            />
+          </label>
+          <label>
+            <span>Move to</span>
+            <select
+              name="to_branch"
+              bind:value={transferToBranchId}
+              required
+              class="native-select"
+              onchange={onTransferBranchChange}
+            >
+              <option value="" disabled>Select branch</option>
+              {#each transferTargetBranches as br}
+                <option value={br.id}>{br.name ?? br.id}</option>
+              {/each}
+            </select>
+          </label>
+          <label>
+            <span>Merchant</span>
+            <select
+              name="stock_created_by"
+              bind:value={transferNewMerchantId}
+              class="native-select"
+              required={merchantsForDestinationBranch.length > 0}
+              disabled={!transferToBranchId ||
+                merchantsForDestinationBranch.length === 0}
+            >
+              <option value="" disabled>
+                {!transferToBranchId
+                  ? "Select a branch first"
+                  : merchantsForDestinationBranch.length === 0
+                    ? "No merchants in this branch"
+                    : "Select merchant"}
+              </option>
+              {#each merchantsForDestinationBranch as m}
+                <option value={m.id}>{merchantOptionLabel(m)}</option>
+              {/each}
+            </select>
+          </label>
+        </div>
+        <p class="transfer-note">
+          The stock moves to the chosen branch, <strong>created_by</strong> becomes
+          the selected merchant, and a transfers row is recorded (who performed the
+          transfer stays on that record).
+        </p>
+        <footer>
+          <button type="button" class="ghost" onclick={closeTransferModal}>
+            Cancel
+          </button>
+          <button type="submit" class="primary" disabled={!canSubmitTransfer}
+            >Transfer</button
+          >
+        </footer>
+      </form>
+    </dialog>
+  {/if}
 </section>
 
 <style>
@@ -284,6 +497,52 @@
   }
   .header-actions {
     margin: 0 0 0.75rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  .secondary {
+    appearance: none;
+    background: transparent;
+    color: #e5e7eb;
+    border: 1px solid color-mix(in oklab, var(--brand), white 25%);
+    font-weight: 700;
+    padding: 0.5rem 0.9rem;
+    border-radius: 0.6rem;
+    cursor: pointer;
+  }
+  .secondary:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--brand), black 85%);
+    color: #0b1220;
+  }
+  .secondary:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .modal-compact {
+    max-width: 440px;
+  }
+  .transfer-form .grid-single {
+    grid-template-columns: 1fr;
+  }
+  .readonly-field {
+    cursor: not-allowed;
+    opacity: 0.95;
+  }
+  .native-select {
+    background: color-mix(in oklab, var(--surface-2), white 2%);
+    color: #e5e7eb;
+    border: 1px solid color-mix(in oklab, var(--surface-2), white 12%);
+    border-radius: 0.6rem;
+    padding: 0.55rem 0.7rem;
+    cursor: pointer;
+  }
+  .transfer-note {
+    margin: 0 0 0.5rem;
+    font-size: 0.8rem;
+    color: #94a3b8;
+    line-height: 1.4;
   }
   .detail {
     display: grid;

@@ -1,4 +1,6 @@
 import type { Actions } from './$types';
+import { getUserIdFromToken } from '$lib/auth';
+import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
 import { config, getGraphQLHeaders } from '$lib/config';
 
 // GraphQL mutation to login
@@ -70,13 +72,18 @@ export const actions: Actions = {
 
       console.log('Login successful:', loginResult);
 
+      const userId = loginResult.token ? getUserIdFromToken(loginResult.token) : null;
+      const merchantBranchId = userId ? await fetchMerchantBranchId(userId) : null;
+
       return {
         token: loginResult.token,
+        merchantBranchId,
       };
     } catch (error) {
       console.error('Failed to login:', error);
       return {
         token: null,
+        merchantBranchId: null,
       };
     }
   },

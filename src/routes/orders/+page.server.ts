@@ -1,10 +1,11 @@
 import type { PageServerLoad, Actions } from './$types';
+import { getUserIdFromRequest } from '$lib/auth';
 import { config, getGraphQLHeaders } from '$lib/config';
 
-// GraphQL query to fetch orders
+// GraphQL query to fetch orders for the logged-in merchant
 const FETCH_ORDERS_QUERY = `
-  query GetOrders {
-    orders {
+  query GetOrders($merchantId: uuid!) {
+    orders(where: { created_by: { _eq: $merchantId } }) {
       created_by
       customer_address
       customer_name
@@ -19,6 +20,17 @@ const FETCH_ORDERS_QUERY = `
   }
 `;
 
+const FETCH_ORDER_FOR_MERCHANT_QUERY = `
+  query OrderForMerchant($id: uuid!, $merchantId: uuid!) {
+    orders(
+      where: { _and: [{ id: { _eq: $id } }, { created_by: { _eq: $merchantId } }] }
+      limit: 1
+    ) {
+      id
+    }
+  }
+`;
+
 // GraphQL mutation to delete an order
 const DELETE_ORDER_MUTATION = `
   mutation DeleteOrderById($id: uuid!) {
@@ -28,14 +40,14 @@ const DELETE_ORDER_MUTATION = `
   }
 `;
 
-// Function to fetch orders from GraphQL
-async function fetchOrders() {
+async function fetchOrders(merchantId: string) {
   try {
     const response = await fetch(config.graphql.endpoint, {
       method: 'POST',
       headers: getGraphQLHeaders(),
       body: JSON.stringify({
         query: FETCH_ORDERS_QUERY,
+        variables: { merchantId },
       }),
     });
 
@@ -49,11 +61,33 @@ async function fetchOrders() {
       throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
     }
 
-    return result.data.orders;
+    return result.data.orders ?? [];
   } catch (error) {
     console.error('Error fetching orders:', error);
-    // Return empty array if API fails
     return [];
+  }
+}
+
+async function orderBelongsToMerchant(orderId: string, merchantId: string): Promise<boolean> {
+  try {
+    const response = await fetch(config.graphql.endpoint, {
+      method: 'POST',
+      headers: getGraphQLHeaders(),
+      body: JSON.stringify({
+        query: FETCH_ORDER_FOR_MERCHANT_QUERY,
+        variables: { id: orderId, merchantId },
+      }),
+    });
+
+    if (!response.ok) return false;
+
+    const result = await response.json();
+    if (result.errors) return false;
+
+    const rows = result.data?.orders ?? [];
+    return rows.length > 0;
+  } catch {
+    return false;
   }
 }
 
@@ -98,8 +132,9 @@ async function deleteOrder(orderId: string) {
   }
 }
 
-export const load: PageServerLoad = async () => {
-  const orders = await fetchOrders();
+export const load: PageServerLoad = async ({ request }) => {
+  const merchantId = getUserIdFromRequest(request);
+  const orders = merchantId ? await fetchOrders(merchantId) : [];
 
   return {
     orders,
@@ -141,6 +176,16 @@ export const actions: Actions = {
         success: false,
         message: 'Order ID is required',
       };
+    }
+
+    const merchantId = getUserIdFromRequest(request);
+    if (!merchantId) {
+      return { success: false, message: 'Authentication required' };
+    }
+
+    const allowed = await orderBelongsToMerchant(orderId, merchantId);
+    if (!allowed) {
+      return { success: false, message: 'Order not found' };
     }
 
     try {

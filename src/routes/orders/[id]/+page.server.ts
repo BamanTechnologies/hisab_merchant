@@ -1,11 +1,14 @@
 import type { PageServerLoad, Actions } from './$types';
+import { error } from '@sveltejs/kit';
 import { getUserIdFromRequest } from '$lib/auth';
 import { config, getGraphQLHeaders } from '$lib/config';
 
-// GraphQL query to fetch all orders (we'll filter by ID)
-const FETCH_ORDERS_QUERY = `
-  query GetOrders {
-    orders {
+const FETCH_ORDER_FOR_MERCHANT_QUERY = `
+  query GetOrderForMerchant($id: uuid!, $merchantId: uuid!) {
+    orders(
+      where: { _and: [{ id: { _eq: $id } }, { created_by: { _eq: $merchantId } }] }
+      limit: 1
+    ) {
       created_by
       customer_address
       customer_name
@@ -31,14 +34,14 @@ const CREATE_PAYMENT_MUTATION = `
   }
 `;
 
-// Function to fetch a single order from GraphQL
-async function fetchOrder(id: string) {
+async function fetchOrderForMerchant(id: string, merchantId: string) {
   try {
     const response = await fetch(config.graphql.endpoint, {
       method: 'POST',
       headers: getGraphQLHeaders(),
       body: JSON.stringify({
-        query: FETCH_ORDERS_QUERY,
+        query: FETCH_ORDER_FOR_MERCHANT_QUERY,
+        variables: { id, merchantId },
       }),
     });
 
@@ -52,12 +55,10 @@ async function fetchOrder(id: string) {
       throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
     }
 
-    // Filter the orders array to find the one with matching ID
     const orders = result.data.orders || [];
-    return orders.find((order: any) => order.id === id) || null;
-  } catch (error) {
-    console.error('Error fetching order:', error);
-    // Return null if API fails
+    return orders[0] ?? null;
+  } catch (e) {
+    console.error('Error fetching order:', e);
     return null;
   }
 }
@@ -113,11 +114,16 @@ async function createPayment(paymentData: {
   }
 }
 
-export const load: PageServerLoad = async ({ params }) => {
-  const order = await fetchOrder(params.id);
+export const load: PageServerLoad = async ({ params, request }) => {
+  const merchantId = getUserIdFromRequest(request);
+  if (!merchantId) {
+    error(404, 'Order not found');
+  }
+
+  const order = await fetchOrderForMerchant(params.id, merchantId);
 
   if (!order) {
-    throw new Error('Order not found');
+    error(404, 'Order not found');
   }
 
   return {
@@ -150,6 +156,11 @@ export const actions: Actions = {
       amount,
       paymentMethod,
     });
+
+    const order = await fetchOrderForMerchant(orderId, userId);
+    if (!order) {
+      return { success: false, message: 'Order not found' };
+    }
 
     try {
       const result = await createPayment({

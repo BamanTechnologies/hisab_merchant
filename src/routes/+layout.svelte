@@ -15,6 +15,10 @@
     // Set up authentication headers for all requests
     if (token) {
       setupAuthHeaders(token);
+      const branchId = localStorage.getItem("merchantBranchId");
+      if (branchId) {
+        document.cookie = `merchantBranchId=${branchId}; path=/; secure; samesite=strict`;
+      }
     }
 
     // If not authenticated and not on sign-in page, redirect to sign-in
@@ -32,9 +36,12 @@
   function handleLogout() {
     // Clear token from localStorage
     localStorage.removeItem("authToken");
+    localStorage.removeItem("merchantBranchId");
     // Clear authentication cookie
     document.cookie =
       "authToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    document.cookie =
+      "merchantBranchId=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
     isAuthenticated = false;
 
     // Redirect to sign-in page
