@@ -5,7 +5,11 @@ import { config, getGraphQLHeaders } from '$lib/config';
 // GraphQL query to fetch orders for the logged-in merchant
 const FETCH_ORDERS_QUERY = `
   query GetOrders($merchantId: uuid!) {
-    orders(where: { created_by: { _eq: $merchantId } }) {
+    orders(
+      where: { created_by: { _eq: $merchantId } }
+      order_by: { created_at: desc }
+    ) {
+      created_at
       created_by
       customer_address
       customer_name

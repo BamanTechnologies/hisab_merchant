@@ -4,6 +4,7 @@
 
   type OrderSummary = {
     id: string;
+    created_at: string;
     created_by: string;
     customer_address: string;
     customer_name: string;
@@ -21,6 +22,22 @@
   let orders = $state(data.orders);
   let errorMessage = $state("");
   let successMessage = $state("");
+
+  function formatOrderDate(iso: string) {
+    try {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return "—";
+      return d.toLocaleString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return "—";
+    }
+  }
 
   function statusClass(status: string) {
     if (status === "paid") return "ok";
@@ -138,6 +155,7 @@
   <table class="data-table">
     <thead>
       <tr>
+        <th>Date</th>
         <th>Customer</th>
         <th class="right">Quantity</th>
         <th>Status</th>
@@ -153,6 +171,7 @@
           tabindex="0"
           role="button"
         >
+          <td class="nowrap">{formatOrderDate(o.created_at)}</td>
           <td>{o.customer_name}</td>
           <td class="right">{o.order_quantity}</td>
           <td><span class="chip {statusClass(o.status)}">{o.status}</span></td>
@@ -171,7 +190,7 @@
       {/each}
       {#if orders.length === 0}
         <tr>
-          <td colspan="5" class="empty-state">
+          <td colspan="6" class="empty-state">
             <p class="muted">
               No orders found. Create your first order to get started.
             </p>
@@ -218,6 +237,10 @@
     color: #94a3b8;
     font-weight: 700;
     font-size: 0.9rem;
+  }
+  .nowrap {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
   }
   .right {
     text-align: right;

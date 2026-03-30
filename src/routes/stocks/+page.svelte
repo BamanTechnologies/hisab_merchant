@@ -44,15 +44,35 @@
   const merchantBranchId = data.merchantBranchId as string | null;
 
   let typeFilter = $state<"all" | "glass" | "brake_pad">("all");
-  const filteredStocks = $derived(
-    typeFilter === "all"
-      ? stocks
-      : typeFilter === "brake_pad"
-        ? stocks.filter(
-            (s: Stock) => s.type === "brake_pad" || s.type === "break_pad",
-          )
-        : stocks.filter((s: Stock) => s.type === typeFilter),
-  );
+  let countryFilter = $state<string>("all");
+
+  const countryOptions = $derived.by(() => {
+    const seen = new Set<string>();
+    for (const s of stocks) {
+      const c = s.country?.trim();
+      if (c) seen.add(c);
+    }
+    return [...seen].sort((a, b) => a.localeCompare(b));
+  });
+
+  const filteredStocks = $derived.by(() => {
+    let list = stocks;
+    if (typeFilter !== "all") {
+      list =
+        typeFilter === "brake_pad"
+          ? list.filter(
+              (s: Stock) =>
+                s.type === "brake_pad" || s.type === "break_pad",
+            )
+          : list.filter((s: Stock) => s.type === typeFilter);
+    }
+    if (countryFilter !== "all") {
+      list = list.filter(
+        (s: Stock) => (s.country?.trim() || "") === countryFilter,
+      );
+    }
+    return list;
+  });
 
   // Create form state
   let purchasedPrice = $state<number | undefined>(undefined);
@@ -313,6 +333,15 @@
         <option value="all">All</option>
         <option value="glass">Glass</option>
         <option value="brake_pad">Brake pads</option>
+      </select>
+    </label>
+    <label class="filter-field">
+      <span class="filter-label">Country</span>
+      <select class="filter-select" bind:value={countryFilter}>
+        <option value="all">All</option>
+        {#each countryOptions as c}
+          <option value={c}>{c}</option>
+        {/each}
       </select>
     </label>
     <button class="primary" onclick={openCreateModal}>New Stock</button>
@@ -595,6 +624,7 @@
         <th>Type</th>
         <th>Branch</th>
         <th>Model #</th>
+        <th>Country</th>
         <th>Thickness</th>
         <th>Color</th>
         <th>Figure</th>
@@ -613,6 +643,7 @@
           <td>{typeDisplay(s.type)}</td>
           <td>{branchLabel(s.branch)}</td>
           <td>{dash(s.model_number)}</td>
+          <td>{dash(s.country)}</td>
           <td>{dash(s.thickness)}</td>
           <td>{dash(s.color)}</td>
           <td>{dash(s.figure)}</td>
@@ -639,12 +670,12 @@
       {/each}
       {#if filteredStocks.length === 0}
         <tr>
-          <td colspan="8" class="empty-state">
+          <td colspan="9" class="empty-state">
             <p class="muted">
               {#if stocks.length === 0}
                 No stocks found. Create your first stock to get started.
               {:else}
-                No stocks match this type filter.
+                No stocks match the selected filters.
               {/if}
             </p>
           </td>
