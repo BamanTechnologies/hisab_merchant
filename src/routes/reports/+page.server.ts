@@ -4,7 +4,10 @@ import { config, getGraphQLHeaders } from '$lib/config';
 
 const FETCH_REPORTS_QUERY = `
   query GetReports($merchantId: uuid!) {
-    reports(where: { merchant_id: { _eq: $merchantId } }) {
+    reports(
+      where: { merchant_id: { _eq: $merchantId } }
+      order_by: { created_at: desc }
+    ) {
       id
       investor_phone
       sms_status
