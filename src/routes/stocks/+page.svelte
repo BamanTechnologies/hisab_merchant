@@ -44,16 +44,37 @@
   const merchantBranchId = data.merchantBranchId as string | null;
 
   let typeFilter = $state<"all" | "glass" | "brake_pad">("all");
-  let countryFilter = $state<string>("all");
 
-  const countryOptions = $derived.by(() => {
-    const seen = new Set<string>();
-    for (const s of stocks) {
-      const c = s.country?.trim();
-      if (c) seen.add(c);
+  type SortColumn = "none" | "type" | "country" | "color" | "figure";
+  let sortColumn = $state<SortColumn>("none");
+  let sortDirection = $state<"asc" | "desc">("asc");
+
+  function sortKey(s: Stock, col: Exclude<SortColumn, "none">): string {
+    switch (col) {
+      case "type":
+        return (s.type?.trim() ?? "").toLowerCase();
+      case "country":
+        return (s.country?.trim() ?? "").toLowerCase();
+      case "color":
+        return (s.color?.trim() ?? "").toLowerCase();
+      case "figure":
+        return (s.figure?.trim() ?? "").toLowerCase();
     }
-    return [...seen].sort((a, b) => a.localeCompare(b));
-  });
+  }
+
+  function cycleSort(col: Exclude<SortColumn, "none">, e: Event) {
+    e.stopPropagation();
+    if (sortColumn !== col) {
+      sortColumn = col;
+      sortDirection = "asc";
+      return;
+    }
+    if (sortDirection === "asc") sortDirection = "desc";
+    else {
+      sortColumn = "none";
+      sortDirection = "asc";
+    }
+  }
 
   const filteredStocks = $derived.by(() => {
     let list = stocks;
@@ -66,10 +87,12 @@
             )
           : list.filter((s: Stock) => s.type === typeFilter);
     }
-    if (countryFilter !== "all") {
-      list = list.filter(
-        (s: Stock) => (s.country?.trim() || "") === countryFilter,
-      );
+    if (sortColumn !== "none") {
+      const col = sortColumn;
+      list = [...list].sort((a, b) => {
+        const cmp = sortKey(a, col).localeCompare(sortKey(b, col));
+        return sortDirection === "asc" ? cmp : -cmp;
+      });
     }
     return list;
   });
@@ -333,15 +356,6 @@
         <option value="all">All</option>
         <option value="glass">Glass</option>
         <option value="brake_pad">Brake pads</option>
-      </select>
-    </label>
-    <label class="filter-field">
-      <span class="filter-label">Country</span>
-      <select class="filter-select" bind:value={countryFilter}>
-        <option value="all">All</option>
-        {#each countryOptions as c}
-          <option value={c}>{c}</option>
-        {/each}
       </select>
     </label>
     <button class="primary" onclick={openCreateModal}>New Stock</button>
@@ -621,13 +635,129 @@
   <table class="data-table">
     <thead>
       <tr>
-        <th>Type</th>
+        <th
+          class="th-sort"
+          aria-sort={sortColumn === "type"
+            ? sortDirection === "asc"
+              ? "ascending"
+              : "descending"
+            : "none"}
+        >
+          <button
+            type="button"
+            class="sort-header-btn"
+            onclick={(e) => cycleSort("type", e)}
+            aria-label="Sort by type. Cycles default, A to Z, Z to A, then clear."
+            title="Sort by type: default → A–Z → Z–A → default"
+          >
+            <span class="sort-header-label">Type</span>
+            <span class="sort-arrows" aria-hidden="true">
+              <span
+                class="sort-arrow"
+                class:sort-arrow-on={sortColumn === "type" &&
+                  sortDirection === "asc"}>▲</span
+              >
+              <span
+                class="sort-arrow"
+                class:sort-arrow-on={sortColumn === "type" &&
+                  sortDirection === "desc"}>▼</span
+              >
+            </span>
+          </button>
+        </th>
         <th>Branch</th>
         <th>Model #</th>
-        <th>Country</th>
+        <th
+          class="th-sort"
+          aria-sort={sortColumn === "country"
+            ? sortDirection === "asc"
+              ? "ascending"
+              : "descending"
+            : "none"}
+        >
+          <button
+            type="button"
+            class="sort-header-btn"
+            onclick={(e) => cycleSort("country", e)}
+            aria-label="Sort by country. Cycles default, A to Z, Z to A, then clear."
+            title="Sort by country: default → A–Z → Z–A → default"
+          >
+            <span class="sort-header-label">Country</span>
+            <span class="sort-arrows" aria-hidden="true">
+              <span
+                class="sort-arrow"
+                class:sort-arrow-on={sortColumn === "country" &&
+                  sortDirection === "asc"}>▲</span
+              >
+              <span
+                class="sort-arrow"
+                class:sort-arrow-on={sortColumn === "country" &&
+                  sortDirection === "desc"}>▼</span
+              >
+            </span>
+          </button>
+        </th>
         <th>Thickness</th>
-        <th>Color</th>
-        <th>Figure</th>
+        <th
+          class="th-sort"
+          aria-sort={sortColumn === "color"
+            ? sortDirection === "asc"
+              ? "ascending"
+              : "descending"
+            : "none"}
+        >
+          <button
+            type="button"
+            class="sort-header-btn"
+            onclick={(e) => cycleSort("color", e)}
+            aria-label="Sort by color. Cycles default, A to Z, Z to A, then clear."
+            title="Sort by color: default → A–Z → Z–A → default"
+          >
+            <span class="sort-header-label">Color</span>
+            <span class="sort-arrows" aria-hidden="true">
+              <span
+                class="sort-arrow"
+                class:sort-arrow-on={sortColumn === "color" &&
+                  sortDirection === "asc"}>▲</span
+              >
+              <span
+                class="sort-arrow"
+                class:sort-arrow-on={sortColumn === "color" &&
+                  sortDirection === "desc"}>▼</span
+              >
+            </span>
+          </button>
+        </th>
+        <th
+          class="th-sort"
+          aria-sort={sortColumn === "figure"
+            ? sortDirection === "asc"
+              ? "ascending"
+              : "descending"
+            : "none"}
+        >
+          <button
+            type="button"
+            class="sort-header-btn"
+            onclick={(e) => cycleSort("figure", e)}
+            aria-label="Sort by figure. Cycles default, A to Z, Z to A, then clear."
+            title="Sort by figure: default → A–Z → Z–A → default"
+          >
+            <span class="sort-header-label">Figure</span>
+            <span class="sort-arrows" aria-hidden="true">
+              <span
+                class="sort-arrow"
+                class:sort-arrow-on={sortColumn === "figure" &&
+                  sortDirection === "asc"}>▲</span
+              >
+              <span
+                class="sort-arrow"
+                class:sort-arrow-on={sortColumn === "figure" &&
+                  sortDirection === "desc"}>▼</span
+              >
+            </span>
+          </button>
+        </th>
         <th class="right">Quantity</th>
         <th class="center">Actions</th>
       </tr>
@@ -675,7 +805,7 @@
               {#if stocks.length === 0}
                 No stocks found. Create your first stock to get started.
               {:else}
-                No stocks match the selected filters.
+                No stocks match the selected type filter.
               {/if}
             </p>
           </td>
@@ -775,6 +905,53 @@
     color: #94a3b8;
     font-weight: 700;
     font-size: 0.9rem;
+  }
+  .th-sort {
+    vertical-align: middle;
+    padding: 0.35rem 0.5rem;
+  }
+  .sort-header-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    width: 100%;
+    margin: 0;
+    padding: 0.35rem 0.4rem;
+    border: none;
+    border-radius: 0.45rem;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    text-align: left;
+  }
+  .sort-header-btn:hover {
+    background: color-mix(in oklab, var(--surface-2), white 8%);
+    color: #e5e7eb;
+  }
+  .sort-header-btn:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  .sort-header-label {
+    flex: 1;
+    min-width: 0;
+  }
+  .sort-arrows {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 0;
+    line-height: 0.85;
+    font-size: 0.55rem;
+    flex-shrink: 0;
+  }
+  .sort-arrow {
+    color: color-mix(in oklab, var(--muted), transparent 55%);
+    transition: color 120ms ease;
+  }
+  .sort-arrow.sort-arrow-on {
+    color: var(--brand);
   }
   td {
     border-top: 1px solid color-mix(in oklab, var(--surface-2), white 8%);
