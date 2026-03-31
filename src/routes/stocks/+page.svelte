@@ -82,8 +82,7 @@
       list =
         typeFilter === "brake_pad"
           ? list.filter(
-              (s: Stock) =>
-                s.type === "brake_pad" || s.type === "break_pad",
+              (s: Stock) => s.type === "brake_pad" || s.type === "break_pad",
             )
           : list.filter((s: Stock) => s.type === typeFilter);
     }

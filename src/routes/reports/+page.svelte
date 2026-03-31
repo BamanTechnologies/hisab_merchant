@@ -6,7 +6,7 @@
     investor_phone: string;
     sms_status: string;
     message: string;
-    created_at: string;
+    updated_at: string;
   };
 
   type Investor = {
@@ -229,7 +229,7 @@
         <tbody>
           {#each reports as report (report.id)}
             <tr onclick={() => openModal(report)}>
-              <td>{formatDate(report.created_at)}</td>
+              <td>{formatDate(report.updated_at)}</td>
               <td>{report.investor_phone}</td>
               <td>
                 <span class="chip {getStatusClass(report.sms_status)}">
@@ -291,7 +291,7 @@
             </div>
             <div class="info-item">
               <span class="label">Sent:</span>
-              <span>{formatDate(selectedReport.created_at)}</span>
+              <span>{formatDate(selectedReport.updated_at)}</span>
             </div>
           </div>
         </div>
@@ -303,6 +303,24 @@
           </div>
         </div>
       </div>
+      <footer class="message-footer">
+        {#if getStatusClass(selectedReport.sms_status) === "bad"}
+          <form
+            method="POST"
+            action="?/resendReport"
+            onsubmit={() => {
+              errorMessage = "";
+              successMessage = "";
+            }}
+            style="display: inline-flex; gap: 0.5rem;"
+          >
+            <input type="hidden" name="report_id" value={selectedReport.id} />
+            <button type="submit" class="primary small">
+              Resend
+            </button>
+          </form>
+        {/if}
+      </footer>
     </div>
   </div>
 {/if}
@@ -705,6 +723,15 @@
     color: #e2e8f0;
   }
 
+  .message-footer {
+    display: flex;
+    justify-content: flex-end;
+    padding: 0.75rem 1.5rem 1rem;
+    border-top: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
+    gap: 0.5rem;
+  }
+
+
   .message-content {
     padding: 1.5rem;
     flex: 1;
@@ -785,6 +812,10 @@
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.2) inset,
       0 8px 20px rgba(59, 130, 246, 0.2);
+  }
+  .primary.small {
+    padding: 0.35rem 0.7rem;
+    font-size: 0.8rem;
   }
 
   .primary:disabled {

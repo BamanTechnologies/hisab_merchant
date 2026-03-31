@@ -6,13 +6,13 @@ const FETCH_REPORTS_QUERY = `
   query GetReports($merchantId: uuid!) {
     reports(
       where: { merchant_id: { _eq: $merchantId } }
-      order_by: { created_at: desc }
+      order_by: { updated_at: desc }
     ) {
       id
       investor_phone
       sms_status
       message
-      created_at
+      updated_at
     }
   }
 `;
@@ -319,6 +319,44 @@ export const actions: Actions = {
       return {
         success: false,
         message: `Failed to send report: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      };
+    }
+  },
+  resendReport: async ({ request }) => {
+    const formData = await request.formData();
+    const reportId = formData.get('report_id') as string;
+
+    if (!reportId) {
+      return {
+        success: false,
+        message: 'Report ID is required',
+      };
+    }
+
+    const userId = getUserIdFromRequest(request);
+    if (!userId) {
+      return {
+        success: false,
+        message: 'Authentication required',
+      };
+    }
+
+    try {
+      const smsResult = await sendReport({
+        report_id: reportId,
+        resend: true,
+      });
+
+      return {
+        success: true,
+        message: `Report resent. Success: ${smsResult.success_count}, Failures: ${smsResult.failure_count}`,
+        smsResult,
+      };
+    } catch (error) {
+      console.error('Failed to resend report:', error);
+      return {
+        success: false,
+        message: `Failed to resend report: ${error instanceof Error ? error.message : 'Unknown error'}`,
       };
     }
   },
