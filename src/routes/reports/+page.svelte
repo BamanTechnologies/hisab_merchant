@@ -102,7 +102,8 @@
 
   function reportStockTypeLabel(t: string | null | undefined) {
     if (t === "glass") return "Glass";
-    if (t === "brake_pad" || t === "break_pad") return "Brake pads";
+    if (t === "brake_lining" || t === "brake_pad" || t === "break_pad")
+      return "Brake lining";
     return t && String(t).trim() !== "" ? String(t) : "—";
   }
 

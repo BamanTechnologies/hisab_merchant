@@ -36,14 +36,15 @@ async function fetchPayments(merchantId: string) {
     }
 
     return result.data.payment ?? [];
-  } catch (error) {
-    console.error('Error fetching payments:', error);
+  } catch {
     return [];
   }
 }
 
-export const load: PageServerLoad = async ({ request }) => {
-  const merchantId = getUserIdFromRequest(request);
+export const load: PageServerLoad = async ({ request, parent }) => {
+  const { merchantContext } = await parent();
+  const merchantId =
+    merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
   const payments = merchantId ? await fetchPayments(merchantId) : [];
 
   return {
@@ -61,11 +62,6 @@ export const actions: Actions = {
     const paymentMethod = formData.get('paymentMethod') as string;
 
     // TODO: Implement GraphQL mutation to create payment
-    console.log('Creating payment with data:', {
-      orderId,
-      amount,
-      paymentMethod,
-    });
 
     // For now, just return success
     return {

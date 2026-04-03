@@ -24,6 +24,7 @@
     selling_price: number | string;
     factor?: number | null;
     thickness?: number | string | null;
+    unit?: string | null;
   };
 
   type TransferBranch = { id: string; name?: string | null };
@@ -65,13 +66,6 @@
       : "-"
   );
 
-  // Create Order modal state (UI only for now)
-  let showOrderModal = $state(false);
-  let customerName = $state("");
-  let customerAddress = $state("");
-  let customerPhone = $state("");
-  let orderQuantity = $state(0);
-
   let showTransferModal = $state(false);
   let transferQuantity = $state(0);
   let transferToBranchId = $state("");
@@ -85,10 +79,16 @@
       : []
   );
 
+  const maxTransferQty = $derived(
+    stock ? Math.max(0, Number(stock.quantity)) : 0,
+  );
+
   const canSubmitTransfer = $derived(
     !!transferToBranchId &&
       merchantsForDestinationBranch.length > 0 &&
-      !!transferNewMerchantId
+      !!transferNewMerchantId &&
+      transferQuantity > 0 &&
+      transferQuantity <= maxTransferQty
   );
 
   const canTransferStock = $derived(
@@ -121,45 +121,33 @@
 
   function typeDisplay(t: string | null | undefined) {
     if (t === "glass") return "Glass";
-    if (t === "brake_pad" || t === "break_pad") return "Brake pads";
+    if (t === "brake_lining" || t === "brake_pad" || t === "break_pad")
+      return "Brake lining";
     return t ?? "—";
   }
   function dash(v: unknown) {
     if (v === null || v === undefined || v === "") return "—";
     return String(v);
   }
-  const maxAvailable = $derived(stock?.quantity ?? 0);
-  const totalAmount = $derived(orderQuantity * sellingPrice * factor);
-  const outstandingAmount = $derived(totalAmount);
+  const quantityDisplay = $derived.by(() => {
+    if (!stock) return "—";
+    const u = (stock.unit ?? "").trim();
+    return u ? `${stock.quantity} ${u}` : String(stock.quantity);
+  });
 
-  function resetOrderForm() {
-    customerName = "";
-    customerAddress = "";
-    customerPhone = "";
-    orderQuantity = 0;
-  }
-
-  // Handle form response
+  // Handle transfer form response
   $effect(() => {
     if (!form) return;
     if (form.success) {
       successMessage = form.message;
       errorMessage = "";
-      showOrderModal = false;
-      resetOrderForm();
+      showTransferModal = false;
       setTimeout(() => window.location.reload(), 1000);
     } else {
       errorMessage = form.message;
       successMessage = "";
     }
   });
-
-  function submitOrder(e: Event) {
-    // Clear previous messages
-    errorMessage = "";
-    successMessage = "";
-    // The form will be submitted to the server action naturally
-  }
 
   function openTransferModal() {
     errorMessage = "";
@@ -185,7 +173,9 @@
     successMessage = "";
     if (!canSubmitTransfer) {
       e.preventDefault();
-      if (transferToBranchId && merchantsForDestinationBranch.length === 0) {
+      if (transferQuantity <= 0 || transferQuantity > maxTransferQty) {
+        errorMessage = `Enter a quantity greater than 0 and at most ${maxTransferQty}.`;
+      } else if (transferToBranchId && merchantsForDestinationBranch.length === 0) {
         errorMessage =
           "No merchants are assigned to the selected branch. Add a merchant first.";
       } else if (!transferNewMerchantId) {
@@ -199,27 +189,12 @@
     if (s === "partially paid") return "warn";
     return "bad";
   }
-  function isOrderValid(s: Stock | undefined, q: number | undefined) {
-    if (!s) return false;
-    const qty = Number(q ?? 0);
-    return qty > 0 && qty <= s.quantity;
-  }
 </script>
 
 <section>
   <h1>Stock Details</h1>
   {#if stock}
     <div class="header-actions">
-      <button
-        class="primary"
-        onclick={() => (showOrderModal = true)}
-        disabled={stock?.quantity <= 0}
-        title={stock?.quantity <= 0
-          ? "Cannot create order: Stock quantity is 0 or below"
-          : "Create a new order for this stock"}
-      >
-        Create Order
-      </button>
       <button
         type="button"
         class="secondary"
@@ -267,7 +242,7 @@
         >
       </div>
       <div>
-        <span class="label">Quantity:</span><span>{stock.quantity}</span>
+        <span class="label">Quantity:</span><span>{quantityDisplay}</span>
       </div>
       <div>
         <span class="label">Thickness:</span><span>{dash(stock.thickness)}</span>
@@ -280,120 +255,6 @@
     </div>
   {:else}
     <p class="muted">Stock not found.</p>
-  {/if}
-
-  {#if showOrderModal}
-    <div
-      class="modal-overlay"
-      role="button"
-      tabindex="0"
-      onclick={() => (showOrderModal = false)}
-      onkeydown={(e) =>
-        (e.key === "Enter" || e.key === " ") && (showOrderModal = false)}
-    ></div>
-    <dialog open class="modal" onclick={(e) => e.stopPropagation()}>
-      <header>
-        <h2>Create Order</h2>
-        <button
-          class="icon"
-          aria-label="Close"
-          onclick={() => (showOrderModal = false)}>✕</button
-        >
-      </header>
-      <form
-        class="form"
-        method="POST"
-        action="?/createOrder"
-        onsubmit={submitOrder}
-      >
-        <!-- All required form fields -->
-        <input type="hidden" name="status" value="unpaid" />
-        <input type="hidden" name="stock_id" value={stock?.id || ""} />
-
-        <div class="grid">
-          <label>
-            <span>Customer Name</span>
-            <input
-              type="text"
-              name="customer_name"
-              bind:value={customerName}
-              placeholder="Enter customer name"
-              required
-            />
-          </label>
-
-          <label>
-            <span>Customer Address</span>
-            <input
-              type="text"
-              name="customer_address"
-              bind:value={customerAddress}
-              placeholder="Enter customer address"
-            />
-          </label>
-
-          <label>
-            <span>Customer Phone</span>
-            <input
-              type="tel"
-              name="customer_phone"
-              bind:value={customerPhone}
-              placeholder="Enter phone number"
-            />
-          </label>
-
-          <label>
-            <span>Order Quantity</span>
-            <input
-              type="number"
-              name="order_quantity"
-              bind:value={orderQuantity}
-              min="0"
-              max={maxAvailable}
-              required
-            />
-          </label>
-        </div>
-
-        <div class="summary">
-          <div class="summary-item">
-            <label>
-              <span class="label">Total Amount:</span>
-              <input
-                type="number"
-                name="total_amount"
-                readonly
-                value={totalAmount}
-                class="readonly-input"
-              />
-            </label>
-          </div>
-          <div class="summary-item">
-            <label>
-              <span class="label">Outstanding Amount:</span>
-              <input
-                type="number"
-                name="outstanding_amount"
-                readonly
-                value={outstandingAmount}
-                class="readonly-input"
-              />
-            </label>
-          </div>
-        </div>
-
-        <footer>
-          <button
-            type="button"
-            class="ghost"
-            onclick={() => (showOrderModal = false)}
-          >
-            Cancel
-          </button>
-          <button type="submit" class="primary"> Create Order </button>
-        </footer>
-      </form>
-    </dialog>
   {/if}
 
   {#if showTransferModal && stock}
@@ -420,16 +281,16 @@
       >
         <div class="grid grid-single">
           <label>
-            <span>Quantity</span>
+            <span>Quantity to transfer</span>
             <input
               type="number"
               name="quantity"
               bind:value={transferQuantity}
-              min="1"
-              step="1"
-              readonly
-              class="readonly-field"
-              title="The full stock line is moved; quantity must match inventory"
+              min="0.0001"
+              max={maxTransferQty || undefined}
+              step="any"
+              required
+              title="Amount to move to the destination branch; source line is reduced by this amount"
             />
           </label>
           <label>
@@ -471,9 +332,12 @@
           </label>
         </div>
         <p class="transfer-note">
-          The stock moves to the chosen branch, <strong>created_by</strong> becomes
-          the selected merchant, and a transfers row is recorded (who performed the
-          transfer stays on that record).
+          A <strong>new stock line</strong> is created at the destination branch with
+          the quantity you enter (same product details). This line’s
+          <strong>created_by</strong> and <strong>updated_by</strong> are the
+          selected merchant. The current line’s quantity is reduced and
+          <strong>updated_by</strong> is set to you. A transfers row records the move
+          (initiator on that record).
         </p>
         <footer>
           <button type="button" class="ghost" onclick={closeTransferModal}>
@@ -525,10 +389,6 @@
   }
   .transfer-form .grid-single {
     grid-template-columns: 1fr;
-  }
-  .readonly-field {
-    cursor: not-allowed;
-    opacity: 0.95;
   }
   .native-select {
     background: color-mix(in oklab, var(--surface-2), white 2%);
@@ -654,37 +514,6 @@
     border: 1px solid color-mix(in oklab, var(--surface-2), white 12%);
     border-radius: 0.6rem;
     padding: 0.55rem 0.7rem;
-  }
-  .summary {
-    grid-column: 1 / -1;
-    display: grid;
-    gap: 0.5rem;
-    background: color-mix(in oklab, var(--surface-2), white 4%);
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-    border-radius: 0.6rem;
-    padding: 0.75rem;
-  }
-  .summary-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .summary-item .label {
-    font-weight: 600;
-    color: #94a3b8;
-  }
-  /* .readonly-input {
-    background: color-mix(in oklab, var(--surface-2), white 2%);
-    color: #e5e7eb;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 12%);
-    border-radius: 0.6rem;
-    padding: 0.55rem 0.7rem;
-    font-weight: 700;
-    cursor: not-allowed;
-  } */
-  .readonly-input:focus {
-    outline: none;
-    border-color: color-mix(in oklab, var(--surface-2), white 20%);
   }
   footer {
     display: flex;

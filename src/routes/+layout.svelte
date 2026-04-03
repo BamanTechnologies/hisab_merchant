@@ -1,18 +1,34 @@
 <script lang="ts">
   import favicon from "$lib/assets/favicon.svg";
+  import { browser } from "$app/environment";
   import { page } from "$app/stores";
   import { goto } from "$app/navigation";
   import { onMount } from "svelte";
+  import type { LayoutData } from "./$types";
 
-  let { children } = $props();
-  let isAuthenticated = $state(false);
+  let { data, children }: { data: LayoutData; children: import("svelte").Snippet } =
+    $props();
+
+  /** Server session (auth cookie) or client token — avoids waiting for onMount to show the shell. */
+  function shellVisible(): boolean {
+    const serverOk = data.merchantContext != null;
+    if (!browser) return serverOk;
+    return serverOk || !!localStorage.getItem("authToken");
+  }
+
+  let isAuthenticated = $state(shellVisible());
+
+  $effect(() => {
+    const serverOk = data.merchantContext != null;
+    if (!browser) {
+      isAuthenticated = serverOk;
+      return;
+    }
+    isAuthenticated = serverOk || !!localStorage.getItem("authToken");
+  });
 
   onMount(() => {
-    // Check if user is authenticated
     const token = localStorage.getItem("authToken");
-    isAuthenticated = !!token;
-
-    // Set up authentication headers for all requests
     if (token) {
       setupAuthHeaders(token);
       const branchId = localStorage.getItem("merchantBranchId");
@@ -21,8 +37,11 @@
       }
     }
 
-    // If not authenticated and not on sign-in page, redirect to sign-in
-    if (!token && $page.url.pathname !== "/sign-in") {
+    if (
+      !token &&
+      data.merchantContext == null &&
+      $page.url.pathname !== "/sign-in"
+    ) {
       goto("/sign-in");
     }
   });
@@ -73,8 +92,16 @@
         >Orders</a
       >
       <a
+        href="/customers"
+        class:active={$page.url.pathname.startsWith("/customers")}>Customers</a
+      >
+      <a
         href="/payments"
         class:active={$page.url.pathname.startsWith("/payments")}>Payments</a
+      >
+      <a
+        href="/expenses"
+        class:active={$page.url.pathname.startsWith("/expenses")}>Expenses</a
       >
       <a
         href="/reports"

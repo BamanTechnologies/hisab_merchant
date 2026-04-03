@@ -21,6 +21,7 @@ const STOCK_FIELDS = `
       selling_price
       thickness
       factor
+      unit
 `;
 
 // GraphQL query to fetch stocks (optionally scoped to a branch)
@@ -85,8 +86,7 @@ async function fetchStocks(merchantBranchId: string | null) {
     }
 
     return result.data.stock;
-  } catch (error) {
-    console.error('Error fetching stocks:', error);
+  } catch {
     return [];
   }
 }
@@ -112,8 +112,7 @@ async function fetchInvestors() {
     }
 
     return result.data.investor;
-  } catch (error) {
-    console.error('Error fetching investors:', error);
+  } catch {
     return [];
   }
 }
@@ -139,15 +138,18 @@ async function fetchBranches() {
     }
 
     return result.data.branches ?? [];
-  } catch (error) {
-    console.error('Error fetching branches:', error);
+  } catch {
     return [];
   }
 }
 
-export const load: PageServerLoad = async ({ request }) => {
-  const merchantId = getUserIdFromRequest(request);
-  const merchantBranchId = merchantId ? await fetchMerchantBranchId(merchantId) : null;
+export const load: PageServerLoad = async ({ request, parent }) => {
+  const { merchantContext } = await parent();
+  const merchantId =
+    merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
+  const merchantBranchId =
+    merchantContext?.merchantBranchId ??
+    (merchantId ? await fetchMerchantBranchId(merchantId) : null);
 
   const [stocks, investors, branches] = await Promise.all([
     fetchStocks(merchantBranchId),
@@ -179,6 +181,7 @@ const CREATE_STOCK_MUTATION = `
     $selling_price: money
     $thickness: numeric
     $type: String
+    $unit: String
   ) {
     insert_stock(
       objects: {
@@ -195,6 +198,7 @@ const CREATE_STOCK_MUTATION = `
         selling_price: $selling_price
         thickness: $thickness
         type: $type
+        unit: $unit
       }
     ) {
       returning {
@@ -226,6 +230,7 @@ const UPDATE_STOCK_MUTATION = `
     $selling_price: money
     $thickness: numeric
     $type: String
+    $unit: String
     $updated_at: timestamptz
     $updated_by: uuid
   ) {
@@ -243,6 +248,7 @@ const UPDATE_STOCK_MUTATION = `
         selling_price: $selling_price
         thickness: $thickness
         type: $type
+        unit: $unit
         updated_at: $updated_at
         updated_by: $updated_by
       }
@@ -277,6 +283,7 @@ async function createStock(stockData: {
   selling_price: number;
   thickness: number | null;
   type: string;
+  unit: string;
   userId: string;
 }) {
   const variables = {
@@ -293,6 +300,7 @@ async function createStock(stockData: {
     selling_price: stockData.selling_price,
     thickness: stockData.thickness,
     type: stockData.type,
+    unit: stockData.unit,
   };
 
   const response = await fetch(config.graphql.endpoint, {
@@ -359,6 +367,7 @@ async function updateStock(stockData: {
   selling_price: number;
   thickness: number | null;
   type: string;
+  unit: string;
   updated_by: string;
 }) {
   const variables = {
@@ -374,6 +383,7 @@ async function updateStock(stockData: {
     selling_price: stockData.selling_price,
     thickness: stockData.thickness,
     type: stockData.type,
+    unit: stockData.unit,
     updated_at: new Date().toISOString(),
     updated_by: stockData.updated_by,
   };
@@ -400,7 +410,14 @@ async function updateStock(stockData: {
   return result.data.update_stock_by_pk;
 }
 
-const VALID_TYPES = new Set(['glass', 'brake_pad']);
+const VALID_TYPES = new Set(['glass', 'brake_lining']);
+const VALID_UNITS = new Set(['Set', 'Pieces', 'Carton']);
+
+function normalizeStockType(raw: string): string {
+  const t = raw.trim();
+  if (t === 'brake_pad' || t === 'break_pad') return 'brake_lining';
+  return t;
+}
 
 function assertBranchAllowed(branchId: string | null, merchantBranchId: string | null) {
   if (merchantBranchId && branchId && branchId !== merchantBranchId) {
@@ -432,7 +449,8 @@ export const actions: Actions = {
     const model_number = parseOptionalString(formData.get('model_number'));
     const country = parseOptionalString(formData.get('country'));
     const branchRaw = parseOptionalString(formData.get('branch'));
-    const type = String(formData.get('type') ?? '').trim();
+    const type = normalizeStockType(String(formData.get('type') ?? ''));
+    const unit = String(formData.get('unit') ?? '').trim();
 
     let investors: string[] = [];
     try {
@@ -444,6 +462,10 @@ export const actions: Actions = {
 
     if (!VALID_TYPES.has(type)) {
       return { success: false, message: 'Invalid stock type' };
+    }
+
+    if (!VALID_UNITS.has(unit)) {
+      return { success: false, message: 'Unit must be Set, Pieces, or Carton' };
     }
 
     if (!branchRaw) {
@@ -477,6 +499,7 @@ export const actions: Actions = {
         selling_price,
         thickness,
         type,
+        unit,
         userId,
       });
 
@@ -486,7 +509,6 @@ export const actions: Actions = {
         stockId: result.id,
       };
     } catch (error) {
-      console.error('Failed to create stock:', error);
       return {
         success: false,
         message: `Failed to create stock: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -513,7 +535,6 @@ export const actions: Actions = {
         deletedId: result.id,
       };
     } catch (error) {
-      console.error('Failed to delete stock:', error);
       return {
         success: false,
         message: `Failed to delete stock: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -544,7 +565,8 @@ export const actions: Actions = {
     const model_number = parseOptionalString(formData.get('model_number'));
     const country = parseOptionalString(formData.get('country'));
     const branchRaw = parseOptionalString(formData.get('branch'));
-    const type = String(formData.get('type') ?? '').trim();
+    const type = normalizeStockType(String(formData.get('type') ?? ''));
+    const unit = String(formData.get('unit') ?? '').trim();
 
     if (!id) {
       return {
@@ -555,6 +577,10 @@ export const actions: Actions = {
 
     if (!VALID_TYPES.has(type)) {
       return { success: false, message: 'Invalid stock type' };
+    }
+
+    if (!VALID_UNITS.has(unit)) {
+      return { success: false, message: 'Unit must be Set, Pieces, or Carton' };
     }
 
     if (!branchRaw) {
@@ -588,6 +614,7 @@ export const actions: Actions = {
         selling_price,
         thickness,
         type,
+        unit,
         updated_by: userId,
       });
 

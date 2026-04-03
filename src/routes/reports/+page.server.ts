@@ -123,9 +123,7 @@ async function fetchReports(merchantId: string) {
     }
 
     return result.data.reports || [];
-  } catch (error) {
-    console.error('Error fetching reports:', error);
-    // Return empty array if API fails
+  } catch {
     return [];
   }
 }
@@ -152,94 +150,75 @@ async function fetchInvestors() {
     }
 
     return result.data.investor || [];
-  } catch (error) {
-    console.error('Error fetching investors:', error);
-    // Return empty array if API fails
+  } catch {
     return [];
   }
 }
 
 // Function to generate investor report
 async function generateInvestorReport(investorId: string, investorPhone: string, merchantId: string) {
-  try {
-    const variables = {
-      merchant_id: merchantId, // Use the authenticated user ID
-      investor_id: investorId,
-      investor_phone: investorPhone,
-    };
+  const variables = {
+    merchant_id: merchantId, // Use the authenticated user ID
+    investor_id: investorId,
+    investor_phone: investorPhone,
+  };
 
-    const response = await fetch(config.graphql.endpoint, {
-      method: 'POST',
-      headers: getGraphQLHeaders(),
-      body: JSON.stringify({
-        query: GENERATE_INVESTOR_REPORT_QUERY,
-        variables,
-      }),
-    });
+  const response = await fetch(config.graphql.endpoint, {
+    method: 'POST',
+    headers: getGraphQLHeaders(),
+    body: JSON.stringify({
+      query: GENERATE_INVESTOR_REPORT_QUERY,
+      variables,
+    }),
+  });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('HTTP error response:', errorText);
-      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
-    }
-
-    const result = await response.json();
-    
-    if (result.errors) {
-      console.error('GraphQL errors:', result.errors);
-      throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
-    }
-
-    return result.data;
-  } catch (error) {
-    console.error('Error generating investor report:', error);
-    throw error;
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
   }
+
+  const result = await response.json();
+
+  if (result.errors) {
+    throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
+  }
+
+  return result.data;
 }
 
 // Function to send report via SMS
 async function sendReport(reportData: any) {
-  try {
-    const variables = {
-      data: JSON.stringify(reportData),
-    };
+  const variables = {
+    data: JSON.stringify(reportData),
+  };
 
-    console.log('Sending report with data:', variables);
+  const response = await fetch(config.graphql.endpoint, {
+    method: 'POST',
+    headers: getGraphQLHeaders(),
+    body: JSON.stringify({
+      query: SEND_REPORT_MUTATION,
+      variables,
+    }),
+  });
 
-    const response = await fetch(config.graphql.endpoint, {
-      method: 'POST',
-      headers: getGraphQLHeaders(),
-      body: JSON.stringify({
-        query: SEND_REPORT_MUTATION,
-        variables,
-      }),
-    });
-
-    console.log('Send report response status:', response.status);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('HTTP error response:', errorText);
-      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
-    }
-
-    const result = await response.json();
-    console.log('Send report response:', result);
-    
-    if (result.errors) {
-      console.error('GraphQL errors:', result.errors);
-      throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
-    }
-
-    return result.data.send_sms;
-  } catch (error) {
-    console.error('Error sending report:', error);
-    throw error;
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
   }
+
+  const result = await response.json();
+
+  if (result.errors) {
+    throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
+  }
+
+  return result.data.send_sms;
 }
 
-export const load: PageServerLoad = async ({ request }) => {
-  const merchantId = getUserIdFromRequest(request);
+export const load: PageServerLoad = async ({ request, parent }) => {
+  const { merchantContext } = await parent();
+  const merchantId =
+    merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
   const [reports, investors] = await Promise.all([
     merchantId ? fetchReports(merchantId) : Promise.resolve([]),
     fetchInvestors(),
@@ -263,22 +242,13 @@ export const actions: Actions = {
         message: 'Authentication required',
       };
     }
-    
-    console.log('Authenticated user ID:', userId);
-    
+
     // Extract form data
     const investorId = formData.get('investor_id') as string;
     const investorPhone = formData.get('investor_phone') as string;
 
-    console.log('Form data received for report generation:', {
-      investorId,
-      investorPhone,
-    });
-
     try {
       const reportData = await generateInvestorReport(investorId, investorPhone, userId);
-
-      console.log('Report generated successfully:', reportData, typeof reportData);
 
       return {
         success: true,
@@ -286,7 +256,6 @@ export const actions: Actions = {
         reportData,
       };
     } catch (error) {
-      console.error('Failed to generate report:', error);
       return {
         success: false,
         message: `Failed to generate report: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -299,15 +268,9 @@ export const actions: Actions = {
     // Extract form data
     const reportDataString = formData.get('report_data') as string;
 
-    console.log('Form data received for sending report:', {
-      reportDataString,
-    });
-
     try {
       const reportData = JSON.parse(reportDataString);
       const smsResult = await sendReport(reportData);
-
-      console.log('Report sent successfully:', smsResult);
 
       return {
         success: true,
@@ -315,7 +278,6 @@ export const actions: Actions = {
         smsResult,
       };
     } catch (error) {
-      console.error('Failed to send report:', error);
       return {
         success: false,
         message: `Failed to send report: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -353,7 +315,6 @@ export const actions: Actions = {
         smsResult,
       };
     } catch (error) {
-      console.error('Failed to resend report:', error);
       return {
         success: false,
         message: `Failed to resend report: ${error instanceof Error ? error.message : 'Unknown error'}`,

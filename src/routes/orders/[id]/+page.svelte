@@ -12,7 +12,14 @@
     stock_id: string;
     total_amount: number;
     outstanding_amount: number;
+    unit?: string | null;
+    stock?: { unit?: string | null } | null;
   };
+
+  function orderQuantityLabel(o: Order) {
+    const u = (o.unit ?? o.stock?.unit ?? "").trim();
+    return u ? `${o.order_quantity} ${u}` : String(o.order_quantity);
+  }
 
   let { data, form }: { data: PageData; form?: any } = $props();
   const order = data.order;
@@ -120,7 +127,8 @@
           >
         </div>
         <div>
-          <span class="label">Quantity:</span><span>{order.order_quantity}</span
+          <span class="label">Quantity:</span><span
+            >{orderQuantityLabel(order)}</span
           >
         </div>
         <div>

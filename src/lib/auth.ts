@@ -4,7 +4,6 @@ export function getUserIdFromToken(token: string): string | null {
     // JWT tokens have 3 parts separated by dots: header.payload.signature
     const parts = token.split('.');
     if (parts.length !== 3) {
-      console.error('Invalid JWT token format');
       return null;
     }
 
@@ -20,13 +19,11 @@ export function getUserIdFromToken(token: string): string | null {
     const userId = payloadObj['x-hasura-user-id'] || payloadObj.sub;
     
     if (!userId) {
-      console.error('User ID not found in token payload');
       return null;
     }
 
     return userId;
-  } catch (error) {
-    console.error('Error decoding JWT token:', error);
+  } catch {
     return null;
   }
 }

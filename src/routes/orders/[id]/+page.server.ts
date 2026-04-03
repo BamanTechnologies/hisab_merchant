@@ -19,6 +19,10 @@ const FETCH_ORDER_FOR_MERCHANT_QUERY = `
       stock_id
       total_amount
       outstanding_amount
+      unit
+      stock {
+        unit
+      }
     }
   }
 `;
@@ -57,8 +61,7 @@ async function fetchOrderForMerchant(id: string, merchantId: string) {
 
     const orders = result.data.orders || [];
     return orders[0] ?? null;
-  } catch (e) {
-    console.error('Error fetching order:', e);
+  } catch {
     return null;
   }
 }
@@ -70,52 +73,40 @@ async function createPayment(paymentData: {
   payment_method: string;
   created_by: string;
 }) {
-  try {
-    const variables = {
-      amount: paymentData.amount,
-      created_by: paymentData.created_by, // Use the authenticated user ID
-      order_id: paymentData.order_id,
-      payment_method: paymentData.payment_method,
-    };
+  const variables = {
+    amount: paymentData.amount,
+    created_by: paymentData.created_by, // Use the authenticated user ID
+    order_id: paymentData.order_id,
+    payment_method: paymentData.payment_method,
+  };
 
-    console.log('Sending GraphQL payment mutation with variables:', variables);
-    console.log('GraphQL endpoint:', config.graphql.endpoint);
-    console.log('Headers:', getGraphQLHeaders());
+  const response = await fetch(config.graphql.endpoint, {
+    method: 'POST',
+    headers: getGraphQLHeaders(),
+    body: JSON.stringify({
+      query: CREATE_PAYMENT_MUTATION,
+      variables,
+    }),
+  });
 
-    const response = await fetch(config.graphql.endpoint, {
-      method: 'POST',
-      headers: getGraphQLHeaders(),
-      body: JSON.stringify({
-        query: CREATE_PAYMENT_MUTATION,
-        variables,
-      }),
-    });
-
-    console.log('GraphQL payment response status:', response.status);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('HTTP error response:', errorText);
-      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
-    }
-
-    const result = await response.json();
-    console.log('GraphQL payment response:', result);
-    
-    if (result.errors) {
-      console.error('GraphQL errors:', result.errors);
-      throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
-    }
-
-    return result.data.insert_payment.returning[0];
-  } catch (error) {
-    console.error('Error creating payment:', error);
-    throw error;
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
   }
+
+  const result = await response.json();
+
+  if (result.errors) {
+    throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
+  }
+
+  return result.data.insert_payment.returning[0];
 }
 
-export const load: PageServerLoad = async ({ params, request }) => {
-  const merchantId = getUserIdFromRequest(request);
+export const load: PageServerLoad = async ({ params, request, parent }) => {
+  const { merchantContext } = await parent();
+  const merchantId =
+    merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
   if (!merchantId) {
     error(404, 'Order not found');
   }
@@ -144,18 +135,10 @@ export const actions: Actions = {
       };
     }
     
-    console.log('Authenticated user ID:', userId);
-    
     // Extract form data
     const orderId = params.id;
     const amount = Number(formData.get('amount'));
     const paymentMethod = formData.get('payment_method') as string;
-
-    console.log('Form data received for payment:', {
-      orderId,
-      amount,
-      paymentMethod,
-    });
 
     const order = await fetchOrderForMerchant(orderId, userId);
     if (!order) {
@@ -170,15 +153,12 @@ export const actions: Actions = {
         created_by: userId, // Use the authenticated user ID
       });
 
-      console.log('Payment created successfully:', result);
-
       return {
         success: true,
         message: 'Payment created successfully',
         paymentId: result.id,
       };
     } catch (error) {
-      console.error('Failed to create payment:', error);
       return {
         success: false,
         message: `Failed to create payment: ${error instanceof Error ? error.message : 'Unknown error'}`,

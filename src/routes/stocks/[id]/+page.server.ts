@@ -24,6 +24,7 @@ const FETCH_STOCK_BY_PK_QUERY = `
       selling_price
       thickness
       factor
+      unit
     }
   }
 `;
@@ -62,8 +63,7 @@ async function fetchStockByPk(id: string) {
     }
 
     return result.data.stock_by_pk ?? null;
-  } catch (e) {
-    console.error('Error fetching stock:', e);
+  } catch {
     return null;
   }
 }
@@ -90,9 +90,7 @@ async function fetchInvestors() {
     }
 
     return result.data.investor;
-  } catch (error) {
-    console.error('Error fetching investors:', error);
-    // Return empty array if API fails
+  } catch {
     return [];
   }
 }
@@ -232,9 +230,13 @@ async function fetchMerchantByPkForTransfer(id: string) {
   }
 }
 
-export const load: PageServerLoad = async ({ params, request }) => {
-  const merchantId = getUserIdFromRequest(request);
-  const merchantBranchId = merchantId ? await fetchMerchantBranchId(merchantId) : null;
+export const load: PageServerLoad = async ({ params, request, parent }) => {
+  const { merchantContext } = await parent();
+  const merchantId =
+    merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
+  const merchantBranchId =
+    merchantContext?.merchantBranchId ??
+    (merchantId ? await fetchMerchantBranchId(merchantId) : null);
 
   const [stock, investors] = await Promise.all([
     fetchStockByPk(params.id),
@@ -270,100 +272,30 @@ export const load: PageServerLoad = async ({ params, request }) => {
   };
 };
 
-// GraphQL mutation to create an order
-const CREATE_ORDER_MUTATION = `
-  mutation CreateOrder($created_by: uuid, $customer_address: String, $customer_name: String, $customer_phone: numeric, $outstanding_amount: money, $order_quantity: numeric, $status: String, $stock_id: uuid, $total_amount: money) {
-    insert_orders(objects: {created_by: $created_by, customer_address: $customer_address, customer_name: $customer_name, customer_phone: $customer_phone, outstanding_amount: $outstanding_amount, order_quantity: $order_quantity, status: $status, stock_id: $stock_id, total_amount: $total_amount}) {
+/**
+ * Partial (or full) transfer: insert destination row, decrement source + updated_by,
+ * record transfer. One GraphQL request; Hasura runs root fields in a transaction.
+ */
+const PARTIAL_TRANSFER_STOCK_MUTATION = `
+  mutation PartialTransferStock(
+    $newStock: stock_insert_input!
+    $sourceId: uuid!
+    $remainingQty: numeric!
+    $actorId: uuid!
+    $transfer: transfers_insert_input!
+  ) {
+    insert_stock(objects: [$newStock]) {
       returning {
         id
       }
     }
-  }
-`;
-
-// Function to create an order via GraphQL mutation
-async function createOrder(orderData: {
-  customer_name: string;
-  customer_address: string;
-  customer_phone: number;
-  order_quantity: number;
-  stock_id: string;
-  total_amount: number;
-  outstanding_amount: number;
-  status: string;
-  created_by: string;
-}) {
-  try {
-    const variables = {
-      created_by: orderData.created_by,
-      customer_address: orderData.customer_address,
-      customer_name: orderData.customer_name,
-      customer_phone: orderData.customer_phone,
-      outstanding_amount: orderData.outstanding_amount,
-      order_quantity: orderData.order_quantity,
-      status: orderData.status,
-      stock_id: orderData.stock_id,
-      total_amount: orderData.total_amount,
-    };
-
-    console.log('Sending GraphQL order mutation with variables:', variables);
-
-    const response = await fetch(config.graphql.endpoint, {
-      method: 'POST',
-      headers: getGraphQLHeaders(),
-      body: JSON.stringify({
-        query: CREATE_ORDER_MUTATION,
-        variables,
-      }),
-    });
-
-    console.log('GraphQL order response status:', response.status);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('HTTP error response:', errorText);
-      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
-    }
-
-    const result = await response.json();
-    console.log('GraphQL order response:', result);
-    
-    if (result.errors) {
-      console.error('GraphQL errors:', result.errors);
-      throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
-    }
-
-    return result.data.insert_orders.returning[0];
-  } catch (error) {
-    console.error('Error creating order:', error);
-    throw error;
-  }
-}
-
-const TRANSFER_STOCK_MUTATION = `
-  mutation TransferStock(
-    $stockId: uuid!
-    $toBranch: uuid!
-    $fromBranch: uuid!
-    $createdBy: uuid!
-    $newStockCreatedBy: uuid!
-  ) {
     update_stock_by_pk(
-      pk_columns: { id: $stockId }
-      _set: { branch: $toBranch, created_by: $newStockCreatedBy }
+      pk_columns: { id: $sourceId }
+      _set: { quantity: $remainingQty, updated_by: $actorId }
     ) {
       id
     }
-    insert_transfers(
-      objects: [
-        {
-          stock: $stockId
-          from: $fromBranch
-          to: $toBranch
-          created_by: $createdBy
-        }
-      ]
-    ) {
+    insert_transfers(objects: [$transfer]) {
       returning {
         id
       }
@@ -371,26 +303,86 @@ const TRANSFER_STOCK_MUTATION = `
   }
 `;
 
-async function transferStockRecord(input: {
-  stockId: string;
+type StockRowForTransfer = {
+  id: string;
+  model_number?: string | null;
+  country?: string | null;
+  branch?: string | null;
+  type?: string | null;
+  color?: string | null;
+  figure?: string | null;
+  investors?: string[] | null;
+  purchased_price?: unknown;
+  quantity: unknown;
+  selling_price?: unknown;
+  thickness?: unknown;
+  factor?: unknown;
+  unit?: string | null;
+};
+
+function buildNewStockInsertInput(
+  row: StockRowForTransfer,
+  toBranch: string,
+  transferQty: number,
+  assigneeId: string,
+): Record<string, unknown> {
+  const inv = Array.isArray(row.investors) ? row.investors : [];
+  return {
+    branch: toBranch,
+    quantity: transferQty,
+    created_by: assigneeId,
+    updated_by: assigneeId,
+    model_number: row.model_number ?? null,
+    country: row.country ?? null,
+    type: row.type ?? null,
+    color: row.color ?? null,
+    figure: row.figure ?? null,
+    purchased_price: row.purchased_price ?? null,
+    selling_price: row.selling_price ?? null,
+    thickness: row.thickness ?? null,
+    factor: row.factor ?? null,
+    unit: row.unit ?? null,
+    investors: inv,
+  };
+}
+
+async function transferStockPartial(input: {
+  sourceRow: StockRowForTransfer;
+  transferQty: number;
   fromBranch: string;
   toBranch: string;
-  createdBy: string;
-  newStockCreatedBy: string;
+  actorId: string;
+  assigneeId: string;
 }) {
+  const { sourceRow, transferQty, fromBranch, toBranch, actorId, assigneeId } = input;
+  const sourceQty = Number(sourceRow.quantity);
+  const remainingQty = sourceQty - transferQty;
+  if (!(remainingQty >= 0) || !Number.isFinite(remainingQty)) {
+    throw new Error('Invalid remaining quantity');
+  }
+
+  const newStock = buildNewStockInsertInput(sourceRow, toBranch, transferQty, assigneeId);
+
+  const transfer: Record<string, unknown> = {
+    stock: sourceRow.id,
+    from: fromBranch,
+    to: toBranch,
+    created_by: actorId,
+  };
+
   const variables = {
-    stockId: input.stockId,
-    toBranch: input.toBranch,
-    fromBranch: input.fromBranch,
-    createdBy: input.createdBy,
-    newStockCreatedBy: input.newStockCreatedBy,
+    newStock,
+    sourceId: sourceRow.id,
+    remainingQty,
+    actorId,
+    transfer,
   };
 
   const response = await fetch(config.graphql.endpoint, {
     method: 'POST',
     headers: getGraphQLHeaders(),
     body: JSON.stringify({
-      query: TRANSFER_STOCK_MUTATION,
+      query: PARTIAL_TRANSFER_STOCK_MUTATION,
       variables,
     }),
   });
@@ -405,90 +397,17 @@ async function transferStockRecord(input: {
     throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
   }
 
+  const insertedStock = result.data?.insert_stock?.returning?.[0];
   const updated = result.data?.update_stock_by_pk;
-  const inserted = result.data?.insert_transfers?.returning?.[0];
-  if (!updated?.id || !inserted?.id) {
+  const insertedTr = result.data?.insert_transfers?.returning?.[0];
+  if (!insertedStock?.id || !updated?.id || !insertedTr?.id) {
     throw new Error('Transfer did not complete');
   }
 
-  return inserted;
+  return { newStockId: insertedStock.id as string, transferId: insertedTr.id as string };
 }
 
 export const actions: Actions = {
-  createOrder: async ({ request, params }) => {
-    const formData = await request.formData();
-
-    // Get authenticated user ID
-    const userId = getUserIdFromRequest(request);
-    if (!userId) {
-      return {
-        success: false,
-        message: 'Authentication required',
-      };
-    }
-    
-    console.log('Authenticated user ID:', userId);
-
-    // Extract form data
-    const customer_name = formData.get('customer_name') as string;
-    const customer_address = formData.get('customer_address') as string;
-    const customer_phone = Number(formData.get('customer_phone'));
-    const order_quantity = Number(formData.get('order_quantity'));
-    const total_amount = Number(formData.get('total_amount'));
-    const outstanding_amount = Number(formData.get('outstanding_amount'));
-    const status = formData.get('status') as string;
-    const stock_id = formData.get('stock_id') as string;
-
-    console.log('Form data received for order:', {
-      customer_name,
-      customer_address,
-      customer_phone,
-      order_quantity,
-      total_amount,
-      outstanding_amount,
-      status,
-      stock_id,
-    });
-
-    const merchantBranchId = await fetchMerchantBranchId(userId);
-    const stockRow = await fetchStockByPk(stock_id);
-    if (!stockRow) {
-      return { success: false, message: 'Stock not found' };
-    }
-    if (merchantBranchId != null && stockRow.branch !== merchantBranchId) {
-      return { success: false, message: 'Stock not found' };
-    }
-
-    try {
-      const result = await createOrder({
-        customer_name,
-        customer_address,
-        customer_phone,
-        order_quantity,
-        stock_id,
-        total_amount,
-        outstanding_amount,
-        status,
-        created_by: userId,
-      });
-
-      console.log('Order created successfully:', result);
-
-      return {
-        success: true,
-        message: 'Order created successfully',
-        orderId: result.id,
-        intent: 'createOrder' as const,
-      };
-    } catch (err) {
-      console.error('Failed to create order:', err);
-      return {
-        success: false,
-        message: `Failed to create order: ${err instanceof Error ? err.message : 'Unknown error'}`,
-      };
-    }
-  },
-
   transferStock: async ({ request, params }) => {
     const formData = await request.formData();
 
@@ -525,10 +444,13 @@ export const actions: Actions = {
     }
 
     const stockQty = Number(stockRow.quantity);
-    if (quantity !== stockQty) {
+    if (!Number.isFinite(stockQty) || stockQty <= 0) {
+      return { success: false, message: 'Invalid stock quantity' };
+    }
+    if (quantity > stockQty) {
       return {
         success: false,
-        message: 'Transfer moves the full stock line; quantity must match the current stock quantity',
+        message: 'Transfer quantity cannot exceed available quantity',
       };
     }
 
@@ -563,12 +485,13 @@ export const actions: Actions = {
     }
 
     try {
-      await transferStockRecord({
-        stockId: stock_id,
+      await transferStockPartial({
+        sourceRow: stockRow as StockRowForTransfer,
+        transferQty: quantity,
         fromBranch: fromBranchId,
         toBranch: to_branch,
-        createdBy: userId,
-        newStockCreatedBy: new_stock_created_by,
+        actorId: userId,
+        assigneeId: new_stock_created_by,
       });
     } catch (err) {
       return {
@@ -577,6 +500,6 @@ export const actions: Actions = {
       };
     }
 
-    throw redirect(303, '/stocks');
+    throw redirect(303, `/stocks/${stock_id}`);
   },
 };

@@ -20,8 +20,6 @@
   // Handle form responses
   $effect(() => {
     if (form) {
-      console.log("Form response received:", form);
-
       // Check if token exists in response
       if (form.token) {
         // Login successful - token present
@@ -44,7 +42,6 @@
         // Login failed - no token
         errorMessage = "One of the details is incorrect";
         successMessage = "";
-        console.log("Login failed - no token in response");
       }
     }
   });
@@ -52,8 +49,6 @@
   // Also handle form data from the page data
   $effect(() => {
     if ((data as any)?.form) {
-      console.log("Data form response received:", (data as any).form);
-
       // Check if token exists in response
       if ((data as any).form.token) {
         // Login successful - token present
@@ -77,7 +72,6 @@
         // Login failed - no token
         errorMessage = "One of the details is incorrect";
         successMessage = "";
-        console.log("Login failed from data - no token in response");
       }
     }
   });

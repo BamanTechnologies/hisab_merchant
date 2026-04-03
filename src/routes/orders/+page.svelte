@@ -1,6 +1,30 @@
 <script lang="ts">
+  import { deserialize } from "$app/forms";
   import { goto } from "$app/navigation";
   import type { PageData } from "./$types";
+
+  type CustomerRow = {
+    id: string;
+    first_name?: string | null;
+    last_name?: string | null;
+    phone?: string | null;
+    phone_number?: string | null;
+    address?: string | null;
+  };
+
+  type StockRow = {
+    id: string;
+    quantity: number;
+    selling_price: unknown;
+    factor?: unknown;
+    model_number?: string | null;
+    type?: string | null;
+    country?: string | null;
+    unit?: string | null;
+    thickness?: number | string | null;
+    color?: string | null;
+    figure?: string | null;
+  };
 
   type OrderSummary = {
     id: string;
@@ -14,14 +38,307 @@
     stock_id: string;
     total_amount: number;
     outstanding_amount: number;
+    unit?: string | null;
+    stock?: { unit?: string | null } | null;
   };
 
+  type LineRow = {
+    rowId: string;
+    stockId: string;
+    quantity: number;
+  };
+
+  const MAX_LINES = 15;
+
   let { data }: { data: PageData } = $props();
+
   let showDeleteModal = $state(false);
   let orderToDelete = $state<OrderSummary | null>(null);
-  let orders = $state(data.orders);
+  let orders = $state(data.orders as OrderSummary[]);
+  let customers = $state(data.customers as CustomerRow[]);
+  let stocks = $state(data.stocks as StockRow[]);
   let errorMessage = $state("");
   let successMessage = $state("");
+
+  let showCreateModal = $state(false);
+  let selectedCustomerId = $state("");
+  let orderLines = $state<LineRow[]>([
+    {
+      rowId: crypto.randomUUID(),
+      stockId: "",
+      quantity: 1,
+    },
+  ]);
+  let createSubmitting = $state(false);
+  let createError = $state("");
+
+  let showAddCustomerModal = $state(false);
+  let newFirstName = $state("");
+  let newLastName = $state("");
+  let newAddress = $state("");
+  let newPhone = $state("");
+  let addCustomerSubmitting = $state(false);
+  let addCustomerError = $state("");
+
+  $effect(() => {
+    orders = data.orders as OrderSummary[];
+    customers = data.customers as CustomerRow[];
+    stocks = data.stocks as StockRow[];
+  });
+
+  function typeDisplay(t: string | null | undefined) {
+    if (t === "glass") return "Glass";
+    if (t === "brake_lining" || t === "brake_pad" || t === "break_pad")
+      return "Brake lining";
+    return t ?? "—";
+  }
+
+  function customerOptionLabel(c: CustomerRow) {
+    const name = [c.first_name, c.last_name].filter(Boolean).join(" ").trim();
+    const phone = (c.phone ?? c.phone_number)?.trim() ?? "";
+    return phone ? `${name} - ${phone}` : name || c.id;
+  }
+
+  function stockOptionLabel(s: StockRow) {
+    const unit = s.unit?.trim();
+    const qtyHint = unit
+      ? `${s.quantity} ${unit} avail`
+      : `${s.quantity} avail`;
+    const typePart = typeDisplay(s.type);
+    const rawType = s.type?.trim() ?? "";
+
+    if (rawType === "glass") {
+      const parts: string[] = [];
+      const th = s.thickness;
+      if (th != null && String(th).trim() !== "") {
+        const n = Number(th);
+        parts.push(
+          Number.isFinite(n) ? `${n}mm` : `${String(th).trim()}mm`,
+        );
+      }
+      const col = s.color?.trim();
+      if (col) parts.push(col);
+      const fig = s.figure?.trim();
+      if (fig) parts.push(fig);
+      const desc =
+        parts.length > 0
+          ? parts.join(" ")
+          : s.model_number?.trim() || s.id.slice(0, 8) + "…";
+      return `${desc} · ${typePart} (${qtyHint})`;
+    }
+
+    const model = s.model_number?.trim() || s.id.slice(0, 8) + "…";
+    return `${model} · ${typePart} (${qtyHint})`;
+  }
+
+  function getStock(stockId: string): StockRow | undefined {
+    return stocks.find((s) => s.id === stockId);
+  }
+
+  /** Order unit always matches stock; shown read-only in the modal. */
+  function lineStockUnitLabel(row: LineRow): string {
+    if (!row.stockId) return "—";
+    const u = getStock(row.stockId)?.unit?.trim();
+    return u ?? "(no unit)";
+  }
+
+  function takenStockIds(exceptRowId: string): Set<string> {
+    const ids = new Set<string>();
+    for (const row of orderLines) {
+      if (row.rowId !== exceptRowId && row.stockId) ids.add(row.stockId);
+    }
+    return ids;
+  }
+
+  function stocksForRow(exceptRowId: string): StockRow[] {
+    const row = orderLines.find((r) => r.rowId === exceptRowId);
+    const currentId = row?.stockId ?? "";
+    const taken = takenStockIds(exceptRowId);
+    return stocks.filter((s) => !taken.has(s.id) || s.id === currentId);
+  }
+
+  function lineQuantityError(row: LineRow): string {
+    if (!row.stockId) return "";
+    const q = Number(row.quantity);
+    if (!Number.isFinite(q) || q < 1) return "Minimum quantity is 1";
+    const s = getStock(row.stockId);
+    if (!s) return "Invalid stock";
+    const avail = Number(s.quantity);
+    if (q > avail) return "Exceeds available quantity";
+    return "";
+  }
+
+  const createModalHasErrors = $derived.by(() => {
+    if (!selectedCustomerId) return true;
+    if (orderLines.length === 0) return true;
+    for (const row of orderLines) {
+      if (!row.stockId) return true;
+      if (lineQuantityError(row)) return true;
+    }
+    return false;
+  });
+
+  const canAddLine = $derived.by(() => {
+    if (orderLines.length >= MAX_LINES) return false;
+    const taken = takenStockIds("");
+    const free = stocks.filter((s) => !taken.has(s.id));
+    return free.length > 0;
+  });
+
+  function resetCreateModal() {
+    selectedCustomerId = "";
+    orderLines = [
+      {
+        rowId: crypto.randomUUID(),
+        stockId: "",
+        quantity: 1,
+      },
+    ];
+    createError = "";
+  }
+
+  function openCreateModal() {
+    resetCreateModal();
+    showCreateModal = true;
+  }
+
+  function closeCreateModal() {
+    showCreateModal = false;
+    resetCreateModal();
+  }
+
+  function addOrderLine() {
+    if (!canAddLine) return;
+    orderLines = [
+      ...orderLines,
+      {
+        rowId: crypto.randomUUID(),
+        stockId: "",
+        quantity: 1,
+      },
+    ];
+  }
+
+  function removeOrderLine(rowId: string) {
+    orderLines = orderLines.filter((r) => r.rowId !== rowId);
+  }
+
+  function openAddCustomerModal() {
+    newFirstName = "";
+    newLastName = "";
+    newAddress = "";
+    newPhone = "";
+    addCustomerError = "";
+    showAddCustomerModal = true;
+  }
+
+  function closeAddCustomerModal() {
+    showAddCustomerModal = false;
+  }
+
+  async function submitAddCustomer() {
+    addCustomerError = "";
+    addCustomerSubmitting = true;
+    try {
+      const fd = new FormData();
+      fd.append("first_name", newFirstName);
+      fd.append("last_name", newLastName);
+      fd.append("address", newAddress);
+      fd.append("phone_number", newPhone);
+
+      const response = await fetch("?/createCustomer", {
+        method: "POST",
+        body: fd,
+      });
+
+      const result = deserialize(await response.text());
+      if (result.type !== "success" || !("data" in result) || !result.data) {
+        addCustomerError = "Could not add customer";
+        return;
+      }
+      const payload = result.data as {
+        success?: boolean;
+        message?: string;
+        customer?: CustomerRow;
+      };
+      if (!payload.success) {
+        addCustomerError = payload.message ?? "Could not add customer";
+        return;
+      }
+      if (payload.customer) {
+        customers = [...customers, payload.customer];
+        selectedCustomerId = payload.customer.id;
+      }
+      closeAddCustomerModal();
+      successMessage = payload.message ?? "Customer added";
+      setTimeout(() => {
+        successMessage = "";
+      }, 3000);
+    } catch {
+      addCustomerError = "Request failed";
+    } finally {
+      addCustomerSubmitting = false;
+    }
+  }
+
+  async function submitCreateOrders() {
+    createError = "";
+    if (!selectedCustomerId) {
+      createError = "Select a customer";
+      return;
+    }
+    if (orderLines.length === 0) {
+      createError = "Add at least one stock line";
+      return;
+    }
+    const linesPayload: { stock_id: string; quantity: number }[] = [];
+    for (const row of orderLines) {
+      if (!row.stockId) {
+        createError = "Each line needs a stock item";
+        return;
+      }
+      const err = lineQuantityError(row);
+      if (err) {
+        createError = err;
+        return;
+      }
+      linesPayload.push({
+        stock_id: row.stockId,
+        quantity: Number(row.quantity),
+      });
+    }
+
+    createSubmitting = true;
+    try {
+      const fd = new FormData();
+      fd.append("customerId", selectedCustomerId);
+      fd.append("lines", JSON.stringify(linesPayload));
+
+      const response = await fetch("?/createOrders", {
+        method: "POST",
+        body: fd,
+      });
+
+      const result = deserialize(await response.text());
+      if (result.type !== "success" || !("data" in result) || !result.data) {
+        createError = "Could not create orders";
+        return;
+      }
+      const payload = result.data as { success?: boolean; message?: string };
+      if (!payload.success) {
+        createError = payload.message ?? "Could not create orders";
+        return;
+      }
+      successMessage = payload.message ?? "Orders created";
+      errorMessage = "";
+      closeCreateModal();
+      setTimeout(() => window.location.reload(), 800);
+    } catch {
+      createError = "Request failed";
+    } finally {
+      createSubmitting = false;
+    }
+  }
 
   function formatOrderDate(iso: string) {
     try {
@@ -37,6 +354,11 @@
     } catch {
       return "—";
     }
+  }
+
+  function orderQtyCell(o: OrderSummary) {
+    const u = (o.unit ?? o.stock?.unit ?? "").trim();
+    return u ? `${o.order_quantity} ${u}` : String(o.order_quantity);
   }
 
   function statusClass(status: string) {
@@ -68,24 +390,26 @@
         body: formData,
       });
 
-      const result = await response.json();
+      const result = deserialize(await response.text());
+      const payload =
+        result.type === "success" && "data" in result
+          ? (result.data as { success?: boolean; message?: string } | undefined)
+          : undefined;
 
-      if (result.type === "success") {
-        // Remove the order from the local state
+      if (result.type === "success" && payload?.success) {
         orders = orders.filter((o: OrderSummary) => o.id !== orderToDelete!.id);
-        successMessage = result.message;
+        successMessage = payload.message ?? "Order deleted successfully";
         errorMessage = "";
         closeDeleteModal();
 
-        // Clear success message after 3 seconds
         setTimeout(() => {
           successMessage = "";
         }, 3000);
       } else {
-        errorMessage = result.message;
+        errorMessage = payload?.message ?? "Delete failed";
         successMessage = "";
       }
-    } catch (error) {
+    } catch {
       errorMessage = "Failed to delete order. Please try again.";
       successMessage = "";
     }
@@ -97,6 +421,9 @@
     <h1>Orders</h1>
     <p class="muted">Click a row to view full order details.</p>
   </div>
+  <button type="button" class="primary" onclick={openCreateModal}>
+    Create Order
+  </button>
 </section>
 
 {#if errorMessage}
@@ -109,6 +436,202 @@
   <div class="alert success">
     <p>{successMessage}</p>
   </div>
+{/if}
+
+{#if showCreateModal}
+  <div
+    class="modal-overlay"
+    role="button"
+    tabindex="0"
+    onclick={closeCreateModal}
+    onkeydown={(e) =>
+      (e.key === "Enter" || e.key === " ") && closeCreateModal()}
+  ></div>
+  <dialog open class="modal modal-wide" onclick={(e) => e.stopPropagation()}>
+    <header>
+      <h2 style="color: white;">Create Order</h2>
+      <button class="icon" aria-label="Close" onclick={closeCreateModal}
+        >✕</button
+      >
+    </header>
+    <div class="modal-body">
+      {#if createError}
+        <p class="inline-error">{createError}</p>
+      {/if}
+
+      {#if !data.companyId}
+        <p class="inline-error muted-strong">
+          Your account has no branch or company linked, so customers cannot be
+          loaded. Contact an administrator.
+        </p>
+      {:else if customers.length === 0}
+        <p class="muted-strong">
+          No customers yet for your company. Use &ldquo;Add New Customer&rdquo;
+          below.
+        </p>
+      {/if}
+
+      <label class="block-label">
+        <span>Select Customer</span>
+        <select
+          class="native-select full"
+          bind:value={selectedCustomerId}
+          required
+          disabled={!data.companyId}
+        >
+          <option value="">Choose a customer</option>
+          {#each customers as c}
+            <option value={c.id}>{customerOptionLabel(c)}</option>
+          {/each}
+        </select>
+      </label>
+
+      <button
+        type="button"
+        class="linkish"
+        onclick={openAddCustomerModal}
+        disabled={!data.companyId}
+      >
+        + Add New Customer
+      </button>
+
+      <h3 class="section-title">Stock items</h3>
+      <div class="lines">
+        {#each orderLines as row (row.rowId)}
+          <div
+            class="line-row"
+            class:line-invalid={!!lineQuantityError(row) && row.stockId !== ""}
+          >
+            <label class="grow">
+              <span class="sr-only">Stock</span>
+              <select
+                class="native-select full"
+                bind:value={row.stockId}
+                onchange={() => {
+                  orderLines = [...orderLines];
+                }}
+              >
+                <option value="">Select stock</option>
+                {#each stocksForRow(row.rowId) as s}
+                  <option value={s.id}>{stockOptionLabel(s)}</option>
+                {/each}
+              </select>
+            </label>
+            <label class="qty">
+              <span class="sr-only">Quantity</span>
+              <input
+                type="number"
+                min="1"
+                bind:value={row.quantity}
+                oninput={() => {
+                  orderLines = [...orderLines];
+                }}
+              />
+            </label>
+            <div class="unit-readonly" title="Unit comes from the selected stock">
+              <span class="unit-label">Unit</span>
+              <span class="unit-value">{lineStockUnitLabel(row)}</span>
+            </div>
+            <button
+              type="button"
+              class="icon-rm"
+              aria-label="Remove line"
+              onclick={() => removeOrderLine(row.rowId)}>−</button
+            >
+            {#if lineQuantityError(row)}
+              <p class="line-err">{lineQuantityError(row)}</p>
+            {/if}
+          </div>
+        {/each}
+      </div>
+
+      <div class="line-actions">
+        <button
+          type="button"
+          class="ghost"
+          onclick={addOrderLine}
+          disabled={!canAddLine}
+        >
+          + Add line
+        </button>
+      </div>
+    </div>
+    <footer>
+      <button type="button" class="ghost" onclick={closeCreateModal}
+        >Cancel</button
+      >
+      <button
+        type="button"
+        class="primary"
+        disabled={createModalHasErrors || createSubmitting}
+        onclick={submitCreateOrders}
+      >
+        {createSubmitting ? "Creating…" : "Create Order"}
+      </button>
+    </footer>
+  </dialog>
+{/if}
+
+{#if showAddCustomerModal}
+  <div
+    class="modal-overlay overlay-nested"
+    role="button"
+    tabindex="0"
+    onclick={closeAddCustomerModal}
+    onkeydown={(e) =>
+      (e.key === "Enter" || e.key === " ") && closeAddCustomerModal()}
+  ></div>
+  <dialog
+    open
+    class="modal modal-nested"
+    onclick={(e) => e.stopPropagation()}
+  >
+    <header>
+      <h2 style="color: white;">New Customer</h2>
+      <button class="icon" aria-label="Close" onclick={closeAddCustomerModal}
+        >✕</button
+      >
+    </header>
+    <div class="modal-body">
+      {#if addCustomerError}
+        <p class="inline-error">{addCustomerError}</p>
+      {/if}
+      <div class="grid-compact">
+        <label>
+          <span>First name</span>
+          <input type="text" bind:value={newFirstName} required />
+        </label>
+        <label>
+          <span>Last name</span>
+          <input type="text" bind:value={newLastName} required />
+        </label>
+        <label class="full-row">
+          <span>Address</span>
+          <input type="text" bind:value={newAddress} />
+        </label>
+        <label class="full-row">
+          <span>Phone</span>
+          <input type="tel" bind:value={newPhone} required />
+        </label>
+      </div>
+    </div>
+    <footer>
+      <button type="button" class="ghost" onclick={closeAddCustomerModal}
+        >Cancel</button
+      >
+      <button
+        type="button"
+        class="primary"
+        disabled={addCustomerSubmitting ||
+          !newFirstName.trim() ||
+          !newLastName.trim() ||
+          !newPhone.trim()}
+        onclick={submitAddCustomer}
+      >
+        {addCustomerSubmitting ? "Saving…" : "Save"}
+      </button>
+    </footer>
+  </dialog>
 {/if}
 
 {#if showDeleteModal && orderToDelete}
@@ -132,7 +655,10 @@
       <div class="order-details">
         <p><strong>Customer:</strong> {orderToDelete.customer_name}</p>
         <p><strong>Phone:</strong> {orderToDelete.customer_phone}</p>
-        <p><strong>Quantity:</strong> {orderToDelete.order_quantity}</p>
+        <p>
+          <strong>Quantity:</strong>
+          {orderQtyCell(orderToDelete)}
+        </p>
         <p>
           <strong>Total Amount:</strong> Birr {orderToDelete.total_amount.toLocaleString()}
         </p>
@@ -173,7 +699,7 @@
         >
           <td class="nowrap">{formatOrderDate(o.created_at)}</td>
           <td>{o.customer_name}</td>
-          <td class="right">{o.order_quantity}</td>
+          <td class="right">{orderQtyCell(o)}</td>
           <td><span class="chip {statusClass(o.status)}">{o.status}</span></td>
           <td class="right">Birr {o.total_amount.toLocaleString()}</td>
           <td class="center">
@@ -214,6 +740,25 @@
     align-items: center;
     justify-content: space-between;
     margin-bottom: 1rem;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .primary {
+    appearance: none;
+    background: var(--brand, #3b82f6);
+    color: #0b1220;
+    border: none;
+    font-weight: 700;
+    padding: 0.5rem 0.9rem;
+    border-radius: 0.6rem;
+    cursor: pointer;
+  }
+  .primary:hover:not(:disabled) {
+    filter: brightness(1.06);
+  }
+  .primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .table-wrap {
@@ -319,17 +864,31 @@
     backdrop-filter: blur(2px);
     z-index: 30;
   }
+  .overlay-nested {
+    z-index: 50;
+  }
   .modal {
     position: fixed;
     inset: 0;
     margin: auto;
     max-width: 720px;
     width: calc(100% - 2rem);
+    max-height: min(90vh, 900px);
     background: color-mix(in oklab, var(--surface), black 2%);
     border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
     border-radius: 0.9rem;
     padding: 0;
     z-index: 40;
+    display: flex;
+    flex-direction: column;
+  }
+  .modal-wide {
+    max-width: 640px;
+  }
+  .modal-nested {
+    z-index: 60;
+    max-width: 420px;
+    max-height: 85vh;
   }
   .modal header {
     display: flex;
@@ -337,6 +896,7 @@
     justify-content: space-between;
     padding: 1rem 1rem;
     border-bottom: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
+    flex-shrink: 0;
   }
   .modal h2 {
     margin: 0;
@@ -348,9 +908,181 @@
     font-size: 1.1rem;
     cursor: pointer;
   }
+  .modal-body {
+    padding: 1rem;
+    overflow: auto;
+    color: #e5e7eb;
+  }
   .modal-content {
     padding: 1rem;
     color: white;
+  }
+  .block-label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin: 0.5rem 0 0.25rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #cbd5e1;
+  }
+  .native-select {
+    background: color-mix(in oklab, var(--surface-2), white 2%);
+    color: #e5e7eb;
+    border: 1px solid color-mix(in oklab, var(--surface-2), white 12%);
+    border-radius: 0.6rem;
+    padding: 0.55rem 0.7rem;
+    cursor: pointer;
+  }
+  .native-select.full {
+    width: 100%;
+  }
+  .linkish {
+    margin: 0.25rem 0 1rem;
+    background: none;
+    border: none;
+    color: var(--brand, #60a5fa);
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.9rem;
+    padding: 0;
+    text-align: left;
+  }
+  .linkish:hover {
+    text-decoration: underline;
+  }
+  .linkish:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    text-decoration: none;
+  }
+  .section-title {
+    margin: 0 0 0.5rem;
+    font-size: 1rem;
+    color: #e2e8f0;
+  }
+  .lines {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .line-row {
+    display: grid;
+    grid-template-columns: 1fr 5.5rem 7rem 2.25rem;
+    gap: 0.5rem;
+    align-items: start;
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
+    background: color-mix(in oklab, var(--surface-2), white 2%);
+  }
+  .line-row.line-invalid {
+    border-color: #f87171;
+    box-shadow: 0 0 0 1px color-mix(in oklab, #ef4444, transparent 40%);
+  }
+  .line-row .grow {
+    grid-column: 1;
+  }
+  .line-row .qty input {
+    width: 100%;
+    padding: 0.5rem 0.45rem;
+    border-radius: 0.5rem;
+    border: 1px solid color-mix(in oklab, var(--surface-2), white 12%);
+    background: color-mix(in oklab, var(--surface-2), white 2%);
+    color: #e5e7eb;
+  }
+  .line-row .unit-readonly {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    justify-content: center;
+    min-height: 2.35rem;
+    padding: 0.35rem 0.45rem;
+    border-radius: 0.5rem;
+    border: 1px solid color-mix(in oklab, var(--surface-2), white 8%);
+    background: color-mix(in oklab, var(--surface-2), black 12%);
+  }
+  .line-row .unit-label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #94a3b8;
+  }
+  .line-row .unit-value {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #e2e8f0;
+    line-height: 1.2;
+  }
+  .line-row .line-err {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: 0.8rem;
+    color: #fca5a5;
+  }
+  .icon-rm {
+    appearance: none;
+    background: transparent;
+    border: 1px solid color-mix(in oklab, var(--surface-2), white 15%);
+    color: #e5e7eb;
+    border-radius: 0.45rem;
+    cursor: pointer;
+    font-size: 1.1rem;
+    line-height: 1;
+    padding: 0.35rem 0;
+  }
+  .icon-rm:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  .line-actions {
+    margin-top: 0.75rem;
+  }
+  .grid-compact {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.65rem;
+  }
+  .grid-compact .full-row {
+    grid-column: 1 / -1;
+  }
+  .grid-compact label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.85rem;
+    color: #cbd5e1;
+  }
+  .grid-compact input {
+    padding: 0.5rem 0.6rem;
+    border-radius: 0.5rem;
+    border: 1px solid color-mix(in oklab, var(--surface-2), white 12%);
+    background: color-mix(in oklab, var(--surface-2), white 2%);
+    color: #e5e7eb;
+  }
+  .inline-error {
+    color: #fca5a5;
+    font-size: 0.9rem;
+    margin: 0 0 0.75rem;
+  }
+  .muted-strong {
+    color: #cbd5e1;
+    font-size: 0.9rem;
+    margin: 0 0 0.75rem;
+    line-height: 1.4;
+  }
+  .inline-error.muted-strong {
+    color: #fca5a5;
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    border: 0;
   }
   .order-details {
     background: color-mix(in oklab, var(--surface-2), white 2%);
@@ -375,6 +1107,7 @@
     gap: 0.6rem;
     padding: 1rem;
     border-top: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
+    flex-shrink: 0;
   }
   .ghost {
     appearance: none;
@@ -384,6 +1117,10 @@
     padding: 0.5rem 0.9rem;
     border-radius: 0.6rem;
     cursor: pointer;
+  }
+  .ghost:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
   .danger {
     appearance: none;

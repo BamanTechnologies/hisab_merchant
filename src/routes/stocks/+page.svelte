@@ -27,6 +27,7 @@
     quantity: number;
     selling_price: number | string | null;
     thickness?: number | null;
+    unit?: string | null;
   };
 
   let { data, form }: { data: PageData; form?: any } = $props();
@@ -43,7 +44,7 @@
   const branches = data.branches as Branch[];
   const merchantBranchId = data.merchantBranchId as string | null;
 
-  let typeFilter = $state<"all" | "glass" | "brake_pad">("all");
+  let typeFilter = $state<"all" | "glass" | "brake_lining">("all");
 
   type SortColumn = "none" | "type" | "country" | "color" | "figure";
   let sortColumn = $state<SortColumn>("none");
@@ -80,9 +81,12 @@
     let list = stocks;
     if (typeFilter !== "all") {
       list =
-        typeFilter === "brake_pad"
+        typeFilter === "brake_lining"
           ? list.filter(
-              (s: Stock) => s.type === "brake_pad" || s.type === "break_pad",
+              (s: Stock) =>
+                s.type === "brake_lining" ||
+                s.type === "brake_pad" ||
+                s.type === "break_pad",
             )
           : list.filter((s: Stock) => s.type === typeFilter);
     }
@@ -107,7 +111,8 @@
   let modelNumber = $state("");
   let country = $state("");
   let selectedBranchId = $state("");
-  let stockType = $state<"glass" | "brake_pad">("glass");
+  let stockType = $state<"glass" | "brake_lining">("glass");
+  let stockUnit = $state<"Set" | "Pieces" | "Carton">("Pieces");
   let selectedInvestorIds = $state<string[]>([]);
   let investorDropdownOpen = $state(false);
   let branchDropdownOpen = $state(false);
@@ -137,6 +142,7 @@
     country = "";
     selectedBranchId = "";
     stockType = "glass";
+    stockUnit = "Pieces";
     selectedInvestorIds = [];
     investorDropdownOpen = false;
     branchDropdownOpen = false;
@@ -188,13 +194,18 @@
     country = stock.country ?? "";
     selectedBranchId = stock.branch ?? "";
     stockType =
+      stock.type === "brake_lining" ||
       stock.type === "brake_pad" ||
-      stock.type === "break_pad" ||
-      stock.type === "glass"
-        ? stock.type === "break_pad"
-          ? "brake_pad"
-          : (stock.type as "glass" | "brake_pad")
-        : "glass";
+      stock.type === "break_pad"
+        ? "brake_lining"
+        : stock.type === "glass"
+          ? "glass"
+          : "glass";
+    const u = stock.unit?.trim();
+    stockUnit =
+      u === "Set" || u === "Pieces" || u === "Carton"
+        ? u
+        : "Pieces";
     selectedInvestorIds = [];
     investorDropdownOpen = false;
     branchDropdownOpen = false;
@@ -217,6 +228,12 @@
       return;
     }
 
+    if (!stockUnit) {
+      e.preventDefault();
+      errorMessage = "Please select a unit";
+      return;
+    }
+
     // Check if no investors are selected
     if (!editingStockId && selectedInvestorIds.length === 0) {
       e.preventDefault(); // Prevent form submission
@@ -230,7 +247,6 @@
   function confirmAsOwnInvestor() {
     // Set merchant as investor
     selectedInvestorIds = [(data as any).merchantId]; // Use merchant ID as investor
-    console.log("Setting merchant as investor:", selectedInvestorIds);
     showInvestorConfirmModal = false;
 
     // Update the hidden input with the new investor data
@@ -239,7 +255,6 @@
     ) as HTMLInputElement;
     if (hiddenInput) {
       hiddenInput.value = JSON.stringify(selectedInvestorIds);
-      console.log("Updated hidden input value:", hiddenInput.value);
     }
 
     // Submit the form programmatically
@@ -287,8 +302,14 @@
 
   function typeDisplay(t: string | null | undefined) {
     if (t === "glass") return "Glass";
-    if (t === "brake_pad" || t === "break_pad") return "Brake pads";
+    if (t === "brake_lining" || t === "brake_pad" || t === "break_pad")
+      return "Brake lining";
     return t ?? "—";
+  }
+
+  function quantityWithUnit(s: Stock) {
+    const u = (s.unit ?? "").trim();
+    return u ? `${s.quantity} ${u}` : String(s.quantity);
   }
 
   function dash(v: unknown) {
@@ -354,7 +375,7 @@
       <select class="filter-select" bind:value={typeFilter}>
         <option value="all">All</option>
         <option value="glass">Glass</option>
-        <option value="brake_pad">Brake pads</option>
+        <option value="brake_lining">Brake lining</option>
       </select>
     </label>
     <button class="primary" onclick={openCreateModal}>New Stock</button>
@@ -410,7 +431,20 @@
             class="native-select"
           >
             <option value="glass">Glass</option>
-            <option value="brake_pad">Brake pads</option>
+            <option value="brake_lining">Brake lining</option>
+          </select>
+        </label>
+        <label>
+          <span>Unit</span>
+          <select
+            name="unit"
+            bind:value={stockUnit}
+            required
+            class="native-select"
+          >
+            <option value="Set">Set</option>
+            <option value="Pieces">Pieces</option>
+            <option value="Carton">Carton</option>
           </select>
         </label>
         <div class="field">
@@ -615,7 +649,7 @@
         <p><strong>Thickness:</strong> {dash(stockToDelete.thickness)}</p>
         <p><strong>Color:</strong> {dash(stockToDelete.color)}</p>
         <p><strong>Figure:</strong> {dash(stockToDelete.figure)}</p>
-        <p><strong>Quantity:</strong> {stockToDelete.quantity}</p>
+        <p><strong>Quantity:</strong> {quantityWithUnit(stockToDelete)}</p>
       </div>
       <p class="warning">This action cannot be undone.</p>
     </div>
@@ -776,7 +810,7 @@
           <td>{dash(s.thickness)}</td>
           <td>{dash(s.color)}</td>
           <td>{dash(s.figure)}</td>
-          <td class="right">{s.quantity}</td>
+          <td class="right">{quantityWithUnit(s)}</td>
           <td class="center">
             <button
               class="edit-btn"

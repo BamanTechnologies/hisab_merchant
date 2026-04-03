@@ -14,44 +14,32 @@ const LOGIN_MUTATION = `
 
 // Function to login user
 async function loginUser(phone: string, password: string) {
-  try {
-    const variables = {
-      phone,
-      password,
-    };
+  const variables = {
+    phone,
+    password,
+  };
 
-    console.log('Attempting login with variables:', variables);
+  const response = await fetch(config.graphql.endpoint, {
+    method: 'POST',
+    headers: getGraphQLHeaders(),
+    body: JSON.stringify({
+      query: LOGIN_MUTATION,
+      variables,
+    }),
+  });
 
-    const response = await fetch(config.graphql.endpoint, {
-      method: 'POST',
-      headers: getGraphQLHeaders(),
-      body: JSON.stringify({
-        query: LOGIN_MUTATION,
-        variables,
-      }),
-    });
-
-    console.log('Login response status:', response.status);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('HTTP error response:', errorText);
-      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
-    }
-
-    const result = await response.json();
-    console.log('Login response:', result);
-    
-    if (result.errors) {
-      console.error('GraphQL errors:', result.errors);
-      throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
-    }
-
-    return result.data.login;
-  } catch (error) {
-    console.error('Error during login:', error);
-    throw error;
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
   }
+
+  const result = await response.json();
+
+  if (result.errors) {
+    throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
+  }
+
+  return result.data.login;
 }
 
 export const actions: Actions = {
@@ -62,15 +50,8 @@ export const actions: Actions = {
     const phone = formData.get('phone') as string;
     const password = formData.get('password') as string;
 
-    console.log('Form data received for login:', {
-      phone,
-      password,
-    });
-
     try {
       const loginResult = await loginUser(phone, password);
-
-      console.log('Login successful:', loginResult);
 
       const userId = loginResult.token ? getUserIdFromToken(loginResult.token) : null;
       const merchantBranchId = userId ? await fetchMerchantBranchId(userId) : null;
@@ -79,8 +60,7 @@ export const actions: Actions = {
         token: loginResult.token,
         merchantBranchId,
       };
-    } catch (error) {
-      console.error('Failed to login:', error);
+    } catch {
       return {
         token: null,
         merchantBranchId: null,
