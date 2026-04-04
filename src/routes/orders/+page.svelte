@@ -46,6 +46,7 @@
     rowId: string;
     stockId: string;
     quantity: number;
+    unitPrice: number;
   };
 
   const MAX_LINES = 15;
@@ -67,6 +68,7 @@
       rowId: crypto.randomUUID(),
       stockId: "",
       quantity: 1,
+      unitPrice: 0,
     },
   ]);
   let createSubmitting = $state(false);
@@ -79,6 +81,13 @@
   let newPhone = $state("");
   let addCustomerSubmitting = $state(false);
   let addCustomerError = $state("");
+
+  function parseMoneyValue(v: unknown): number {
+    if (v === null || v === undefined) return 0;
+    if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+    const n = Number(String(v).replace(/[^0-9.-]/g, ""));
+    return Number.isFinite(n) ? n : 0;
+  }
 
   $effect(() => {
     orders = data.orders as OrderSummary[];
@@ -99,6 +108,11 @@
     return phone ? `${name} - ${phone}` : name || c.id;
   }
 
+  function countrySuffix(s: StockRow): string {
+    const c = s.country?.trim();
+    return c ? ` · ${c}` : "";
+  }
+
   function stockOptionLabel(s: StockRow) {
     const unit = s.unit?.trim();
     const qtyHint = unit
@@ -106,6 +120,7 @@
       : `${s.quantity} avail`;
     const typePart = typeDisplay(s.type);
     const rawType = s.type?.trim() ?? "";
+    const ctry = countrySuffix(s);
 
     if (rawType === "glass") {
       const parts: string[] = [];
@@ -124,15 +139,21 @@
         parts.length > 0
           ? parts.join(" ")
           : s.model_number?.trim() || s.id.slice(0, 8) + "…";
-      return `${desc} · ${typePart} (${qtyHint})`;
+      return `${desc} · ${typePart}${ctry} (${qtyHint})`;
     }
 
     const model = s.model_number?.trim() || s.id.slice(0, 8) + "…";
-    return `${model} · ${typePart} (${qtyHint})`;
+    return `${model} · ${typePart}${ctry} (${qtyHint})`;
   }
 
   function getStock(stockId: string): StockRow | undefined {
     return stocks.find((s) => s.id === stockId);
+  }
+
+  /** Prefill from stock catalog selling price only (per-order edits stay in the form). */
+  function defaultUnitPriceForStock(stockId: string): number {
+    if (!stockId) return 0;
+    return parseMoneyValue(getStock(stockId)?.selling_price);
   }
 
   /** Order unit always matches stock; shown read-only in the modal. */
@@ -168,12 +189,22 @@
     return "";
   }
 
+  function lineUnitPriceError(row: LineRow): string {
+    if (!row.stockId) return "";
+    const p = Number(row.unitPrice);
+    if (!Number.isFinite(p) || p <= 0) {
+      return "Enter a valid unit price greater than zero";
+    }
+    return "";
+  }
+
   const createModalHasErrors = $derived.by(() => {
     if (!selectedCustomerId) return true;
     if (orderLines.length === 0) return true;
     for (const row of orderLines) {
       if (!row.stockId) return true;
       if (lineQuantityError(row)) return true;
+      if (lineUnitPriceError(row)) return true;
     }
     return false;
   });
@@ -192,6 +223,7 @@
         rowId: crypto.randomUUID(),
         stockId: "",
         quantity: 1,
+        unitPrice: 0,
       },
     ];
     createError = "";
@@ -215,6 +247,7 @@
         rowId: crypto.randomUUID(),
         stockId: "",
         quantity: 1,
+        unitPrice: 0,
       },
     ];
   }
@@ -291,7 +324,11 @@
       createError = "Add at least one stock line";
       return;
     }
-    const linesPayload: { stock_id: string; quantity: number }[] = [];
+    const linesPayload: {
+      stock_id: string;
+      quantity: number;
+      unit_price: number;
+    }[] = [];
     for (const row of orderLines) {
       if (!row.stockId) {
         createError = "Each line needs a stock item";
@@ -302,9 +339,15 @@
         createError = err;
         return;
       }
+      const priceErr = lineUnitPriceError(row);
+      if (priceErr) {
+        createError = priceErr;
+        return;
+      }
       linesPayload.push({
         stock_id: row.stockId,
         quantity: Number(row.quantity),
+        unit_price: Number(row.unitPrice),
       });
     }
 
@@ -500,15 +543,25 @@
         {#each orderLines as row (row.rowId)}
           <div
             class="line-row"
-            class:line-invalid={!!lineQuantityError(row) && row.stockId !== ""}
+            class:line-invalid={row.stockId !== "" &&
+              (!!lineQuantityError(row) || !!lineUnitPriceError(row))}
           >
             <label class="grow">
               <span class="sr-only">Stock</span>
               <select
                 class="native-select full"
-                bind:value={row.stockId}
-                onchange={() => {
-                  orderLines = [...orderLines];
+                value={row.stockId}
+                onchange={(e) => {
+                  const v = e.currentTarget.value;
+                  orderLines = orderLines.map((r) =>
+                    r.rowId === row.rowId
+                      ? {
+                          ...r,
+                          stockId: v,
+                          unitPrice: v === "" ? 0 : defaultUnitPriceForStock(v),
+                        }
+                      : r,
+                  );
                 }}
               >
                 <option value="">Select stock</option>
@@ -532,6 +585,21 @@
               <span class="unit-label">Unit</span>
               <span class="unit-value">{lineStockUnitLabel(row)}</span>
             </div>
+            <label class="line-price">
+              <span class="sr-only">Unit price (Birr)</span>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                placeholder="Price"
+                title="Unit selling price for this order (editable)"
+                bind:value={row.unitPrice}
+                oninput={() => {
+                  orderLines = [...orderLines];
+                }}
+                disabled={!row.stockId}
+              />
+            </label>
             <button
               type="button"
               class="icon-rm"
@@ -540,6 +608,8 @@
             >
             {#if lineQuantityError(row)}
               <p class="line-err">{lineQuantityError(row)}</p>
+            {:else if lineUnitPriceError(row)}
+              <p class="line-err">{lineUnitPriceError(row)}</p>
             {/if}
           </div>
         {/each}
@@ -883,7 +953,7 @@
     flex-direction: column;
   }
   .modal-wide {
-    max-width: 640px;
+    max-width: min(920px, 100vw - 2rem);
   }
   .modal-nested {
     z-index: 60;
@@ -968,7 +1038,7 @@
   }
   .line-row {
     display: grid;
-    grid-template-columns: 1fr 5.5rem 7rem 2.25rem;
+    grid-template-columns: 1fr 5.5rem 7rem 6.75rem 2.25rem;
     gap: 0.5rem;
     align-items: start;
     padding: 0.5rem;
@@ -983,13 +1053,18 @@
   .line-row .grow {
     grid-column: 1;
   }
-  .line-row .qty input {
+  .line-row .qty input,
+  .line-row .line-price input {
     width: 100%;
     padding: 0.5rem 0.45rem;
     border-radius: 0.5rem;
     border: 1px solid color-mix(in oklab, var(--surface-2), white 12%);
     background: color-mix(in oklab, var(--surface-2), white 2%);
     color: #e5e7eb;
+  }
+  .line-row .line-price input:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
   .line-row .unit-readonly {
     display: flex;

@@ -112,7 +112,8 @@
   let country = $state("");
   let selectedBranchId = $state("");
   let stockType = $state<"glass" | "brake_lining">("glass");
-  let stockUnit = $state<"Set" | "Pieces" | "Carton">("Pieces");
+  /** Unit of measure (e.g. Pieces, Set, kg) — free text, max 64 chars on server */
+  let stockUnit = $state("");
   let selectedInvestorIds = $state<string[]>([]);
   let investorDropdownOpen = $state(false);
   let branchDropdownOpen = $state(false);
@@ -201,11 +202,7 @@
         : stock.type === "glass"
           ? "glass"
           : "glass";
-    const u = stock.unit?.trim();
-    stockUnit =
-      u === "Set" || u === "Pieces" || u === "Carton"
-        ? u
-        : "Pieces";
+    stockUnit = (stock.unit ?? "").trim();
     selectedInvestorIds = [];
     investorDropdownOpen = false;
     branchDropdownOpen = false;
@@ -228,9 +225,9 @@
       return;
     }
 
-    if (!stockUnit) {
+    if (!stockUnit.trim()) {
       e.preventDefault();
-      errorMessage = "Please select a unit";
+      errorMessage = "Please enter a unit (e.g. Pieces, Set, Carton)";
       return;
     }
 
@@ -434,18 +431,17 @@
             <option value="brake_lining">Brake lining</option>
           </select>
         </label>
-        <label>
-          <span>Unit</span>
-          <select
+        <label class="unit-field">
+          <span>Unit of measure</span>
+          <input
+            type="text"
             name="unit"
             bind:value={stockUnit}
             required
-            class="native-select"
-          >
-            <option value="Set">Set</option>
-            <option value="Pieces">Pieces</option>
-            <option value="Carton">Carton</option>
-          </select>
+            maxlength="64"
+            autocomplete="off"
+            placeholder="Pieces, Set, kg, Carton…"
+          />
         </label>
         <div class="field">
           <span style="color: white;">Branch</span>
@@ -1045,11 +1041,25 @@
     margin: auto;
     max-width: 720px;
     width: calc(100% - 2rem);
+    max-height: min(92vh, 880px);
+    display: flex;
+    flex-direction: column;
     background: color-mix(in oklab, var(--surface), black 2%);
     border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
     border-radius: 0.9rem;
     padding: 0;
     z-index: 40;
+    overflow: hidden;
+  }
+  .modal .form {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .unit-field input {
+    border-color: color-mix(in oklab, var(--brand), white 35%);
+    box-shadow: 0 0 0 1px color-mix(in oklab, var(--brand), transparent 70%);
   }
   .modal header {
     display: flex;

@@ -357,13 +357,6 @@ function phoneToNumeric(phone: string | number | null | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function parseMoney(v: unknown): number {
-  if (v === null || v === undefined) return 0;
-  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
-  const n = Number(String(v).replace(/[^0-9.-]/g, ''));
-  return Number.isFinite(n) ? n : 0;
-}
-
 type OrderInsertObject = {
   created_by: string;
   customer_id: string;
@@ -423,7 +416,7 @@ async function fetchStocksByIdsForOrder(stockIds: string[]): Promise<StockRowFor
   }
 }
 
-type OrderLineInput = { stock_id: string; quantity: number; unit?: string };
+type OrderLineInput = { stock_id: string; quantity: number; unit_price: number; unit?: string };
 
 export const load: PageServerLoad = async ({ request, parent }) => {
   const { merchantContext } = await parent();
@@ -500,11 +493,18 @@ export const actions: Actions = {
 
     for (const line of lines) {
       const q = Number(line.quantity);
+      const up = Number(line.unit_price);
       if (!line.stock_id) {
         return { success: false, message: 'Each line needs a stock item and quantity' };
       }
       if (!Number.isFinite(q) || q < 1) {
         return { success: false, message: 'Quantity must be at least 1' };
+      }
+      if (!Number.isFinite(up) || up <= 0) {
+        return {
+          success: false,
+          message: 'Each line needs a valid unit price greater than zero',
+        };
       }
     }
 
@@ -549,6 +549,7 @@ export const actions: Actions = {
       }
       const available = Number(stockRow.quantity);
       const q = Number(line.quantity);
+      const unitPrice = Number(line.unit_price);
       if (!Number.isFinite(available) || q > available) {
         return {
           success: false,
@@ -556,14 +557,13 @@ export const actions: Actions = {
         };
       }
 
-      const selling = parseMoney(stockRow.selling_price);
       const factorRaw = stockRow.factor;
       const factor =
         factorRaw != null && String(factorRaw).trim() !== ''
           ? Number(factorRaw)
           : 1;
       const f = Number.isFinite(factor) && factor > 0 ? factor : 1;
-      const total_amount = q * selling * f;
+      const total_amount = q * unitPrice * f;
       const outstanding_amount = total_amount;
 
       const rawUnit = stockRow.unit;

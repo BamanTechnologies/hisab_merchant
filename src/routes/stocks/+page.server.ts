@@ -411,7 +411,14 @@ async function updateStock(stockData: {
 }
 
 const VALID_TYPES = new Set(['glass', 'brake_lining']);
-const VALID_UNITS = new Set(['Set', 'Pieces', 'Carton']);
+const MAX_UNIT_LENGTH = 64;
+
+function parseUnit(raw: FormDataEntryValue | null): string | null {
+  const s = String(raw ?? '').trim();
+  if (!s) return null;
+  if (s.length > MAX_UNIT_LENGTH) return null;
+  return s;
+}
 
 function normalizeStockType(raw: string): string {
   const t = raw.trim();
@@ -450,7 +457,7 @@ export const actions: Actions = {
     const country = parseOptionalString(formData.get('country'));
     const branchRaw = parseOptionalString(formData.get('branch'));
     const type = normalizeStockType(String(formData.get('type') ?? ''));
-    const unit = String(formData.get('unit') ?? '').trim();
+    const unit = parseUnit(formData.get('unit'));
 
     let investors: string[] = [];
     try {
@@ -464,8 +471,11 @@ export const actions: Actions = {
       return { success: false, message: 'Invalid stock type' };
     }
 
-    if (!VALID_UNITS.has(unit)) {
-      return { success: false, message: 'Unit must be Set, Pieces, or Carton' };
+    if (!unit) {
+      return {
+        success: false,
+        message: `Unit is required (max ${MAX_UNIT_LENGTH} characters)`,
+      };
     }
 
     if (!branchRaw) {
@@ -566,7 +576,7 @@ export const actions: Actions = {
     const country = parseOptionalString(formData.get('country'));
     const branchRaw = parseOptionalString(formData.get('branch'));
     const type = normalizeStockType(String(formData.get('type') ?? ''));
-    const unit = String(formData.get('unit') ?? '').trim();
+    const unit = parseUnit(formData.get('unit'));
 
     if (!id) {
       return {
@@ -579,8 +589,11 @@ export const actions: Actions = {
       return { success: false, message: 'Invalid stock type' };
     }
 
-    if (!VALID_UNITS.has(unit)) {
-      return { success: false, message: 'Unit must be Set, Pieces, or Carton' };
+    if (!unit) {
+      return {
+        success: false,
+        message: `Unit is required (max ${MAX_UNIT_LENGTH} characters)`,
+      };
     }
 
     if (!branchRaw) {
