@@ -1,6 +1,12 @@
 import type { PageServerLoad, Actions } from './$types';
 import { getUserIdFromRequest } from '$lib/auth';
 import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
+import { createPaymentRecord } from '$lib/payments.server';
+import {
+  fetchCustomerTransactionSum,
+  insertCustomerTransaction,
+  sumOrderLedgerOrderDebits,
+} from '$lib/customerTransactions.server';
 import { config, getGraphQLHeaders } from '$lib/config';
 
 const FETCH_BRANCH_BY_PK_QUERY = `
@@ -127,14 +133,47 @@ const FETCH_ORDER_FOR_MERCHANT_QUERY = `
       limit: 1
     ) {
       id
+      stock_id
+      order_quantity
+      status
     }
   }
 `;
 
-const DELETE_ORDER_MUTATION = `
-  mutation DeleteOrderById($id: uuid!) {
-    delete_orders_by_pk(id: $id) {
+const FETCH_ORDER_CANCEL_CONTEXT_QUERY = `
+  query OrderCancelContext($id: uuid!, $merchantId: uuid!) {
+    orders(
+      where: { _and: [{ id: { _eq: $id } }, { created_by: { _eq: $merchantId } }] }
+      limit: 1
+    ) {
       id
+      stock_id
+      order_quantity
+      status
+      customer_id
+      total_amount
+      outstanding_amount
+      stock {
+        branch
+      }
+    }
+  }
+`;
+
+const INCREMENT_STOCK_QUANTITY_MUTATION = `
+  mutation IncrementStockQuantity($id: uuid!, $delta: numeric!) {
+    update_stock_by_pk(pk_columns: { id: $id }, _inc: { quantity: $delta }) {
+      id
+      quantity
+    }
+  }
+`;
+
+const CANCEL_ORDER_MUTATION = `
+  mutation CancelOrderById($id: uuid!) {
+    update_orders_by_pk(pk_columns: { id: $id }, _set: { status: "cancelled" }) {
+      id
+      status
     }
   }
 `;
@@ -342,12 +381,170 @@ async function orderBelongsToMerchant(orderId: string, merchantId: string): Prom
   }
 }
 
-async function deleteOrder(orderId: string) {
-  const data = await gql<{ delete_orders_by_pk: { id: string } | null }>(
-    DELETE_ORDER_MUTATION,
+type MerchantOrderCancelRow = {
+  id: string;
+  stock_id: string;
+  order_quantity: number;
+  status: string;
+  customer_id: string;
+  total_amount: number;
+  outstanding_amount: number;
+  stock_branch: string | null;
+};
+
+function parseMoney(v: unknown): number {
+  if (v === null || v === undefined) return 0;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  const n = Number(String(v).replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+async function fetchMerchantOrderForCancel(
+  orderId: string,
+  merchantId: string,
+): Promise<MerchantOrderCancelRow | null> {
+  try {
+    const data = await gql<{
+      orders: Array<{
+        id: string;
+        stock_id?: string | null;
+        order_quantity?: unknown;
+        status?: string | null;
+        customer_id?: string | null;
+        total_amount?: unknown;
+        outstanding_amount?: unknown;
+        stock?: { branch?: string | null } | null;
+      }>;
+    }>(FETCH_ORDER_CANCEL_CONTEXT_QUERY, { id: orderId, merchantId });
+    const row = data.orders?.[0];
+    if (!row?.stock_id) return null;
+    const q = Number(row.order_quantity);
+    if (!Number.isFinite(q) || q <= 0) return null;
+    const customerId = String(row.customer_id ?? '').trim();
+    if (!customerId) return null;
+    return {
+      id: row.id,
+      stock_id: row.stock_id,
+      order_quantity: q,
+      status: String(row.status ?? '').trim() || 'unpaid',
+      customer_id: customerId,
+      total_amount: parseMoney(row.total_amount),
+      outstanding_amount: parseMoney(row.outstanding_amount),
+      stock_branch: row.stock?.branch ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Ledger: positive sum = customer owes; negative sum = prepaid credit.
+ * - `type: order` with **+amount** increases debt.
+ * - Bank/cash payments (order detail): **−amount** reduces debt.
+ * - Paying **from prepaid credit**: **+amount** on `customer_transactions` (consumes credit, moves sum toward zero).
+ *
+ * Flow:
+ * - extra = 0: only `+total` `type: order`.
+ * - extra ≥ order: `payment` row + `+total` `type: payment` (credit applied); no `type: order`.
+ * - 0 < extra < order: `payment` + `+extra` `type: payment` then `+(order−extra)` `type: order`.
+ */
+async function postOrderLedgerAndAutoPay(opts: {
+  userId: string;
+  companyId: string;
+  customerId: string;
+  orderId: string;
+  orderTotalAmount: number;
+}): Promise<void> {
+  const sumBefore = await fetchCustomerTransactionSum(opts.companyId, opts.customerId);
+  const extra = Math.max(0, -sumBefore);
+  const total = opts.orderTotalAmount;
+
+  if (extra === 0) {
+    await insertCustomerTransaction({
+      company: opts.companyId,
+      customer: opts.customerId,
+      amount: total,
+      type: 'order',
+      reference: opts.orderId,
+      reference_type: 'order',
+      note: 'Order created',
+      created_by: opts.userId,
+    });
+    return;
+  }
+
+  if (extra >= total) {
+    await createPaymentRecord({
+      amount: total,
+      order_id: opts.orderId,
+      payment_method: 'Customer balance',
+      created_by: opts.userId,
+    });
+
+    await insertCustomerTransaction({
+      company: opts.companyId,
+      customer: opts.customerId,
+      amount: total,
+      type: 'payment',
+      reference: opts.orderId,
+      reference_type: 'order',
+      note: 'Payment from customer balance',
+      created_by: opts.userId,
+    });
+    return;
+  }
+
+  await createPaymentRecord({
+    amount: extra,
+    order_id: opts.orderId,
+    payment_method: 'Customer balance',
+    created_by: opts.userId,
+  });
+
+  await insertCustomerTransaction({
+    company: opts.companyId,
+    customer: opts.customerId,
+    amount: extra,
+    type: 'payment',
+    reference: opts.orderId,
+    reference_type: 'order',
+    note: 'Partial payment from customer balance',
+    created_by: opts.userId,
+  });
+
+  await insertCustomerTransaction({
+    company: opts.companyId,
+    customer: opts.customerId,
+    amount: total - extra,
+    type: 'order',
+    reference: opts.orderId,
+    reference_type: 'order',
+    note: 'Order created (unpaid portion after credit)',
+    created_by: opts.userId,
+  });
+}
+
+async function incrementStockQuantity(stockId: string, delta: number): Promise<void> {
+  if (!Number.isFinite(delta) || delta === 0) {
+    throw new Error('Invalid stock quantity delta');
+  }
+  const data = await gql<{
+    update_stock_by_pk: { id: string } | null;
+  }>(INCREMENT_STOCK_QUANTITY_MUTATION, {
+    id: stockId,
+    delta,
+  });
+  if (!data.update_stock_by_pk?.id) {
+    throw new Error('Stock row was not updated');
+  }
+}
+
+async function cancelOrderInDatabase(orderId: string) {
+  const data = await gql<{ update_orders_by_pk: { id: string } | null }>(
+    CANCEL_ORDER_MUTATION,
     { id: orderId },
   );
-  return data.delete_orders_by_pk;
+  return data.update_orders_by_pk;
 }
 
 function phoneToNumeric(phone: string | number | null | undefined): number {
@@ -587,13 +784,33 @@ export const actions: Actions = {
       });
     }
 
+    let inserted: { id: string }[];
     try {
-      await insertOrdersBulk(orderObjects);
+      inserted = await insertOrdersBulk(orderObjects);
     } catch (err) {
       return {
         success: false,
         message: `Failed to create orders: ${err instanceof Error ? err.message : 'Unknown error'}`,
       };
+    }
+
+    for (let i = 0; i < inserted.length; i++) {
+      const orderId = inserted[i].id;
+      const obj = orderObjects[i];
+      try {
+        await postOrderLedgerAndAutoPay({
+          userId,
+          companyId,
+          customerId,
+          orderId,
+          orderTotalAmount: obj.total_amount,
+        });
+      } catch (err) {
+        return {
+          success: false,
+          message: `Orders created but ledger / balance step failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        };
+      }
     }
 
     return {
@@ -674,7 +891,7 @@ export const actions: Actions = {
     }
   },
 
-  deleteOrder: async ({ request }) => {
+  cancelOrder: async ({ request }) => {
     const formData = await request.formData();
     const orderId = formData.get('orderId') as string;
 
@@ -690,23 +907,72 @@ export const actions: Actions = {
       return { success: false, message: 'Authentication required' };
     }
 
-    const allowed = await orderBelongsToMerchant(orderId, merchantId);
-    if (!allowed) {
+    const orderRow = await fetchMerchantOrderForCancel(orderId, merchantId);
+    if (!orderRow) {
       return { success: false, message: 'Order not found' };
     }
 
-    try {
-      const result = await deleteOrder(orderId);
+    if (orderRow.status === 'cancelled') {
+      return { success: false, message: 'This order is already cancelled' };
+    }
 
-      return {
-        success: true,
-        message: 'Order deleted successfully',
-        deletedId: result?.id,
-      };
+    try {
+      await incrementStockQuantity(orderRow.stock_id, orderRow.order_quantity);
     } catch (error) {
       return {
         success: false,
-        message: `Failed to delete order: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Could not restore stock quantity: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      };
+    }
+
+    try {
+      const result = await cancelOrderInDatabase(orderId);
+      if (!result?.id) {
+        await incrementStockQuantity(orderRow.stock_id, -orderRow.order_quantity).catch(() => {});
+        return { success: false, message: 'Order could not be cancelled' };
+      }
+
+      if (orderRow.stock_branch) {
+        const companyId = await fetchBranchCompany(orderRow.stock_branch);
+        if (companyId) {
+          try {
+            const orderDebitSum = await sumOrderLedgerOrderDebits(orderId);
+            if (orderDebitSum > 0) {
+              await insertCustomerTransaction({
+                company: companyId,
+                customer: orderRow.customer_id,
+                amount: -orderDebitSum,
+                type: 'adjustment',
+                reference: orderId,
+                reference_type: 'order',
+                note: 'Order cancelled — ledger reversal',
+                created_by: merchantId,
+              });
+            }
+          } catch (ledgerErr) {
+            return {
+              success: false,
+              message: `Order cancelled but ledger reversal failed: ${ledgerErr instanceof Error ? ledgerErr.message : 'Unknown error'}`,
+              orderId: result.id,
+            };
+          }
+        }
+      }
+
+      return {
+        success: true,
+        message: 'Order cancelled successfully',
+        orderId: result.id,
+      };
+    } catch (error) {
+      try {
+        await incrementStockQuantity(orderRow.stock_id, -orderRow.order_quantity);
+      } catch {
+        // Rollback failed; stock may be overstated until corrected manually.
+      }
+      return {
+        success: false,
+        message: `Failed to cancel order: ${error instanceof Error ? error.message : 'Unknown error'}`,
       };
     }
   },

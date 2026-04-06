@@ -2,6 +2,10 @@ import type { PageServerLoad, Actions } from './$types';
 import { error, redirect } from '@sveltejs/kit';
 import { getUserIdFromRequest } from '$lib/auth';
 import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
+import {
+  fetchBranchCompanyId,
+  fetchInvestorsForCompany,
+} from '$lib/companyInvestors.server';
 import { config, getGraphQLHeaders } from '$lib/config';
 
 const FETCH_STOCK_BY_PK_QUERY = `
@@ -25,18 +29,6 @@ const FETCH_STOCK_BY_PK_QUERY = `
       thickness
       factor
       unit
-    }
-  }
-`;
-
-// GraphQL query to fetch investors
-const FETCH_INVESTORS_QUERY = `
-  query GetInvestors {
-    investor {
-      id
-      first_name
-      last_name
-      phone_number
     }
   }
 `;
@@ -65,33 +57,6 @@ async function fetchStockByPk(id: string) {
     return result.data.stock_by_pk ?? null;
   } catch {
     return null;
-  }
-}
-
-// Function to fetch investors from GraphQL
-async function fetchInvestors() {
-  try {
-    const response = await fetch(config.graphql.endpoint, {
-      method: 'POST',
-      headers: getGraphQLHeaders(),
-      body: JSON.stringify({
-        query: FETCH_INVESTORS_QUERY,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const result = await response.json();
-    
-    if (result.errors) {
-      throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
-    }
-
-    return result.data.investor;
-  } catch {
-    return [];
   }
 }
 
@@ -238,9 +203,14 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
     merchantContext?.merchantBranchId ??
     (merchantId ? await fetchMerchantBranchId(merchantId) : null);
 
+  let companyId = merchantContext?.companyId ?? null;
+  if (!companyId && merchantBranchId) {
+    companyId = await fetchBranchCompanyId(merchantBranchId);
+  }
+
   const [stock, investors] = await Promise.all([
     fetchStockByPk(params.id),
-    fetchInvestors(),
+    fetchInvestorsForCompany(companyId),
   ]);
 
   if (!stock) {

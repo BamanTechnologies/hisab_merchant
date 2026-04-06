@@ -1,7 +1,7 @@
 <script lang="ts">
   import favicon from "$lib/assets/favicon.svg";
   import { browser } from "$app/environment";
-  import { page } from "$app/stores";
+  import { navigating, page } from "$app/stores";
   import { goto } from "$app/navigation";
   import { onMount } from "svelte";
   import type { LayoutData } from "./$types";
@@ -110,6 +110,17 @@
     </aside>
     <main class="content">
       {@render children?.()}
+      {#if $navigating}
+        <div
+          class="nav-loading-overlay"
+          aria-busy="true"
+          aria-live="polite"
+          role="status"
+        >
+          <div class="nav-loading-spinner" aria-hidden="true"></div>
+          <span class="sr-only">Loading page</span>
+        </div>
+      {/if}
     </main>
   </div>
 {:else}
@@ -237,7 +248,47 @@
   }
 
   .content {
+    position: relative;
     padding: 1.25rem 1.25rem 4rem;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .nav-loading-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in oklab, #0b1220, transparent 35%);
+    backdrop-filter: blur(4px);
+    pointer-events: auto;
+  }
+
+  .nav-loading-spinner {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    border: 3px solid color-mix(in oklab, var(--brand), transparent 75%);
+    border-top-color: var(--brand);
+    animation: nav-spin 0.7s linear infinite;
+  }
+
+  @keyframes nav-spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   @media (max-width: 900px) {

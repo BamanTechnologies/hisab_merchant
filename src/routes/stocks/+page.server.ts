@@ -1,6 +1,10 @@
 import type { PageServerLoad, Actions } from './$types';
 import { getUserIdFromRequest } from '$lib/auth';
 import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
+import {
+  fetchBranchCompanyId,
+  fetchInvestorsForCompany,
+} from '$lib/companyInvestors.server';
 import { config, getGraphQLHeaders } from '$lib/config';
 
 const STOCK_FIELDS = `
@@ -37,17 +41,6 @@ const FETCH_STOCKS_ALL_QUERY = `
   query GetStocksAll {
     stock {
 ${STOCK_FIELDS}
-    }
-  }
-`;
-
-const FETCH_INVESTORS_QUERY = `
-  query GetInvestors {
-    investor {
-      id
-      first_name
-      last_name
-      phone_number
     }
   }
 `;
@@ -91,32 +84,6 @@ async function fetchStocks(merchantBranchId: string | null) {
   }
 }
 
-async function fetchInvestors() {
-  try {
-    const response = await fetch(config.graphql.endpoint, {
-      method: 'POST',
-      headers: getGraphQLHeaders(),
-      body: JSON.stringify({
-        query: FETCH_INVESTORS_QUERY,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const result = await response.json();
-
-    if (result.errors) {
-      throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
-    }
-
-    return result.data.investor;
-  } catch {
-    return [];
-  }
-}
-
 async function fetchBranches() {
   try {
     const response = await fetch(config.graphql.endpoint, {
@@ -151,9 +118,14 @@ export const load: PageServerLoad = async ({ request, parent }) => {
     merchantContext?.merchantBranchId ??
     (merchantId ? await fetchMerchantBranchId(merchantId) : null);
 
+  let companyId = merchantContext?.companyId ?? null;
+  if (!companyId && merchantBranchId) {
+    companyId = await fetchBranchCompanyId(merchantBranchId);
+  }
+
   const [stocks, investors, branches] = await Promise.all([
     fetchStocks(merchantBranchId),
-    fetchInvestors(),
+    fetchInvestorsForCompany(companyId),
     fetchBranches(),
   ]);
 

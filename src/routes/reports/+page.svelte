@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { enhance } from "$app/forms";
   import type { PageData } from "./$types";
 
   type Report = {
@@ -84,6 +85,9 @@
   let generatedReportData = $state<ReportData | null>(null);
   let errorMessage = $state("");
   let successMessage = $state("");
+  let generateReportPending = $state(false);
+  let sendReportPending = $state(false);
+  let resendReportPending = $state(false);
 
   function formatDate(dateString: string) {
     try {
@@ -314,10 +318,21 @@
               successMessage = "";
             }}
             style="display: inline-flex; gap: 0.5rem;"
+            use:enhance={() => {
+              resendReportPending = true;
+              return async ({ update }) => {
+                await update();
+                resendReportPending = false;
+              };
+            }}
           >
             <input type="hidden" name="report_id" value={selectedReport.id} />
-            <button type="submit" class="primary small">
-              Resend
+            <button
+              type="submit"
+              class="primary small"
+              disabled={resendReportPending}
+            >
+              {resendReportPending ? "Sending…" : "Resend"}
             </button>
           </form>
         {/if}
@@ -354,6 +369,13 @@
         method="POST"
         action="?/generateReport"
         onsubmit={generateReport}
+        use:enhance={() => {
+          generateReportPending = true;
+          return async ({ update }) => {
+            await update();
+            generateReportPending = false;
+          };
+        }}
       >
         <div class="investor-selection">
           <h3>Select Investor:</h3>
@@ -387,11 +409,19 @@
         {/if}
 
         <footer>
-          <button type="button" class="ghost" onclick={closeGenerateModal}>
+          <button
+            type="button"
+            class="ghost"
+            onclick={closeGenerateModal}
+            disabled={generateReportPending}>
             Cancel
           </button>
-          <button type="submit" class="primary" disabled={!selectedInvestor}>
-            Generate Report
+          <button
+            type="submit"
+            class="primary"
+            disabled={!selectedInvestor || generateReportPending}
+          >
+            {generateReportPending ? "Generating…" : "Generate Report"}
           </button>
         </footer>
       </form>
@@ -553,16 +583,29 @@
           action="?/sendReport"
           onsubmit={sendReport}
           style="display: contents;"
+          use:enhance={() => {
+            sendReportPending = true;
+            return async ({ update }) => {
+              await update();
+              sendReportPending = false;
+            };
+          }}
         >
           <input
             type="hidden"
             name="report_data"
             value={JSON.stringify(generatedReportData)}
           />
-          <button type="button" class="ghost" onclick={closePreviewModal}>
+          <button
+            type="button"
+            class="ghost"
+            onclick={closePreviewModal}
+            disabled={sendReportPending}>
             Close
           </button>
-          <button type="submit" class="primary"> Send Report </button>
+          <button type="submit" class="primary" disabled={sendReportPending}>
+            {sendReportPending ? "Sending…" : "Send Report"}
+          </button>
         </form>
       </footer>
     </div>

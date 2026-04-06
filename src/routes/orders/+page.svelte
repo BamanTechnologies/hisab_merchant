@@ -53,8 +53,8 @@
 
   let { data }: { data: PageData } = $props();
 
-  let showDeleteModal = $state(false);
-  let orderToDelete = $state<OrderSummary | null>(null);
+  let showCancelModal = $state(false);
+  let orderToCancel = $state<OrderSummary | null>(null);
   let orders = $state(data.orders as OrderSummary[]);
   let customers = $state(data.customers as CustomerRow[]);
   let stocks = $state(data.stocks as StockRow[]);
@@ -72,6 +72,7 @@
     },
   ]);
   let createSubmitting = $state(false);
+  let cancelSubmitting = $state(false);
   let createError = $state("");
 
   let showAddCustomerModal = $state(false);
@@ -270,6 +271,7 @@
   }
 
   async function submitAddCustomer() {
+    if (addCustomerSubmitting) return;
     addCustomerError = "";
     addCustomerSubmitting = true;
     try {
@@ -315,6 +317,7 @@
   }
 
   async function submitCreateOrders() {
+    if (createSubmitting) return;
     createError = "";
     if (!selectedCustomerId) {
       createError = "Select a customer";
@@ -405,30 +408,32 @@
   }
 
   function statusClass(status: string) {
+    if (status === "cancelled") return "muted";
     if (status === "paid") return "ok";
     if (status === "partially_paid") return "warn";
     return "bad";
   }
 
-  function openDeleteModal(order: OrderSummary, event: Event) {
+  function openCancelModal(order: OrderSummary, event: Event) {
     event.stopPropagation();
-    orderToDelete = order;
-    showDeleteModal = true;
+    orderToCancel = order;
+    showCancelModal = true;
   }
 
-  function closeDeleteModal() {
-    showDeleteModal = false;
-    orderToDelete = null;
+  function closeCancelModal() {
+    showCancelModal = false;
+    orderToCancel = null;
   }
 
-  async function confirmDelete() {
-    if (!orderToDelete) return;
+  async function confirmCancelOrder() {
+    if (!orderToCancel || cancelSubmitting) return;
 
+    cancelSubmitting = true;
     try {
       const formData = new FormData();
-      formData.append("orderId", orderToDelete.id);
+      formData.append("orderId", orderToCancel.id);
 
-      const response = await fetch("?/deleteOrder", {
+      const response = await fetch("?/cancelOrder", {
         method: "POST",
         body: formData,
       });
@@ -440,21 +445,26 @@
           : undefined;
 
       if (result.type === "success" && payload?.success) {
-        orders = orders.filter((o: OrderSummary) => o.id !== orderToDelete!.id);
-        successMessage = payload.message ?? "Order deleted successfully";
+        const id = orderToCancel.id;
+        orders = orders.map((o: OrderSummary) =>
+          o.id === id ? { ...o, status: "cancelled" } : o,
+        );
+        successMessage = payload.message ?? "Order cancelled successfully";
         errorMessage = "";
-        closeDeleteModal();
+        closeCancelModal();
 
         setTimeout(() => {
           successMessage = "";
         }, 3000);
       } else {
-        errorMessage = payload?.message ?? "Delete failed";
+        errorMessage = payload?.message ?? "Could not cancel order";
         successMessage = "";
       }
     } catch {
-      errorMessage = "Failed to delete order. Please try again.";
+      errorMessage = "Failed to cancel order. Please try again.";
       successMessage = "";
+    } finally {
+      cancelSubmitting = false;
     }
   }
 </script>
@@ -486,15 +496,20 @@
     class="modal-overlay"
     role="button"
     tabindex="0"
-    onclick={closeCreateModal}
+    onclick={() => !createSubmitting && closeCreateModal()}
     onkeydown={(e) =>
-      (e.key === "Enter" || e.key === " ") && closeCreateModal()}
+      !createSubmitting &&
+      (e.key === "Enter" || e.key === " ") &&
+      closeCreateModal()}
   ></div>
   <dialog open class="modal modal-wide" onclick={(e) => e.stopPropagation()}>
     <header>
       <h2 style="color: white;">Create Order</h2>
-      <button class="icon" aria-label="Close" onclick={closeCreateModal}
-        >✕</button
+      <button
+        class="icon"
+        aria-label="Close"
+        onclick={closeCreateModal}
+        disabled={createSubmitting}>✕</button
       >
     </header>
     <div class="modal-body">
@@ -520,7 +535,7 @@
           class="native-select full"
           bind:value={selectedCustomerId}
           required
-          disabled={!data.companyId}
+          disabled={!data.companyId || createSubmitting}
         >
           <option value="">Choose a customer</option>
           {#each customers as c}
@@ -533,7 +548,7 @@
         type="button"
         class="linkish"
         onclick={openAddCustomerModal}
-        disabled={!data.companyId}
+        disabled={!data.companyId || createSubmitting}
       >
         + Add New Customer
       </button>
@@ -551,6 +566,7 @@
               <select
                 class="native-select full"
                 value={row.stockId}
+                disabled={createSubmitting}
                 onchange={(e) => {
                   const v = e.currentTarget.value;
                   orderLines = orderLines.map((r) =>
@@ -576,6 +592,7 @@
                 type="number"
                 min="1"
                 bind:value={row.quantity}
+                disabled={createSubmitting}
                 oninput={() => {
                   orderLines = [...orderLines];
                 }}
@@ -597,13 +614,14 @@
                 oninput={() => {
                   orderLines = [...orderLines];
                 }}
-                disabled={!row.stockId}
+                disabled={!row.stockId || createSubmitting}
               />
             </label>
             <button
               type="button"
               class="icon-rm"
               aria-label="Remove line"
+              disabled={createSubmitting}
               onclick={() => removeOrderLine(row.rowId)}>−</button
             >
             {#if lineQuantityError(row)}
@@ -620,15 +638,18 @@
           type="button"
           class="ghost"
           onclick={addOrderLine}
-          disabled={!canAddLine}
+          disabled={!canAddLine || createSubmitting}
         >
           + Add line
         </button>
       </div>
     </div>
     <footer>
-      <button type="button" class="ghost" onclick={closeCreateModal}
-        >Cancel</button
+      <button
+        type="button"
+        class="ghost"
+        onclick={closeCreateModal}
+        disabled={createSubmitting}>Cancel</button
       >
       <button
         type="button"
@@ -704,44 +725,54 @@
   </dialog>
 {/if}
 
-{#if showDeleteModal && orderToDelete}
+{#if showCancelModal && orderToCancel}
   <div
     class="modal-overlay"
     role="button"
     tabindex="0"
-    onclick={closeDeleteModal}
+    onclick={closeCancelModal}
     onkeydown={(e) =>
-      (e.key === "Enter" || e.key === " ") && closeDeleteModal()}
+      (e.key === "Enter" || e.key === " ") && closeCancelModal()}
   ></div>
   <dialog open class="modal" onclick={(e) => e.stopPropagation()}>
     <header>
-      <h2 style="color: white;">Delete Order</h2>
-      <button class="icon" aria-label="Close" onclick={closeDeleteModal}
+      <h2 style="color: white;">Cancel order</h2>
+      <button class="icon" aria-label="Close" onclick={closeCancelModal}
         >✕</button
       >
     </header>
     <div class="modal-content">
-      <p>Are you sure you want to delete this order?</p>
+      <p>Are you sure you want this order to be cancelled?</p>
       <div class="order-details">
-        <p><strong>Customer:</strong> {orderToDelete.customer_name}</p>
-        <p><strong>Phone:</strong> {orderToDelete.customer_phone}</p>
+        <p><strong>Customer:</strong> {orderToCancel.customer_name}</p>
+        <p><strong>Phone:</strong> {orderToCancel.customer_phone}</p>
         <p>
           <strong>Quantity:</strong>
-          {orderQtyCell(orderToDelete)}
+          {orderQtyCell(orderToCancel)}
         </p>
         <p>
-          <strong>Total Amount:</strong> Birr {orderToDelete.total_amount.toLocaleString()}
+          <strong>Total Amount:</strong> Birr {orderToCancel.total_amount.toLocaleString()}
         </p>
-        <p><strong>Status:</strong> {orderToDelete.status}</p>
+        <p><strong>Status:</strong> {orderToCancel.status}</p>
       </div>
-      <p class="warning">This action cannot be undone.</p>
+      <p class="warning">
+        Stock quantity for this line will be restored. The order will stay on
+        record as cancelled.
+      </p>
     </div>
     <footer>
-      <button type="button" class="ghost" onclick={closeDeleteModal}
-        >Cancel</button
+      <button
+        type="button"
+        class="ghost"
+        onclick={closeCancelModal}
+        disabled={cancelSubmitting}>Back</button
       >
-      <button type="button" class="danger" onclick={confirmDelete}
-        >Delete</button
+      <button
+        type="button"
+        class="danger"
+        onclick={confirmCancelOrder}
+        disabled={cancelSubmitting}
+        >{cancelSubmitting ? "Cancelling…" : "Confirm cancel"}</button
       >
     </footer>
   </dialog>
@@ -773,14 +804,19 @@
           <td><span class="chip {statusClass(o.status)}">{o.status}</span></td>
           <td class="right">Birr {o.total_amount.toLocaleString()}</td>
           <td class="center">
-            <button
-              class="delete-btn"
-              onclick={(e) => openDeleteModal(o, e)}
-              aria-label="Delete order"
-              title="Delete order"
-            >
-              🗑️
-            </button>
+            {#if o.status !== "cancelled"}
+              <button
+                type="button"
+                class="cancel-inline-btn"
+                onclick={(e) => openCancelModal(o, e)}
+                aria-label="Cancel order"
+                title="Cancel order"
+              >
+                Cancel
+              </button>
+            {:else}
+              <span class="action-placeholder">—</span>
+            {/if}
           </td>
         </tr>
       {/each}
@@ -899,6 +935,28 @@
   .chip.bad {
     background: color-mix(in oklab, #ef4444, white 20%);
     color: #991b1b;
+  }
+  .chip.muted {
+    background: color-mix(in oklab, #64748b, white 12%);
+    color: #cbd5e1;
+  }
+  .cancel-inline-btn {
+    appearance: none;
+    background: transparent;
+    border: 1px solid color-mix(in oklab, var(--surface-2), white 18%);
+    color: #e2e8f0;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.5rem;
+    cursor: pointer;
+  }
+  .cancel-inline-btn:hover {
+    background: color-mix(in oklab, var(--surface-2), white 8%);
+  }
+  .action-placeholder {
+    color: #64748b;
+    font-size: 0.85rem;
   }
   .row:focus {
     outline: none;
@@ -1209,18 +1267,5 @@
   }
   .danger:hover {
     background: #dc2626;
-  }
-  .delete-btn {
-    background: transparent;
-    border: none;
-    color: #ef4444;
-    font-size: 1.1rem;
-    cursor: pointer;
-    padding: 0.25rem;
-    border-radius: 0.25rem;
-    transition: background-color 0.2s;
-  }
-  .delete-btn:hover {
-    background: color-mix(in oklab, #ef4444, white 90%);
   }
 </style>

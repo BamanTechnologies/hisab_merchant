@@ -1,6 +1,9 @@
 import type { PageServerLoad } from './$types';
 import { error } from '@sveltejs/kit';
 import { getUserIdFromRequest } from '$lib/auth';
+import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
+import { fetchBranchCompanyId } from '$lib/companyInvestors.server';
+import { fetchCustomerTransactionSum } from '$lib/customerTransactions.server';
 import { config, getGraphQLHeaders } from '$lib/config';
 
 const VERIFY_COMPANY_CUSTOMER_JUNCTION_QUERY = `
@@ -73,6 +76,7 @@ const FETCH_CUSTOMER_ACTIVITY_QUERY = `
         _and: [
           { customer_id: { _eq: $customerId } }
           { stock: { branch: { _in: $branchIds } } }
+          { status: { _in: ["unpaid", "paid", "partially_paid"] } }
         ]
       }
     ) {
@@ -82,7 +86,7 @@ const FETCH_CUSTOMER_ACTIVITY_QUERY = `
         }
       }
     }
-    payment(
+    payments_for_list: payment(
       where: {
         order: {
           _and: [
@@ -99,14 +103,19 @@ const FETCH_CUSTOMER_ACTIVITY_QUERY = `
       order_id
       payment_method
     }
-    payment_aggregate(
+    payments_received_aggregate: payment_aggregate(
       where: {
-        order: {
-          _and: [
-            { customer_id: { _eq: $customerId } }
-            { stock: { branch: { _in: $branchIds } } }
-          ]
-        }
+        _and: [
+          { payment_method: { _neq: "Customer balance" } }
+          {
+            order: {
+              _and: [
+                { customer_id: { _eq: $customerId } }
+                { stock: { branch: { _in: $branchIds } } }
+              ]
+            }
+          }
+        ]
       }
     ) {
       aggregate {
@@ -131,7 +140,14 @@ const FETCH_PAYMENTS_FOR_ORDERS_QUERY = `
       order_id
       payment_method
     }
-    payment_aggregate(where: { order_id: { _in: $orderIds } }) {
+    payments_received_aggregate: payment_aggregate(
+      where: {
+        _and: [
+          { order_id: { _in: $orderIds } }
+          { payment_method: { _neq: "Customer balance" } }
+        ]
+      }
+    ) {
       aggregate {
         sum {
           amount
@@ -173,6 +189,7 @@ const FETCH_CUSTOMER_ORDERS_ONLY_QUERY = `
         _and: [
           { customer_id: { _eq: $customerId } }
           { stock: { branch: { _in: $branchIds } } }
+          { status: { _in: ["unpaid", "paid", "partially_paid"] } }
         ]
       }
     ) {
@@ -287,7 +304,13 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
     throw error(401, 'Unauthorized');
   }
 
-  const companyId = merchantContext?.companyId ?? null;
+  let companyId = merchantContext?.companyId ?? null;
+  const merchantBranchId =
+    merchantContext?.merchantBranchId ??
+    (merchantId ? await fetchMerchantBranchId(merchantId) : null);
+  if (!companyId && merchantBranchId) {
+    companyId = await fetchBranchCompanyId(merchantBranchId);
+  }
 
   if (!companyId) {
     throw error(404, 'Company not found for this merchant');
@@ -341,8 +364,8 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
       orders_aggregate: {
         aggregate: { sum: { total_amount: unknown } | null } | null;
       } | null;
-      payment?: Record<string, unknown>[];
-      payment_aggregate?: {
+      payments_for_list?: Record<string, unknown>[];
+      payments_received_aggregate?: {
         aggregate: { sum: { amount: unknown } | null } | null;
       } | null;
     };
@@ -357,9 +380,9 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
       totalOrderAmount = parseMoney(
         block.orders_aggregate?.aggregate?.sum?.total_amount ?? 0,
       );
-      payments = (block.payment ?? []).map((p) => normalizePaymentRow(p));
+      payments = (block.payments_for_list ?? []).map((p) => normalizePaymentRow(p));
       totalPaymentAmount = parseMoney(
-        block.payment_aggregate?.aggregate?.sum?.amount ?? 0,
+        block.payments_received_aggregate?.aggregate?.sum?.amount ?? 0,
       );
     } catch {
       try {
@@ -376,14 +399,14 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
         if (orderIds.length > 0) {
           const payBlock = await gql<{
             payment: Record<string, unknown>[];
-            payment_aggregate: {
+            payments_received_aggregate: {
               aggregate: { sum: { amount: unknown } | null } | null;
             } | null;
           }>(FETCH_PAYMENTS_FOR_ORDERS_QUERY, { orderIds });
 
           payments = (payBlock.payment ?? []).map((p) => normalizePaymentRow(p));
           totalPaymentAmount = parseMoney(
-            payBlock.payment_aggregate?.aggregate?.sum?.amount ?? 0,
+            payBlock.payments_received_aggregate?.aggregate?.sum?.amount ?? 0,
           );
         }
       } catch {
@@ -392,7 +415,8 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
     }
   }
 
-  const outstandingAmount = Math.max(0, totalOrderAmount - totalPaymentAmount);
+  /** Σ `customer_transactions.amount` for this customer + company (positive = owes, negative = credit / overpaid). */
+  const outstandingAmount = await fetchCustomerTransactionSum(companyId, customerId);
 
   return {
     customer: {

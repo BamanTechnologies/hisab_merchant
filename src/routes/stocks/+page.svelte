@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { enhance } from "$app/forms";
   import { goto } from "$app/navigation";
   import type { PageData } from "./$types";
 
@@ -39,6 +40,8 @@
   let stocks = $state(data.stocks);
   let errorMessage = $state("");
   let successMessage = $state("");
+  let stockFormPending = $state(false);
+  let deleteSubmitting = $state(false);
 
   const investors = data.investors;
   const branches = data.branches as Branch[];
@@ -326,8 +329,9 @@
   }
 
   async function confirmDelete() {
-    if (!stockToDelete) return;
+    if (!stockToDelete || deleteSubmitting) return;
 
+    deleteSubmitting = true;
     try {
       const formData = new FormData();
       formData.append("stockId", stockToDelete.id);
@@ -357,6 +361,8 @@
     } catch (error) {
       errorMessage = "Failed to delete stock. Please try again.";
       successMessage = "";
+    } finally {
+      deleteSubmitting = false;
     }
   }
 </script>
@@ -414,6 +420,13 @@
       method="POST"
       action={editingStockId ? "?/updateStock" : "?/createStock"}
       onsubmit={onSubmitStock}
+      use:enhance={() => {
+        stockFormPending = true;
+        return async ({ update }) => {
+          await update();
+          stockFormPending = false;
+        };
+      }}
     >
       {#if editingStockId}
         <input type="hidden" name="id" value={editingStockId} />
@@ -576,12 +589,21 @@
         {/if}
       </div>
       <footer>
-        <button type="button" class="ghost" onclick={closeCreateModal}
-          >Cancel</button
+        <button
+          type="button"
+          class="ghost"
+          onclick={closeCreateModal}
+          disabled={stockFormPending}>Cancel</button
         >
-        <button type="submit" class="primary"
-          >{editingStockId ? "Update" : "Create"}</button
-        >
+        <button type="submit" class="primary" disabled={stockFormPending}>
+          {stockFormPending
+            ? editingStockId
+              ? "Updating…"
+              : "Creating…"
+            : editingStockId
+              ? "Update"
+              : "Create"}
+        </button>
       </footer>
     </form>
   </dialog>
@@ -650,11 +672,18 @@
       <p class="warning">This action cannot be undone.</p>
     </div>
     <footer>
-      <button type="button" class="ghost" onclick={closeDeleteModal}
-        >Cancel</button
+      <button
+        type="button"
+        class="ghost"
+        onclick={closeDeleteModal}
+        disabled={deleteSubmitting}>Cancel</button
       >
-      <button type="button" class="danger" onclick={confirmDelete}
-        >Delete</button
+      <button
+        type="button"
+        class="danger"
+        onclick={confirmDelete}
+        disabled={deleteSubmitting}
+        >{deleteSubmitting ? "Deleting…" : "Delete"}</button
       >
     </footer>
   </dialog>

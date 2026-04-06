@@ -1,7 +1,14 @@
 import type { PageServerLoad, Actions } from './$types';
 import { error } from '@sveltejs/kit';
 import { getUserIdFromRequest } from '$lib/auth';
+import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
+import {
+  fetchBranchCompanyId,
+  fetchInvestorsForCompany,
+} from '$lib/companyInvestors.server';
 import { config, getGraphQLHeaders } from '$lib/config';
+import { createPaymentRecord } from '$lib/payments.server';
+import { insertCustomerTransaction } from '$lib/customerTransactions.server';
 
 const FETCH_ORDER_FOR_MERCHANT_QUERY = `
   query GetOrderForMerchant($id: uuid!, $merchantId: uuid!) {
@@ -13,6 +20,7 @@ const FETCH_ORDER_FOR_MERCHANT_QUERY = `
       customer_address
       customer_name
       customer_phone
+      customer_id
       id
       order_quantity
       status
@@ -21,18 +29,24 @@ const FETCH_ORDER_FOR_MERCHANT_QUERY = `
       outstanding_amount
       unit
       stock {
-        unit
-      }
-    }
-  }
-`;
-
-// GraphQL mutation to create a payment for a specific order
-const CREATE_PAYMENT_MUTATION = `
-  mutation CreatePayment($amount: money, $created_by: uuid, $order_id: uuid, $payment_method: String) {
-    insert_payment(objects: {amount: $amount, created_by: $created_by, order_id: $order_id, payment_method: $payment_method}) {
-      returning {
         id
+        branch
+        model_number
+        country
+        branch
+        type
+        color
+        created_by
+        figure
+        investors
+        merchant {
+          id
+        }
+        quantity
+        selling_price
+        thickness
+        factor
+        unit
       }
     }
   }
@@ -66,43 +80,6 @@ async function fetchOrderForMerchant(id: string, merchantId: string) {
   }
 }
 
-// Function to create a payment
-async function createPayment(paymentData: {
-  amount: number;
-  order_id: string;
-  payment_method: string;
-  created_by: string;
-}) {
-  const variables = {
-    amount: paymentData.amount,
-    created_by: paymentData.created_by, // Use the authenticated user ID
-    order_id: paymentData.order_id,
-    payment_method: paymentData.payment_method,
-  };
-
-  const response = await fetch(config.graphql.endpoint, {
-    method: 'POST',
-    headers: getGraphQLHeaders(),
-    body: JSON.stringify({
-      query: CREATE_PAYMENT_MUTATION,
-      variables,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
-  }
-
-  const result = await response.json();
-
-  if (result.errors) {
-    throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
-  }
-
-  return result.data.insert_payment.returning[0];
-}
-
 export const load: PageServerLoad = async ({ params, request, parent }) => {
   const { merchantContext } = await parent();
   const merchantId =
@@ -111,7 +88,19 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
     error(404, 'Order not found');
   }
 
-  const order = await fetchOrderForMerchant(params.id, merchantId);
+  const merchantBranchId =
+    merchantContext?.merchantBranchId ??
+    (merchantId ? await fetchMerchantBranchId(merchantId) : null);
+
+  let companyId = merchantContext?.companyId ?? null;
+  if (!companyId && merchantBranchId) {
+    companyId = await fetchBranchCompanyId(merchantBranchId);
+  }
+
+  const [order, investors] = await Promise.all([
+    fetchOrderForMerchant(params.id, merchantId),
+    fetchInvestorsForCompany(companyId),
+  ]);
 
   if (!order) {
     error(404, 'Order not found');
@@ -119,6 +108,8 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
 
   return {
     order,
+    investors,
+    merchantId,
   };
 };
 
@@ -145,12 +136,35 @@ export const actions: Actions = {
       return { success: false, message: 'Order not found' };
     }
 
+    const customerId = String((order as { customer_id?: string }).customer_id ?? '').trim();
+    const stockBranch = (order as { stock?: { branch?: string | null } | null }).stock?.branch;
+    const companyId = stockBranch ? await fetchBranchCompanyId(stockBranch) : null;
+
+    if (!customerId || !companyId) {
+      return {
+        success: false,
+        message:
+          'Order is missing customer or company (stock branch) — cannot record payment in the ledger',
+      };
+    }
+
     try {
-      const result = await createPayment({
+      const result = await createPaymentRecord({
         amount,
         order_id: orderId,
         payment_method: paymentMethod,
-        created_by: userId, // Use the authenticated user ID
+        created_by: userId,
+      });
+
+      await insertCustomerTransaction({
+        company: companyId,
+        customer: customerId,
+        amount: -Math.abs(amount),
+        type: 'payment',
+        reference: orderId,
+        reference_type: 'order',
+        note: 'Manual payment',
+        created_by: userId,
       });
 
       return {

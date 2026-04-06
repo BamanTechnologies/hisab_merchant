@@ -1,16 +1,24 @@
 <script lang="ts">
-  import { deserialize } from "$app/forms";
-  import { goto, invalidateAll } from "$app/navigation";
+  import { goto } from "$app/navigation";
   import type { PageData } from "./$types";
   import type { CustomerDetailOrder } from "./+page.server";
 
   let { data }: { data: PageData } = $props();
 
+  /** From `customer_transactions` sum: negative = credit (show as Overpaid); positive = outstanding. */
+  const balanceSummary = $derived.by(() => {
+    const raw = Number(data.outstandingAmount);
+    const n = Number.isFinite(raw) ? raw : 0;
+    const overpaid = n < 0;
+    return {
+      isOverpaid: overpaid,
+      displayAmount: overpaid ? Math.abs(n) : n,
+    };
+  });
+
   type Tab = "orders" | "payments";
   let tab = $state<Tab>("orders");
   let orders = $state([] as CustomerDetailOrder[]);
-  let showDeleteModal = $state(false);
-  let orderToDelete = $state<CustomerDetailOrder | null>(null);
   let errorMessage = $state("");
   let successMessage = $state("");
 
@@ -47,56 +55,10 @@
   }
 
   function statusClass(status: string) {
+    if (status === "cancelled") return "muted";
     if (status === "paid") return "ok";
     if (status === "partially_paid") return "warn";
     return "bad";
-  }
-
-  function openDeleteModal(o: CustomerDetailOrder, event: Event) {
-    event.stopPropagation();
-    orderToDelete = o;
-    showDeleteModal = true;
-  }
-
-  function closeDeleteModal() {
-    showDeleteModal = false;
-    orderToDelete = null;
-  }
-
-  async function confirmDelete() {
-    if (!orderToDelete) return;
-
-    try {
-      const formData = new FormData();
-      formData.append("orderId", orderToDelete.id);
-
-      const response = await fetch("/orders?/deleteOrder", {
-        method: "POST",
-        body: formData,
-      });
-
-      const result = deserialize(await response.text());
-      const payload =
-        result.type === "success" && "data" in result
-          ? (result.data as { success?: boolean; message?: string } | undefined)
-          : undefined;
-
-      if (result.type === "success" && payload?.success) {
-        errorMessage = "";
-        successMessage = payload.message ?? "Order deleted successfully";
-        closeDeleteModal();
-        await invalidateAll();
-        setTimeout(() => {
-          successMessage = "";
-        }, 3000);
-      } else {
-        errorMessage = payload?.message ?? "Delete failed";
-        successMessage = "";
-      }
-    } catch {
-      errorMessage = "Failed to delete order. Please try again.";
-      successMessage = "";
-    }
   }
 </script>
 
@@ -134,12 +96,24 @@
     <span class="value">Birr {data.totalOrderAmount.toLocaleString()}</span>
   </div>
   <div class="metric">
-    <span class="label">Total payments</span>
-    <span class="value pay">Birr {data.totalPaymentAmount.toLocaleString()}</span>
+    <span class="label">Cash &amp; bank paid in</span>
+    <span class="value pay"
+      >Birr {data.totalPaymentAmount.toLocaleString()}</span
+    >
   </div>
-  <div class="metric highlight">
-    <span class="label">Outstanding</span>
-    <span class="value out">Birr {data.outstandingAmount.toLocaleString()}</span>
+  <div
+    class="metric highlight"
+    class:metric-overpaid={balanceSummary.isOverpaid}
+  >
+    <span class="label"
+      >{balanceSummary.isOverpaid ? "Overpaid" : "Outstanding"}</span
+    >
+    <span
+      class="value"
+      class:out={!balanceSummary.isOverpaid}
+      class:overpaid={balanceSummary.isOverpaid}
+      >Birr {balanceSummary.displayAmount.toLocaleString()}</span
+    >
   </div>
 </section>
 
@@ -170,7 +144,6 @@
           <th class="right">Quantity</th>
           <th>Status</th>
           <th class="right">Total amount</th>
-          <th class="center">Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -184,29 +157,14 @@
             <td class="nowrap">{formatOrderDate(o.created_at)}</td>
             <td>{o.customer_name}</td>
             <td class="right">{orderQtyCell(o)}</td>
-            <td
-              ><span class="chip {statusClass(o.status)}">{o.status}</span></td
+            <td><span class="chip {statusClass(o.status)}">{o.status}</span></td
             >
             <td class="right">Birr {o.total_amount.toLocaleString()}</td>
-            <td class="center">
-              {#if o.created_by === data.merchantId}
-                <button
-                  class="delete-btn"
-                  onclick={(e) => openDeleteModal(o, e)}
-                  aria-label="Delete order"
-                  title="Delete order"
-                >
-                  🗑️
-                </button>
-              {:else}
-                <span class="dash">—</span>
-              {/if}
-            </td>
           </tr>
         {/each}
         {#if orders.length === 0}
           <tr>
-            <td colspan="6" class="empty-state">
+            <td colspan="5" class="empty-state">
               <p class="muted">No orders for this customer in your company.</p>
             </td>
           </tr>
@@ -244,36 +202,6 @@
       </tbody>
     </table>
   </section>
-{/if}
-
-{#if showDeleteModal && orderToDelete}
-  <dialog class="modal-overlay" open>
-    <div class="modal">
-      <header>
-        <h2>Delete order</h2>
-      </header>
-      <div class="modal-content">
-        <p>Are you sure you want to delete this order?</p>
-        <div class="order-details">
-          <p><strong>Customer:</strong> {orderToDelete.customer_name}</p>
-          <p><strong>Quantity:</strong> {orderQtyCell(orderToDelete)}</p>
-          <p>
-            <strong>Total Amount:</strong> Birr {orderToDelete.total_amount.toLocaleString()}
-          </p>
-          <p><strong>Status:</strong> {orderToDelete.status}</p>
-        </div>
-        <p class="warning">This action cannot be undone.</p>
-      </div>
-      <footer>
-        <button type="button" class="ghost" onclick={closeDeleteModal}
-          >Cancel</button
-        >
-        <button type="button" class="danger" onclick={confirmDelete}
-          >Delete</button
-        >
-      </footer>
-    </div>
-  </dialog>
 {/if}
 
 <style>
@@ -320,6 +248,10 @@
     border-color: color-mix(in oklab, #f59e0b, transparent 60%);
     background: color-mix(in oklab, #f59e0b, transparent 88%);
   }
+  .metric.highlight.metric-overpaid {
+    border-color: color-mix(in oklab, #38bdf8, transparent 55%);
+    background: color-mix(in oklab, #38bdf8, transparent 90%);
+  }
   .label {
     display: block;
     font-size: 0.8rem;
@@ -339,6 +271,9 @@
   }
   .value.out {
     color: #fbbf24;
+  }
+  .value.overpaid {
+    color: #7dd3fc;
   }
   .tabs {
     display: flex;
@@ -390,10 +325,6 @@
   td.right {
     text-align: right;
   }
-  th.center,
-  td.center {
-    text-align: center;
-  }
   .nowrap {
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
@@ -427,20 +358,9 @@
     background: color-mix(in oklab, #ef4444, white 20%);
     color: #991b1b;
   }
-  .delete-btn {
-    appearance: none;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    font-size: 1rem;
-    padding: 0.2rem;
-    border-radius: 0.35rem;
-  }
-  .delete-btn:hover {
-    background: color-mix(in oklab, #ef4444, transparent 85%);
-  }
-  .dash {
-    color: #64748b;
+  .chip.muted {
+    background: color-mix(in oklab, #64748b, white 12%);
+    color: #cbd5e1;
   }
   .amount {
     text-align: right;
@@ -483,82 +403,5 @@
   }
   .alert p {
     margin: 0;
-  }
-
-  .modal-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 50;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 1rem;
-    background: rgba(0, 0, 0, 0.55);
-    border: none;
-    max-width: none;
-    max-height: none;
-    width: 100%;
-    height: 100%;
-  }
-  .modal {
-    width: min(26rem, 100%);
-    border-radius: 0.75rem;
-    background: var(--surface-1, #0f172a);
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 12%);
-    overflow: hidden;
-  }
-  .modal header {
-    padding: 1rem 1.25rem;
-    border-bottom: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-  }
-  .modal header h2 {
-    margin: 0;
-    font-size: 1.1rem;
-  }
-  .modal-content {
-    padding: 1rem 1.25rem;
-  }
-  .modal-content .warning {
-    color: #fca5a5;
-    font-size: 0.9rem;
-    margin-top: 0.75rem;
-  }
-  .order-details {
-    margin: 0.75rem 0;
-    font-size: 0.9rem;
-    color: #cbd5e1;
-  }
-  .order-details p {
-    margin: 0.25rem 0;
-  }
-  .modal footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    padding: 0.75rem 1.25rem 1rem;
-    border-top: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-  }
-  .ghost {
-    appearance: none;
-    background: transparent;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 20%);
-    color: #e2e8f0;
-    padding: 0.45rem 0.85rem;
-    border-radius: 0.5rem;
-    cursor: pointer;
-    font-weight: 600;
-  }
-  .danger {
-    appearance: none;
-    background: #dc2626;
-    color: #fff;
-    border: none;
-    padding: 0.45rem 0.85rem;
-    border-radius: 0.5rem;
-    cursor: pointer;
-    font-weight: 700;
-  }
-  .danger:hover {
-    filter: brightness(1.08);
   }
 </style>

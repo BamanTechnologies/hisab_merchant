@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { enhance } from "$app/forms";
   import type { PageData } from "./$types";
 
   type Investor = {
@@ -67,6 +68,7 @@
   );
 
   let showTransferModal = $state(false);
+  let transferFormPending = $state(false);
   let transferQuantity = $state(0);
   let transferToBranchId = $state("");
   let transferNewMerchantId = $state("");
@@ -278,6 +280,13 @@
         method="POST"
         action="?/transferStock"
         onsubmit={submitTransfer}
+        use:enhance={() => {
+          transferFormPending = true;
+          return async ({ update }) => {
+            await update();
+            transferFormPending = false;
+          };
+        }}
       >
         <div class="grid grid-single">
           <label>
@@ -340,11 +349,18 @@
           (initiator on that record).
         </p>
         <footer>
-          <button type="button" class="ghost" onclick={closeTransferModal}>
+          <button
+            type="button"
+            class="ghost"
+            onclick={closeTransferModal}
+            disabled={transferFormPending}>
             Cancel
           </button>
-          <button type="submit" class="primary" disabled={!canSubmitTransfer}
-            >Transfer</button
+          <button
+            type="submit"
+            class="primary"
+            disabled={!canSubmitTransfer || transferFormPending}
+            >{transferFormPending ? "Transferring…" : "Transfer"}</button
           >
         </footer>
       </form>

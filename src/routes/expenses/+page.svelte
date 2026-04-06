@@ -73,6 +73,7 @@
 
   async function submitExpense(e: Event) {
     e.preventDefault();
+    if (submitting) return;
     formError = "";
     if (!data.merchantBranchId) {
       formError = "No branch assigned; cannot save.";
@@ -291,7 +292,12 @@
       </label>
 
       <footer class="modal-foot">
-        <button type="button" class="ghost" onclick={closeModal}>Cancel</button>
+        <button
+          type="button"
+          class="ghost"
+          onclick={closeModal}
+          disabled={submitting}>Cancel</button
+        >
         <button type="submit" class="primary" disabled={submitting}>
           {submitting ? "Saving…" : "Save expense"}
         </button>

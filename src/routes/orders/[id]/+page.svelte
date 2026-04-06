@@ -1,5 +1,31 @@
 <script lang="ts">
+  import { enhance } from "$app/forms";
   import type { PageData } from "./$types";
+
+  type OrderStock = {
+    id: string;
+    model_number?: string | null;
+    country?: string | null;
+    branch?: string | null;
+    type?: string | null;
+    color?: string | null;
+    created_by: string;
+    figure?: string | null;
+    investors?: string[] | null;
+    merchant?: { id: string } | null;
+    quantity: number;
+    selling_price: number | string;
+    thickness?: number | string | null;
+    factor?: number | null;
+    unit?: string | null;
+  };
+
+  type InvestorRow = {
+    id: string;
+    first_name: string;
+    last_name: string;
+    phone_number: string;
+  };
 
   type Order = {
     id: string;
@@ -13,7 +39,7 @@
     total_amount: number;
     outstanding_amount: number;
     unit?: string | null;
-    stock?: { unit?: string | null } | null;
+    stock?: OrderStock | null;
   };
 
   function orderQuantityLabel(o: Order) {
@@ -21,10 +47,44 @@
     return u ? `${o.order_quantity} ${u}` : String(o.order_quantity);
   }
 
+  function reportStockTypeLabel(t: string | null | undefined) {
+    if (t === "glass") return "Glass";
+    if (t === "brake_lining" || t === "brake_pad" || t === "break_pad")
+      return "Brake lining";
+    return t && String(t).trim() !== "" ? String(t) : "—";
+  }
+
+  function reportDash(v: unknown) {
+    if (v === null || v === undefined || v === "") return "—";
+    return String(v);
+  }
+
   let { data, form }: { data: PageData; form?: any } = $props();
-  const order = data.order;
+  const order = data.order as Order | undefined;
+  const investors = (data.investors ?? []) as InvestorRow[];
+  const merchantId = data.merchantId as string | undefined;
+
+  /** One row per linked stock today; same shape if orders gain multiple lines later. */
+  const orderStocks = $derived(
+    order?.stock ? [order.stock as OrderStock] : ([] as OrderStock[]),
+  );
+
+  function stockInvestorLabels(stock: OrderStock): string {
+    const ids = stock.investors ?? [];
+    if (ids.length === 0) return "—";
+    return ids
+      .map((investorId) => {
+        if (investorId === merchantId) return "Myself";
+        const inv = investors.find((i) => i.id === investorId);
+        return inv
+          ? `${inv.first_name} ${inv.last_name}`.trim()
+          : "Unknown";
+      })
+      .join(", ");
+  }
 
   function statusClass(status: string) {
+    if (status === "cancelled") return "muted";
     if (status === "paid") return "ok";
     if (status === "partially_paid") return "warn";
     return "bad";
@@ -56,6 +116,7 @@
   ] as const;
 
   let showPay = $state(false);
+  let paymentFormPending = $state(false);
   let payAmount = $state<number | undefined>(undefined);
   let payMethod = $state<(typeof banks)[number] | "">("");
   let errorMessage = $state("");
@@ -106,12 +167,12 @@
     <div class="header-actions">
       <button
         class="primary"
-        disabled={order.status === "paid"}
+        disabled={order.status === "paid" || order.status === "cancelled"}
         onclick={() => (showPay = true)}>Pay</button
       >
     </div>
-    <div class="detail">
-      <div><span class="sect">Order Information</span></div>
+    <div class="detail meta-block">
+      <div><span class="sect">Order information</span></div>
       <div class="grid">
         <div>
           <span class="label">Customer:</span><span>{order.customer_name}</span>
@@ -132,9 +193,6 @@
           >
         </div>
         <div>
-          <span class="label">Stock ID:</span><span>{order.stock_id}</span>
-        </div>
-        <div>
           <span class="label">Status:</span><span
             class="chip {statusClass(order.status)}">{order.status}</span
           >
@@ -150,6 +208,56 @@
           >
         </div>
       </div>
+    </div>
+
+    <div class="detail stocks-section">
+      <div><span class="sect">Stocks ({orderStocks.length})</span></div>
+      {#if orderStocks.length > 0}
+        <div class="data-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Model #</th>
+                <th>Country</th>
+                <th>Color</th>
+                <th>Figure</th>
+                <th>Thickness</th>
+                <th>Quantity</th>
+                <th>Price</th>
+                <th>Factor</th>
+                <th>Investors</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each orderStocks as s (s.id)}
+                <tr>
+                  <td>{reportStockTypeLabel(s.type)}</td>
+                  <td>{reportDash(s.model_number)}</td>
+                  <td>{reportDash(s.country)}</td>
+                  <td>{reportDash(s.color)}</td>
+                  <td>{reportDash(s.figure)}</td>
+                  <td>{reportDash(s.thickness)}</td>
+                  <td>
+                    {(s.unit ?? "").trim()
+                      ? `${s.quantity} ${(s.unit ?? "").trim()}`
+                      : String(s.quantity)}
+                  </td>
+                  <td>{s.selling_price}</td>
+                  <td>{reportDash(s.factor)}</td>
+                  <td class="investors-cell">{stockInvestorLabels(s)}</td>
+                  <td class="actions-cell">
+                    <a class="stock-link" href="/stocks/{s.id}">View stock</a>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {:else}
+        <p class="no-data">No stock details loaded for this order.</p>
+      {/if}
     </div>
   {:else}
     <p class="muted">Order not found.</p>
@@ -178,6 +286,13 @@
         method="POST"
         action="?/createPayment"
         onsubmit={submitPayment}
+        use:enhance={() => {
+          paymentFormPending = true;
+          return async ({ update }) => {
+            await update();
+            paymentFormPending = false;
+          };
+        }}
       >
         <div class="grid">
           <label>
@@ -207,13 +322,17 @@
           </label>
         </div>
         <footer>
-          <button type="button" class="ghost" onclick={() => (showPay = false)}
-            >Cancel</button
+          <button
+            type="button"
+            class="ghost"
+            onclick={() => (showPay = false)}
+            disabled={paymentFormPending}>Cancel</button
           >
           <button
             type="submit"
             class="primary"
-            disabled={!payAmount || !payMethod}>Create</button
+            disabled={!payAmount || !payMethod || paymentFormPending}
+            >{paymentFormPending ? "Processing…" : "Create"}</button
           >
         </footer>
       </form>
@@ -234,6 +353,57 @@
   .detail {
     display: grid;
     gap: 0.75rem;
+  }
+  .meta-block {
+    margin-bottom: 0.25rem;
+  }
+  .stocks-section {
+    margin-top: 1.25rem;
+  }
+  .data-table {
+    background: var(--surface-2);
+    border-radius: 0.5rem;
+    overflow-x: auto;
+    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
+  }
+  .data-table table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .data-table th {
+    background: var(--surface-1);
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    font-weight: 600;
+    color: #e2e8f0;
+    font-size: 0.875rem;
+  }
+  .data-table td {
+    padding: 0.5rem 0.75rem;
+    color: #cbd5e1;
+    font-size: 0.875rem;
+    border-bottom: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
+  }
+  .data-table .investors-cell {
+    max-width: 12rem;
+    white-space: normal;
+    word-break: break-word;
+  }
+  .data-table .actions-cell {
+    white-space: nowrap;
+  }
+  .stock-link {
+    color: var(--brand);
+    font-weight: 700;
+    text-decoration: none;
+  }
+  .stock-link:hover {
+    text-decoration: underline;
+  }
+  .no-data {
+    color: #94a3b8;
+    font-style: italic;
+    padding: 1rem 0;
   }
   .sect {
     color: #e5e7eb;
@@ -265,6 +435,19 @@
   }
   .chip.fully\ paid {
     background: rgba(34, 197, 94, 0.2);
+  }
+  .chip.ok {
+    background: rgba(34, 197, 94, 0.2);
+  }
+  .chip.warn {
+    background: rgba(234, 179, 8, 0.2);
+  }
+  .chip.bad {
+    background: rgba(239, 68, 68, 0.2);
+  }
+  .chip.muted {
+    background: color-mix(in oklab, #64748b, white 12%);
+    color: #cbd5e1;
   }
 
   .primary {
@@ -393,6 +576,9 @@
   @media (max-width: 720px) {
     .grid {
       grid-template-columns: 1fr;
+    }
+    .data-table table {
+      min-width: 720px;
     }
   }
 </style>
