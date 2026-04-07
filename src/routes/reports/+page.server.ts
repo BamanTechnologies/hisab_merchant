@@ -1,5 +1,10 @@
 import type { PageServerLoad, Actions } from './$types';
 import { getUserIdFromRequest } from '$lib/auth';
+import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
+import {
+  fetchBranchCompanyId,
+  fetchInvestorsForCompany,
+} from '$lib/companyInvestors.server';
 import { config, getGraphQLHeaders } from '$lib/config';
 
 const FETCH_REPORTS_QUERY = `
@@ -13,18 +18,6 @@ const FETCH_REPORTS_QUERY = `
       sms_status
       message
       updated_at
-    }
-  }
-`;
-
-// GraphQL query to fetch investors
-const FETCH_INVESTORS_QUERY = `
-  query GetInvestors {
-    investor {
-      id
-      first_name
-      last_name
-      phone_number
     }
   }
 `;
@@ -128,33 +121,6 @@ async function fetchReports(merchantId: string) {
   }
 }
 
-// Function to fetch investors from GraphQL
-async function fetchInvestors() {
-  try {
-    const response = await fetch(config.graphql.endpoint, {
-      method: 'POST',
-      headers: getGraphQLHeaders(),
-      body: JSON.stringify({
-        query: FETCH_INVESTORS_QUERY,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const result = await response.json();
-    
-    if (result.errors) {
-      throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
-    }
-
-    return result.data.investor || [];
-  } catch {
-    return [];
-  }
-}
-
 // Function to generate investor report
 async function generateInvestorReport(investorId: string, investorPhone: string, merchantId: string) {
   const variables = {
@@ -219,9 +185,16 @@ export const load: PageServerLoad = async ({ request, parent }) => {
   const { merchantContext } = await parent();
   const merchantId =
     merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
+  const merchantBranchId =
+    merchantContext?.merchantBranchId ??
+    (merchantId ? await fetchMerchantBranchId(merchantId) : null);
+  let companyId = merchantContext?.companyId ?? null;
+  if (!companyId && merchantBranchId) {
+    companyId = await fetchBranchCompanyId(merchantBranchId);
+  }
   const [reports, investors] = await Promise.all([
     merchantId ? fetchReports(merchantId) : Promise.resolve([]),
-    fetchInvestors(),
+    fetchInvestorsForCompany(companyId),
   ]);
 
   return {

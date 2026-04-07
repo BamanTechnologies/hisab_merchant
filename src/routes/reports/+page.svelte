@@ -588,6 +588,8 @@
             return async ({ update }) => {
               await update();
               sendReportPending = false;
+              closePreviewModal();
+              setTimeout(() => window.location.reload(), 250);
             };
           }}
         >
