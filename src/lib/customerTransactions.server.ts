@@ -1,20 +1,19 @@
 import { config, getGraphQLHeaders } from '$lib/config';
 
-const CUSTOMER_TRANSACTION_BALANCE_QUERY = `
-  query CustomerTransactionBalance($companyId: uuid!, $customerId: uuid!) {
-    customer_transactions_aggregate(
+/** Latest row per customer+company; `balance` is maintained by DB triggers (running ledger). */
+const CUSTOMER_LATEST_BALANCE_QUERY = `
+  query CustomerLatestBalance($companyId: uuid!, $customerId: uuid!) {
+    customer_transactions(
       where: {
         _and: [
           { company: { _eq: $companyId } }
           { customer: { _eq: $customerId } }
         ]
       }
+      order_by: [{ created_at: desc }, { id: desc }]
+      limit: 1
     ) {
-      aggregate {
-        sum {
-          amount
-        }
-      }
+      balance
     }
   }
 `;
@@ -95,24 +94,22 @@ async function gql<T>(query: string, variables?: Record<string, unknown>): Promi
 }
 
 /**
- * Sum of `amount` for the customer in the company (running ledger).
+ * Running ledger balance for the customer in the company (from latest `customer_transactions.balance`).
  * - **Positive** = net amount the customer owes (outstanding debt).
  * - **Negative** = net prepaid credit (we owe them).
- * Convention: `+order` and paying **from prepaid credit** (`type: payment`, positive) increase sum toward zero from negative.
- * Bank/cash payments (`type: payment`, negative) reduce positive debt.
+ * Same sign convention as the former aggregate sum of `amount`.
  */
-export async function fetchCustomerTransactionSum(
+export async function fetchCustomerLatestBalance(
   companyId: string,
   customerId: string,
 ): Promise<number> {
   try {
     const data = await gql<{
-      customer_transactions_aggregate: {
-        aggregate: { sum: { amount: unknown } | null } | null;
-      } | null;
-    }>(CUSTOMER_TRANSACTION_BALANCE_QUERY, { companyId, customerId });
+      customer_transactions: { balance: unknown }[];
+    }>(CUSTOMER_LATEST_BALANCE_QUERY, { companyId, customerId });
 
-    return parseNumeric(data.customer_transactions_aggregate?.aggregate?.sum?.amount ?? 0);
+    const row = data.customer_transactions?.[0];
+    return parseNumeric(row?.balance ?? 0);
   } catch {
     return 0;
   }

@@ -5,7 +5,7 @@
 
   let { data }: { data: PageData } = $props();
 
-  /** From `customer_transactions` sum: negative = credit (show as Overpaid); positive = outstanding. */
+  /** From latest `customer_transactions.balance`: negative = credit (show as Overpaid); positive = outstanding. */
   const balanceSummary = $derived.by(() => {
     const raw = Number(data.outstandingAmount);
     const n = Number.isFinite(raw) ? raw : 0;

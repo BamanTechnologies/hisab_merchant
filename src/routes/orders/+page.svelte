@@ -804,7 +804,7 @@
           <td><span class="chip {statusClass(o.status)}">{o.status}</span></td>
           <td class="right">Birr {o.total_amount.toLocaleString()}</td>
           <td class="center">
-            {#if o.status !== "cancelled"}
+            {#if o.status !== "cancelled" && o.status !== "paid"}
               <button
                 type="button"
                 class="cancel-inline-btn"

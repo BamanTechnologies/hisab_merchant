@@ -1,10 +1,18 @@
 import type { PageServerLoad } from './$types';
 import { getUserIdFromRequest } from '$lib/auth';
+import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
 import { config, getGraphQLHeaders } from '$lib/config';
 
 const FETCH_COMPANY_CUSTOMER_IDS_QUERY = `
-  query CustomersCompanyCustomerIds($companyId: uuid!) {
-    company_customer(where: { company: { _eq: $companyId } }) {
+  query CustomersCompanyCustomerIds($companyId: uuid!, $branchId: uuid!) {
+    company_customer(
+      where: {
+        _and: [
+          { company: { _eq: $companyId } }
+          { branch: { _eq: $branchId } }
+        ]
+      }
+    ) {
       id
       customer
     }
@@ -52,11 +60,14 @@ export type CustomerListRow = {
   created_at?: string | null;
 };
 
-async function fetchCompanyCustomersList(companyId: string): Promise<CustomerListRow[]> {
+async function fetchCompanyCustomersList(
+  companyId: string,
+  branchId: string,
+): Promise<CustomerListRow[]> {
   try {
     const junction = await gql<{
       company_customer: Array<{ customer: string } | null>;
-    }>(FETCH_COMPANY_CUSTOMER_IDS_QUERY, { companyId });
+    }>(FETCH_COMPANY_CUSTOMER_IDS_QUERY, { companyId, branchId });
 
     const ids = [
       ...new Set(
@@ -88,12 +99,19 @@ export const load: PageServerLoad = async ({ request, parent }) => {
   const merchantId =
     merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
   const companyId = merchantContext?.companyId ?? null;
+  const merchantBranchId =
+    merchantContext?.merchantBranchId ??
+    (merchantId ? await fetchMerchantBranchId(merchantId) : null);
 
-  const customers = companyId ? await fetchCompanyCustomersList(companyId) : [];
+  const customers =
+    companyId && merchantBranchId
+      ? await fetchCompanyCustomersList(companyId, merchantBranchId)
+      : [];
 
   return {
     customers,
     companyId,
     merchantId,
+    merchantBranchId,
   };
 };

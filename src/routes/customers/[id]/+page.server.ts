@@ -3,16 +3,17 @@ import { error } from '@sveltejs/kit';
 import { getUserIdFromRequest } from '$lib/auth';
 import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
 import { fetchBranchCompanyId } from '$lib/companyInvestors.server';
-import { fetchCustomerTransactionSum } from '$lib/customerTransactions.server';
+import { fetchCustomerLatestBalance } from '$lib/customerTransactions.server';
 import { config, getGraphQLHeaders } from '$lib/config';
 
 const VERIFY_COMPANY_CUSTOMER_JUNCTION_QUERY = `
-  query CustomerDetailVerifyJunction($companyId: uuid!, $customerId: uuid!) {
+  query CustomerDetailVerifyJunction($companyId: uuid!, $customerId: uuid!, $branchId: uuid!) {
     company_customer(
       where: {
         _and: [
           { company: { _eq: $companyId } }
           { customer: { _eq: $customerId } }
+          { branch: { _eq: $branchId } }
         ]
       }
       limit: 1
@@ -231,11 +232,20 @@ function parseMoney(v: unknown): number {
 async function verifyCustomerInCompany(
   companyId: string,
   customerId: string,
+  branchId: string | null,
 ): Promise<boolean> {
+  if (!branchId) {
+    return false;
+  }
+
   try {
     const junction = await gql<{
       company_customer: Array<{ id: string } | null>;
-    }>(VERIFY_COMPANY_CUSTOMER_JUNCTION_QUERY, { companyId, customerId });
+    }>(VERIFY_COMPANY_CUSTOMER_JUNCTION_QUERY, {
+      companyId,
+      customerId,
+      branchId,
+    });
     return Boolean(junction.company_customer?.[0]?.id);
   } catch {
     return false;
@@ -335,7 +345,7 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
 
   try {
     const [junctionOk, br] = await Promise.all([
-      verifyCustomerInCompany(companyId, customerId),
+      verifyCustomerInCompany(companyId, customerId, merchantBranchId),
       gql<{ branches: { id: string }[] }>(FETCH_BRANCH_IDS_FOR_COMPANY_QUERY, {
         companyId,
       }),
@@ -343,7 +353,7 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
     allowed = junctionOk;
     branchIds = (br.branches ?? []).map((b) => b.id).filter(Boolean);
   } catch {
-    allowed = await verifyCustomerInCompany(companyId, customerId);
+    allowed = await verifyCustomerInCompany(companyId, customerId, merchantBranchId);
     branchIds = [];
   }
 
@@ -353,12 +363,16 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
 
   const c = customerRow.customers_by_pk;
 
+  /** Orders/payments for this customer only in the merchant’s branch (or all company branches if no branch on user). */
+  const activityBranchIds =
+    merchantBranchId != null ? [merchantBranchId] : branchIds;
+
   let orders: CustomerDetailOrder[] = [];
   let totalOrderAmount = 0;
   let payments: CustomerDetailPayment[] = [];
   let totalPaymentAmount = 0;
 
-  if (branchIds.length > 0) {
+  if (activityBranchIds.length > 0) {
     type ActivityBlock = {
       orders: Record<string, unknown>[];
       orders_aggregate: {
@@ -373,7 +387,7 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
     try {
       const block = await gql<ActivityBlock>(FETCH_CUSTOMER_ACTIVITY_QUERY, {
         customerId,
-        branchIds,
+        branchIds: activityBranchIds,
       });
 
       orders = (block.orders ?? []).map((o) => normalizeOrderRow(o));
@@ -388,7 +402,7 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
       try {
         const block = await gql<ActivityBlock>(FETCH_CUSTOMER_ORDERS_ONLY_QUERY, {
           customerId,
-          branchIds,
+          branchIds: activityBranchIds,
         });
         orders = (block.orders ?? []).map((o) => normalizeOrderRow(o));
         totalOrderAmount = parseMoney(
@@ -415,8 +429,8 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
     }
   }
 
-  /** Σ `customer_transactions.amount` for this customer + company (positive = owes, negative = credit / overpaid). */
-  const outstandingAmount = await fetchCustomerTransactionSum(companyId, customerId);
+  /** Latest `customer_transactions.balance` for this customer + company (positive = owes, negative = credit / overpaid). */
+  const outstandingAmount = await fetchCustomerLatestBalance(companyId, customerId);
 
   return {
     customer: {

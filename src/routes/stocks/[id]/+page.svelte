@@ -13,6 +13,7 @@
     model_number?: string | null;
     country?: string | null;
     branch?: string | null;
+    origin?: string | null;
     type?: string | null;
     color?: string | null;
     created_by: string;
@@ -38,6 +39,7 @@
 
   let { data, form }: { data: PageData; form?: any } = $props();
   const stock = data.stock;
+  const originBranchName = data.originBranchName ?? null;
   const investors = data.investors;
   const transferTargetBranches = (data.transferTargetBranches ??
     []) as TransferBranch[];
@@ -233,6 +235,11 @@
         <span class="label">Type:</span><span>{typeDisplay(stock.type)}</span>
       </div>
       <div>
+        <span class="label">Origin:</span><span
+          >{stock.origin ? originBranchName ?? "—" : "-"}</span
+        >
+      </div>
+      <div>
         <span class="label">Model #:</span><span>{dash(stock.model_number)}</span>
       </div>
       <div>
@@ -345,8 +352,9 @@
           the quantity you enter (same product details). This line’s
           <strong>created_by</strong> and <strong>updated_by</strong> are the
           selected merchant. The current line’s quantity is reduced and
-          <strong>updated_by</strong> is set to you. A transfers row records the move
-          (initiator on that record).
+          <strong>updated_by</strong> is set to you. A <strong>transfers</strong> row
+          records from branch, to branch, <strong>quantity moved</strong>, and
+          initiator.
         </p>
         <footer>
           <button

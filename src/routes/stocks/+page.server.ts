@@ -12,6 +12,7 @@ const STOCK_FIELDS = `
       model_number
       country
       branch
+      origin
       type
       color
       created_by

@@ -15,6 +15,8 @@
     model_number?: string | null;
     country?: string | null;
     branch?: string | null;
+    /** Branch id this line was transferred from; null = created here. */
+    origin?: string | null;
     type?: string | null;
     color?: string | null;
     created_by: string;
@@ -724,6 +726,7 @@
           </button>
         </th>
         <th>Branch</th>
+        <th>Origin</th>
         <th>Model #</th>
         <th
           class="th-sort"
@@ -830,6 +833,7 @@
         >
           <td>{typeDisplay(s.type)}</td>
           <td>{branchLabel(s.branch)}</td>
+          <td>{s.origin ? branchLabel(s.origin) : "-"}</td>
           <td>{dash(s.model_number)}</td>
           <td>{dash(s.country)}</td>
           <td>{dash(s.thickness)}</td>
@@ -858,7 +862,7 @@
       {/each}
       {#if filteredStocks.length === 0}
         <tr>
-          <td colspan="9" class="empty-state">
+          <td colspan="10" class="empty-state">
             <p class="muted">
               {#if stocks.length === 0}
                 No stocks found. Create your first stock to get started.

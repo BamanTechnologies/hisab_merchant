@@ -15,6 +15,7 @@ const FETCH_STOCK_BY_PK_QUERY = `
       model_number
       country
       branch
+      origin
       type
       color
       created_by
@@ -221,6 +222,12 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
     error(404, 'Stock not found');
   }
 
+  let originBranchName: string | null = null;
+  if (stock.origin) {
+    const ob = await fetchBranchByPk(String(stock.origin));
+    originBranchName = ob?.name != null && String(ob.name).trim() !== '' ? String(ob.name) : null;
+  }
+
   let transferTargetBranches: { id: string; name?: string | null }[] = [];
   if (stock.branch) {
     const sourceBranch = await fetchBranchByPk(stock.branch);
@@ -237,6 +244,7 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
     stock,
     investors,
     merchantId,
+    originBranchName,
     transferTargetBranches,
     merchantsInTransferBranches,
   };
@@ -295,10 +303,13 @@ function buildNewStockInsertInput(
   toBranch: string,
   transferQty: number,
   assigneeId: string,
+  /** Branch the quantity was transferred from (initiator’s / source branch). */
+  originBranchId: string,
 ): Record<string, unknown> {
   const inv = Array.isArray(row.investors) ? row.investors : [];
   return {
     branch: toBranch,
+    origin: originBranchId,
     quantity: transferQty,
     created_by: assigneeId,
     updated_by: assigneeId,
@@ -331,12 +342,19 @@ async function transferStockPartial(input: {
     throw new Error('Invalid remaining quantity');
   }
 
-  const newStock = buildNewStockInsertInput(sourceRow, toBranch, transferQty, assigneeId);
+  const newStock = buildNewStockInsertInput(
+    sourceRow,
+    toBranch,
+    transferQty,
+    assigneeId,
+    fromBranch,
+  );
 
   const transfer: Record<string, unknown> = {
     stock: sourceRow.id,
     from: fromBranch,
     to: toBranch,
+    quantity: transferQty,
     created_by: actorId,
   };
 

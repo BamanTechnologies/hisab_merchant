@@ -3,7 +3,7 @@ import { getUserIdFromRequest } from '$lib/auth';
 import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
 import { createPaymentRecord } from '$lib/payments.server';
 import {
-  fetchCustomerTransactionSum,
+  fetchCustomerLatestBalance,
   insertCustomerTransaction,
   sumOrderLedgerOrderDebits,
 } from '$lib/customerTransactions.server';
@@ -18,10 +18,17 @@ const FETCH_BRANCH_BY_PK_QUERY = `
   }
 `;
 
-/** `customer` on `company_customer` is a UUID column here — load rows then `customers` in a second query. */
+/** `customer` on `company_customer` is a UUID column — scoped by company + branch; then load `customers`. */
 const FETCH_COMPANY_CUSTOMER_IDS_QUERY = `
-  query CompanyCustomerIds($companyId: uuid!) {
-    company_customer(where: { company: { _eq: $companyId } }) {
+  query CompanyCustomerIds($companyId: uuid!, $branchId: uuid!) {
+    company_customer(
+      where: {
+        _and: [
+          { company: { _eq: $companyId } }
+          { branch: { _eq: $branchId } }
+        ]
+      }
+    ) {
       id
       customer
     }
@@ -41,12 +48,13 @@ const FETCH_CUSTOMERS_BY_IDS_QUERY = `
 `;
 
 const VERIFY_COMPANY_CUSTOMER_JUNCTION_QUERY = `
-  query VerifyCompanyCustomerJunction($companyId: uuid!, $customerId: uuid!) {
+  query VerifyCompanyCustomerJunction($companyId: uuid!, $customerId: uuid!, $branchId: uuid!) {
     company_customer(
       where: {
         _and: [
           { company: { _eq: $companyId } }
           { customer: { _eq: $customerId } }
+          { branch: { _eq: $branchId } }
         ]
       }
       limit: 1
@@ -214,8 +222,10 @@ const INSERT_CUSTOMER_MUTATION = `
 `;
 
 const INSERT_COMPANY_CUSTOMER_MUTATION = `
-  mutation LinkCompanyCustomer($company: uuid!, $customer: uuid!) {
-    insert_company_customer(objects: { company: $company, customer: $customer }) {
+  mutation LinkCompanyCustomer($company: uuid!, $customer: uuid!, $branch: uuid!) {
+    insert_company_customer(
+      objects: { company: $company, customer: $customer, branch: $branch }
+    ) {
       returning {
         id
       }
@@ -278,21 +288,23 @@ async function fetchCustomersByMerchant(
   merchantBranchId: string | null,
   knownCompanyId?: string | null,
 ): Promise<{ companyId: string | null; customers: CustomerRecord[] }> {
-  if (!knownCompanyId && !merchantBranchId) {
-    return { companyId: null, customers: [] };
+  if (!merchantBranchId) {
+    return { companyId: knownCompanyId ?? null, customers: [] };
   }
 
   try {
     const companyId =
-      knownCompanyId ??
-      (merchantBranchId != null ? await fetchBranchCompany(merchantBranchId) : null);
+      knownCompanyId ?? (await fetchBranchCompany(merchantBranchId));
     if (!companyId) {
       return { companyId: null, customers: [] };
     }
 
     const junction = await gql<{
       company_customer: Array<{ id: string; customer: string } | null>;
-    }>(FETCH_COMPANY_CUSTOMER_IDS_QUERY, { companyId });
+    }>(FETCH_COMPANY_CUSTOMER_IDS_QUERY, {
+      companyId,
+      branchId: merchantBranchId,
+    });
 
     const ids = [
       ...new Set(
@@ -327,11 +339,20 @@ async function fetchCustomersByMerchant(
 async function verifyCustomerInCompany(
   companyId: string,
   customerId: string,
+  merchantBranchId: string | null,
 ): Promise<CustomerRecord | null> {
+  if (!merchantBranchId) {
+    return null;
+  }
+
   try {
     const junction = await gql<{
       company_customer: Array<{ id: string } | null>;
-    }>(VERIFY_COMPANY_CUSTOMER_JUNCTION_QUERY, { companyId, customerId });
+    }>(VERIFY_COMPANY_CUSTOMER_JUNCTION_QUERY, {
+      companyId,
+      customerId,
+      branchId: merchantBranchId,
+    });
 
     if (!junction.company_customer?.[0]?.id) {
       return null;
@@ -455,7 +476,7 @@ async function postOrderLedgerAndAutoPay(opts: {
   orderId: string;
   orderTotalAmount: number;
 }): Promise<void> {
-  const sumBefore = await fetchCustomerTransactionSum(opts.companyId, opts.customerId);
+  const sumBefore = await fetchCustomerLatestBalance(opts.companyId, opts.customerId);
   const extra = Math.max(0, -sumBefore);
   const total = opts.orderTotalAmount;
 
@@ -719,9 +740,16 @@ export const actions: Actions = {
       };
     }
 
-    const customer = await verifyCustomerInCompany(companyId, customerId);
+    const customer = await verifyCustomerInCompany(
+      companyId,
+      customerId,
+      merchantBranchId,
+    );
     if (!customer) {
-      return { success: false, message: 'Customer is not valid for your company' };
+      return {
+        success: false,
+        message: 'Customer is not valid for your company or branch',
+      };
     }
 
     const customer_name = [customer.first_name, customer.last_name]
@@ -856,6 +884,13 @@ export const actions: Actions = {
       };
     }
 
+    if (!merchantBranchId) {
+      return {
+        success: false,
+        message: 'You must be assigned to a branch to add customers',
+      };
+    }
+
     try {
       const ins = await gql<{
         insert_customers_one: CustomerRecord | null;
@@ -874,6 +909,7 @@ export const actions: Actions = {
       await gql(INSERT_COMPANY_CUSTOMER_MUTATION, {
         company: companyId,
         customer: created.id,
+        branch: merchantBranchId,
       });
 
       const customer = normalizeCustomer(created);
@@ -914,6 +950,9 @@ export const actions: Actions = {
 
     if (orderRow.status === 'cancelled') {
       return { success: false, message: 'This order is already cancelled' };
+    }
+    if (orderRow.status === 'paid') {
+      return { success: false, message: 'Paid orders cannot be cancelled' };
     }
 
     try {
