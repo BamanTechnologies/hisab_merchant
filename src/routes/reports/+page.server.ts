@@ -44,7 +44,6 @@ const GENERATE_INVESTOR_REPORT_QUERY = `
       total_amount
       created_at
       customer_name
-      selling_price
     }
     orders_aggregate: orders_since_last_report_aggregate(where: {_and: {merchant_id: {_eq: $merchant_id}, investor_phone: {_eq: $investor_phone}}}) {
       aggregate {
@@ -152,6 +151,31 @@ async function generateInvestorReport(investorId: string, investorPhone: string,
   return result.data;
 }
 
+function asFiniteNumber(v: unknown): number {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  if (typeof v === 'string') {
+    const n = Number(v.replace(/[^0-9.-]/g, ''));
+    return Number.isFinite(n) ? n : 0;
+  }
+  return 0;
+}
+
+function withComputedSoldPrice(reportData: Record<string, unknown>): Record<string, unknown> {
+  const ordersRaw = Array.isArray(reportData.orders) ? reportData.orders : [];
+  const orders = ordersRaw.map((row) => {
+    if (!row || typeof row !== 'object') return row;
+    const rec = row as Record<string, unknown>;
+    const qty = asFiniteNumber(rec.order_quantity);
+    const total = asFiniteNumber(rec.total_amount);
+    return {
+      ...rec,
+      // Keep as string for downstream SMS formatter that calls `.replace(...)`.
+      selling_price: qty > 0 ? (total / qty).toFixed(2) : '0.00',
+    };
+  });
+  return { ...reportData, orders };
+}
+
 // Function to send report via SMS
 async function sendReport(reportData: any) {
   const variables = {
@@ -221,7 +245,12 @@ export const actions: Actions = {
     const investorPhone = formData.get('investor_phone') as string;
 
     try {
-      const reportData = await generateInvestorReport(investorId, investorPhone, userId);
+      const rawReportData = await generateInvestorReport(
+        investorId,
+        investorPhone,
+        userId,
+      );
+      const reportData = withComputedSoldPrice(rawReportData);
 
       return {
         success: true,
@@ -243,7 +272,8 @@ export const actions: Actions = {
 
     try {
       const reportData = JSON.parse(reportDataString);
-      const smsResult = await sendReport(reportData);
+      const normalizedReportData = withComputedSoldPrice(reportData);
+      const smsResult = await sendReport(normalizedReportData);
 
       return {
         success: true,
