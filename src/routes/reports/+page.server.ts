@@ -37,15 +37,32 @@ const GENERATE_INVESTOR_REPORT_QUERY = `
       selling_price
       factor
     }
-    orders: orders_since_last_report(where: {_and: {merchant_id: {_eq: $merchant_id}, investor_phone: {_eq: $investor_phone}}}) {
+    orders: orders_since_last_report(
+      where: {
+        _and: [
+          { merchant_id: { _eq: $merchant_id } }
+          { investor_phone: { _eq: $investor_phone } }
+          { status: { _neq: "cancelled" } }
+        ]
+      }
+    ) {
       id
       stock_id
       order_quantity
       total_amount
       created_at
       customer_name
+      status
     }
-    orders_aggregate: orders_since_last_report_aggregate(where: {_and: {merchant_id: {_eq: $merchant_id}, investor_phone: {_eq: $investor_phone}}}) {
+    orders_aggregate: orders_since_last_report_aggregate(
+      where: {
+        _and: [
+          { merchant_id: { _eq: $merchant_id } }
+          { investor_phone: { _eq: $investor_phone } }
+          { status: { _neq: "cancelled" } }
+        ]
+      }
+    ) {
       aggregate {
         sum {
           total_amount
