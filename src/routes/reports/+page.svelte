@@ -1,6 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import type { PageData } from "./$types";
+  import { soldUnitPriceForReportOrder } from "$lib/reportSoldPrice";
 
   type Report = {
     id: string;
@@ -114,26 +115,6 @@
   function reportDash(v: unknown) {
     if (v === null || v === undefined || v === "") return "—";
     return String(v);
-  }
-
-  function parseNumeric(v: unknown): number {
-    if (typeof v === "number") return Number.isFinite(v) ? v : 0;
-    if (typeof v === "string") {
-      const n = Number(v.replace(/[^0-9.-]/g, ""));
-      return Number.isFinite(n) ? n : 0;
-    }
-    return 0;
-  }
-
-  function soldPriceFromOrder(order: {
-    order_quantity: number;
-    total_amount: string;
-    selling_price: string;
-  }): string {
-    const qty = parseNumeric(order.order_quantity);
-    const total = parseNumeric(order.total_amount);
-    if (qty > 0) return (total / qty).toFixed(2);
-    return order.selling_price;
   }
 
   function getStatusClass(status: string) {
@@ -542,7 +523,12 @@
                     <tr>
                       <td>{order.customer_name}</td>
                       <td>{order.order_quantity}</td>
-                      <td>{soldPriceFromOrder(order)}</td>
+                      <td
+                        >{soldUnitPriceForReportOrder(
+                          order,
+                          generatedReportData.stocks,
+                        )}</td
+                      >
                       <td>{order.total_amount}</td>
                       <td>{formatDate(order.created_at)}</td>
                     </tr>

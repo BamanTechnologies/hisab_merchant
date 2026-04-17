@@ -6,6 +6,7 @@ import {
   fetchInvestorsForCompany,
 } from '$lib/companyInvestors.server';
 import { config, getGraphQLHeaders } from '$lib/config';
+import { soldUnitPriceForReportOrder } from '$lib/reportSoldPrice';
 
 const FETCH_REPORTS_QUERY = `
   query GetReports($merchantId: uuid!) {
@@ -168,26 +169,18 @@ async function generateInvestorReport(investorId: string, investorPhone: string,
   return result.data;
 }
 
-function asFiniteNumber(v: unknown): number {
-  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
-  if (typeof v === 'string') {
-    const n = Number(v.replace(/[^0-9.-]/g, ''));
-    return Number.isFinite(n) ? n : 0;
-  }
-  return 0;
-}
-
 function withComputedSoldPrice(reportData: Record<string, unknown>): Record<string, unknown> {
+  const stocksRaw = Array.isArray(reportData.stocks) ? reportData.stocks : [];
+  const stocks = stocksRaw.filter((s): s is Record<string, unknown> => s != null && typeof s === 'object');
+
   const ordersRaw = Array.isArray(reportData.orders) ? reportData.orders : [];
   const orders = ordersRaw.map((row) => {
     if (!row || typeof row !== 'object') return row;
     const rec = row as Record<string, unknown>;
-    const qty = asFiniteNumber(rec.order_quantity);
-    const total = asFiniteNumber(rec.total_amount);
     return {
       ...rec,
-      // Keep as string for downstream SMS formatter that calls `.replace(...)`.
-      selling_price: qty > 0 ? (total / qty).toFixed(2) : '0.00',
+      // String for downstream SMS formatter that calls `.replace(...)`.
+      selling_price: soldUnitPriceForReportOrder(rec, stocks),
     };
   });
   return { ...reportData, orders };
