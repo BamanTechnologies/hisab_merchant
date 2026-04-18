@@ -76,11 +76,21 @@ const FETCH_CUSTOMER_BY_PK_QUERY = `
   }
 `;
 
+const FETCH_BRANCHES_FOR_COMPANY_QUERY = `
+  query OrdersBranchesForCompany($companyId: uuid!) {
+    branches(where: { company: { _eq: $companyId } }) {
+      id
+      name
+    }
+  }
+`;
+
 const FETCH_STOCKS_BY_BRANCH_QUERY = `
   query OrdersStocksByBranch($branchId: uuid!) {
     stock(where: { branch: { _eq: $branchId } }) {
       id
       branch
+      origin
       quantity
       selling_price
       factor
@@ -381,6 +391,18 @@ async function fetchStocksForBranch(branchId: string) {
   }
 }
 
+async function fetchBranchesForCompany(companyId: string | null) {
+  if (!companyId) return [];
+  try {
+    const data = await gql<{
+      branches: { id: string; name?: string | null }[];
+    }>(FETCH_BRANCHES_FOR_COMPANY_QUERY, { companyId });
+    return data.branches ?? [];
+  } catch {
+    return [];
+  }
+}
+
 async function fetchOrders(merchantId: string) {
   try {
     const data = await gql<{ orders: unknown[] }>(FETCH_ORDERS_QUERY, { merchantId });
@@ -655,15 +677,17 @@ export const load: PageServerLoad = async ({ request, parent }) => {
     companyId = await fetchBranchCompany(merchantBranchId);
   }
 
-  const [orders, stocks] = await Promise.all([
+  const [orders, stocks, branches] = await Promise.all([
     merchantId ? fetchOrders(merchantId) : Promise.resolve([]),
     merchantBranchId ? fetchStocksForBranch(merchantBranchId) : Promise.resolve([]),
+    fetchBranchesForCompany(companyId),
   ]);
 
   return {
     orders,
     customers: customerCtx.customers,
     stocks,
+    branches,
     merchantId,
     merchantBranchId,
     companyId,

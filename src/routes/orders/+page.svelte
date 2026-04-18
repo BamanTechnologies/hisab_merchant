@@ -1,7 +1,15 @@
 <script lang="ts">
   import { deserialize } from "$app/forms";
   import { goto } from "$app/navigation";
+  import { tick } from "svelte";
   import type { PageData } from "./$types";
+
+  type StockPanelPos = {
+    top: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+  };
 
   type CustomerRow = {
     id: string;
@@ -10,6 +18,11 @@
     phone?: string | null;
     phone_number?: string | null;
     address?: string | null;
+  };
+
+  type BranchLite = {
+    id: string;
+    name?: string | null;
   };
 
   type StockRow = {
@@ -24,6 +37,8 @@
     thickness?: number | string | null;
     color?: string | null;
     figure?: string | null;
+    /** Source branch id when line came from a transfer */
+    origin?: string | null;
   };
 
   type OrderSummary = {
@@ -83,6 +98,14 @@
   let addCustomerSubmitting = $state(false);
   let addCustomerError = $state("");
 
+  let stockPickerRowId = $state<string | null>(null);
+  let stockSearchQuery = $state("");
+  let stockPanelPos = $state<StockPanelPos | null>(null);
+  let stockSearchInputEl = $state<HTMLInputElement | null>(null);
+  let lastStockSearchFocusRowId: string | null = null;
+
+  const branchesList = $derived((data.branches ?? []) as BranchLite[]);
+
   function parseMoneyValue(v: unknown): number {
     if (v === null || v === undefined) return 0;
     if (typeof v === "number") return Number.isFinite(v) ? v : 0;
@@ -114,6 +137,14 @@
     return c ? ` · ${c}` : "";
   }
 
+  function originSuffix(s: StockRow): string {
+    const oid = s.origin != null ? String(s.origin).trim() : "";
+    if (!oid) return "";
+    const b = branchesList.find((x) => x.id === oid);
+    const name = b?.name != null ? String(b.name).trim() : "";
+    return name ? ` · from ${name}` : "";
+  }
+
   function stockOptionLabel(s: StockRow) {
     const unit = s.unit?.trim();
     const qtyHint = unit
@@ -122,6 +153,7 @@
     const typePart = typeDisplay(s.type);
     const rawType = s.type?.trim() ?? "";
     const ctry = countrySuffix(s);
+    const orig = originSuffix(s);
 
     if (rawType === "glass") {
       const parts: string[] = [];
@@ -140,12 +172,138 @@
         parts.length > 0
           ? parts.join(" ")
           : s.model_number?.trim() || s.id.slice(0, 8) + "…";
-      return `${desc} · ${typePart}${ctry} (${qtyHint})`;
+      return `${typePart} · ${desc}${ctry}${orig} (${qtyHint})`;
     }
 
     const model = s.model_number?.trim() || s.id.slice(0, 8) + "…";
-    return `${model} · ${typePart}${ctry} (${qtyHint})`;
+    return `${typePart} · ${model}${ctry}${orig} (${qtyHint})`;
   }
+
+  function stockSearchHaystack(s: StockRow): string {
+    const oid = s.origin != null ? String(s.origin).trim() : "";
+    const br = oid ? branchesList.find((b) => b.id === oid) : undefined;
+    const oName = br?.name != null ? String(br.name).trim() : "";
+    const parts = [
+      typeDisplay(s.type),
+      s.type,
+      s.model_number,
+      s.country,
+      s.color,
+      s.figure,
+      s.unit,
+      String(s.thickness ?? ""),
+      String(s.quantity ?? ""),
+      oName,
+    ];
+    return parts
+      .filter((p) => p != null && String(p).trim() !== "")
+      .join(" ")
+      .toLowerCase();
+  }
+
+  function stockMatchesSearch(s: StockRow, q: string): boolean {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return true;
+    return stockSearchHaystack(s).includes(needle);
+  }
+
+  function stocksFilteredForPickerRow(rowId: string): StockRow[] {
+    const base = stocksForRow(rowId);
+    const q = stockSearchQuery.trim();
+    if (!q) return base;
+    return base.filter((s) => stockMatchesSearch(s, q));
+  }
+
+  function updateStockPanelPosition() {
+    if (!stockPickerRowId) return;
+    const sel = `[data-stock-trigger="${CSS.escape(stockPickerRowId)}"]`;
+    const btn = document.querySelector(sel);
+    if (!(btn instanceof HTMLElement)) {
+      requestAnimationFrame(() => updateStockPanelPosition());
+      return;
+    }
+    const rect = btn.getBoundingClientRect();
+    const gap = 4;
+    const padding = 8;
+    let width = Math.max(rect.width, 200);
+    let left = rect.left;
+    if (left + width > window.innerWidth - padding) {
+      left = Math.max(padding, window.innerWidth - padding - width);
+    }
+    const spaceBelow = window.innerHeight - rect.bottom - gap - padding;
+    const maxHeight = Math.min(280, Math.max(80, spaceBelow));
+    stockPanelPos = {
+      top: rect.bottom + gap,
+      left,
+      width,
+      maxHeight,
+    };
+  }
+
+  function toggleStockPicker(rowId: string) {
+    if (stockPickerRowId === rowId) {
+      stockPickerRowId = null;
+    } else {
+      stockPickerRowId = rowId;
+      stockSearchQuery = "";
+    }
+  }
+
+  $effect(() => {
+    if (!stockPickerRowId) {
+      stockPanelPos = null;
+      return;
+    }
+    void tick().then(() => updateStockPanelPosition());
+    const onMove = () => updateStockPanelPosition();
+    window.addEventListener("resize", onMove);
+    window.addEventListener("scroll", onMove, true);
+    const scrollEl = document.querySelector("[data-create-order-scroll]");
+    scrollEl?.addEventListener("scroll", onMove);
+    return () => {
+      window.removeEventListener("resize", onMove);
+      window.removeEventListener("scroll", onMove, true);
+      scrollEl?.removeEventListener("scroll", onMove);
+    };
+  });
+
+  $effect(() => {
+    if (!stockPickerRowId) {
+      lastStockSearchFocusRowId = null;
+      return;
+    }
+    if (!stockPanelPos) return;
+    if (lastStockSearchFocusRowId === stockPickerRowId) return;
+    lastStockSearchFocusRowId = stockPickerRowId;
+    void tick().then(() => stockSearchInputEl?.focus());
+  });
+
+  function selectStockForRow(rowId: string, stockId: string) {
+    orderLines = orderLines.map((r) =>
+      r.rowId === rowId
+        ? {
+            ...r,
+            stockId,
+            unitPrice: stockId === "" ? 0 : defaultUnitPriceForStock(stockId),
+          }
+        : r,
+    );
+    stockPickerRowId = null;
+    stockSearchQuery = "";
+  }
+
+  $effect(() => {
+    if (!stockPickerRowId) return;
+    const onDoc = (e: PointerEvent) => {
+      const t = e.target;
+      if (!(t instanceof Element)) return;
+      if (t.closest("[data-stock-combo-wrap]")) return;
+      if (t.closest("[data-stock-combo-panel]")) return;
+      stockPickerRowId = null;
+    };
+    document.addEventListener("pointerdown", onDoc, true);
+    return () => document.removeEventListener("pointerdown", onDoc, true);
+  });
 
   function getStock(stockId: string): StockRow | undefined {
     return stocks.find((s) => s.id === stockId);
@@ -219,6 +377,8 @@
 
   function resetCreateModal() {
     selectedCustomerId = "";
+    stockPickerRowId = null;
+    stockSearchQuery = "";
     orderLines = [
       {
         rowId: crypto.randomUUID(),
@@ -502,7 +662,17 @@
       (e.key === "Enter" || e.key === " ") &&
       closeCreateModal()}
   ></div>
-  <dialog open class="modal modal-wide" onclick={(e) => e.stopPropagation()}>
+  <dialog
+    open
+    class="modal modal-wide"
+    onclick={(e) => e.stopPropagation()}
+    onkeydown={(e) => {
+      if (e.key === "Escape" && stockPickerRowId) {
+        e.preventDefault();
+        stockPickerRowId = null;
+      }
+    }}
+  >
     <header>
       <h2 style="color: white;">Create Order</h2>
       <button
@@ -512,7 +682,7 @@
         disabled={createSubmitting}>✕</button
       >
     </header>
-    <div class="modal-body">
+    <div class="modal-body" data-create-order-scroll>
       {#if createError}
         <p class="inline-error">{createError}</p>
       {/if}
@@ -561,31 +731,30 @@
             class:line-invalid={row.stockId !== "" &&
               (!!lineQuantityError(row) || !!lineUnitPriceError(row))}
           >
-            <label class="grow">
+            <div class="grow stock-combo-wrap" data-stock-combo-wrap>
               <span class="sr-only">Stock</span>
-              <select
-                class="native-select full"
-                value={row.stockId}
-                disabled={createSubmitting}
-                onchange={(e) => {
-                  const v = e.currentTarget.value;
-                  orderLines = orderLines.map((r) =>
-                    r.rowId === row.rowId
-                      ? {
-                          ...r,
-                          stockId: v,
-                          unitPrice: v === "" ? 0 : defaultUnitPriceForStock(v),
-                        }
-                      : r,
-                  );
-                }}
-              >
-                <option value="">Select stock</option>
-                {#each stocksForRow(row.rowId) as s}
-                  <option value={s.id}>{stockOptionLabel(s)}</option>
-                {/each}
-              </select>
-            </label>
+              <div class="stock-combobox">
+                <button
+                  type="button"
+                  class="stock-combobox-trigger native-select full"
+                  data-stock-trigger={row.rowId}
+                  disabled={createSubmitting}
+                  aria-expanded={stockPickerRowId === row.rowId}
+                  aria-haspopup="listbox"
+                  onclick={() => !createSubmitting && toggleStockPicker(row.rowId)}
+                >
+                  <span class="stock-combobox-trigger-text">
+                    {#if row.stockId}
+                      {@const st = getStock(row.stockId)}
+                      {st ? stockOptionLabel(st) : "Select stock"}
+                    {:else}
+                      Select stock
+                    {/if}
+                  </span>
+                  <span class="stock-combobox-caret" aria-hidden="true">▾</span>
+                </button>
+              </div>
+            </div>
             <label class="qty">
               <span class="sr-only">Quantity</span>
               <input
@@ -644,6 +813,48 @@
         </button>
       </div>
     </div>
+    {#if stockPickerRowId && stockPanelPos}
+      {@const pickerRowId = stockPickerRowId}
+      {@const pickerRow = orderLines.find((r) => r.rowId === pickerRowId)}
+      <div
+        class="stock-combobox-panel stock-combobox-panel--fixed"
+        data-stock-combo-panel
+        style="top: {stockPanelPos.top}px; left: {stockPanelPos.left}px; width: {stockPanelPos.width}px; max-height: {stockPanelPos.maxHeight}px;"
+        role="listbox"
+      >
+        <input
+          bind:this={stockSearchInputEl}
+          type="search"
+          class="stock-combobox-search"
+          placeholder="Search type, model, thickness, color, country…"
+          value={stockSearchQuery}
+          disabled={createSubmitting}
+          oninput={(e) => {
+            stockSearchQuery = e.currentTarget.value;
+          }}
+          onkeydown={(e) => {
+            e.stopPropagation();
+          }}
+        />
+        <ul class="stock-combobox-list stock-combobox-list--in-fixed-panel">
+          {#each stocksFilteredForPickerRow(pickerRowId) as s (s.id)}
+            <li role="none">
+              <button
+                type="button"
+                class="stock-combobox-option"
+                role="option"
+                aria-selected={pickerRow?.stockId === s.id}
+                onclick={() => selectStockForRow(pickerRowId, s.id)}
+              >
+                {stockOptionLabel(s)}
+              </button>
+            </li>
+          {:else}
+            <li class="stock-combobox-empty">No matching stock</li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
     <footer>
       <button
         type="button"
@@ -1064,6 +1275,104 @@
   }
   .native-select.full {
     width: 100%;
+  }
+
+  .stock-combo-wrap {
+    position: relative;
+    min-width: 0;
+  }
+  .stock-combobox {
+    position: relative;
+    width: 100%;
+  }
+  .stock-combobox-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+  }
+  .stock-combobox-trigger-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .stock-combobox-caret {
+    flex-shrink: 0;
+    opacity: 0.65;
+    font-size: 0.7rem;
+  }
+  .stock-combobox-panel {
+    display: flex;
+    flex-direction: column;
+    background: color-mix(in oklab, var(--surface-2), black 8%);
+    border: 1px solid color-mix(in oklab, var(--surface-2), white 14%);
+    border-radius: 0.6rem;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+  }
+  .stock-combobox-panel--fixed {
+    position: fixed;
+    z-index: 10050;
+    box-sizing: border-box;
+  }
+  .stock-combobox-search {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.65rem 0.75rem;
+    font-size: 0.95rem;
+    border: none;
+    border-bottom: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
+    background: color-mix(in oklab, var(--surface-2), white 4%);
+    color: #e5e7eb;
+  }
+  .stock-combobox-search::placeholder {
+    color: #94a3b8;
+  }
+  .stock-combobox-search:focus {
+    outline: none;
+    background: color-mix(in oklab, var(--surface-2), white 6%);
+  }
+  .stock-combobox-list {
+    list-style: none;
+    margin: 0;
+    padding: 0.25rem 0;
+    max-height: min(240px, 45vh);
+    overflow-y: auto;
+  }
+  .stock-combobox-list--in-fixed-panel {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+  }
+  .stock-combobox-option {
+    width: 100%;
+    display: block;
+    text-align: left;
+    padding: 0.45rem 0.65rem;
+    margin: 0;
+    border: none;
+    background: transparent;
+    color: #e5e7eb;
+    font-size: 0.82rem;
+    line-height: 1.35;
+    cursor: pointer;
+  }
+  .stock-combobox-option:hover,
+  .stock-combobox-option:focus-visible {
+    background: color-mix(in oklab, var(--surface-2), white 8%);
+    outline: none;
+  }
+  .stock-combobox-empty {
+    padding: 0.65rem 0.75rem;
+    font-size: 0.85rem;
+    color: #94a3b8;
+    font-style: italic;
   }
   .linkish {
     margin: 0.25rem 0 1rem;
