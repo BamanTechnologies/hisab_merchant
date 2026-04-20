@@ -281,6 +281,75 @@ const PARTIAL_TRANSFER_STOCK_MUTATION = `
   }
 `;
 
+const REUSE_TRANSFER_STOCK_MUTATION = `
+  mutation ReuseTransferStock(
+    $destinationId: uuid!
+    $transferQty: numeric!
+    $assigneeId: uuid!
+    $sourceId: uuid!
+    $remainingQty: numeric!
+    $actorId: uuid!
+    $transfer: transfers_insert_input!
+  ) {
+    update_destination: update_stock_by_pk(
+      pk_columns: { id: $destinationId }
+      _inc: { quantity: $transferQty }
+      _set: { updated_by: $assigneeId }
+    ) {
+      id
+    }
+    update_source: update_stock_by_pk(
+      pk_columns: { id: $sourceId }
+      _set: { quantity: $remainingQty, updated_by: $actorId }
+    ) {
+      id
+    }
+    insert_transfers(objects: [$transfer]) {
+      returning {
+        id
+      }
+    }
+  }
+`;
+
+const FIND_REUSABLE_DESTINATION_TRANSFER_QUERY = `
+  query FindReusableDestinationTransfer($sourceId: uuid!, $from: uuid!, $to: uuid!) {
+    transfers(
+      where: {
+        _or: [
+          {
+            stock: { _eq: $sourceId }
+            from: { _eq: $from }
+            to: { _eq: $to }
+            destination_stock: { _is_null: false }
+          }
+          {
+            destination_stock: { _eq: $sourceId }
+            from: { _eq: $to }
+            to: { _eq: $from }
+          }
+        ]
+      }
+      order_by: [{ created_at: desc }, { id: desc }]
+      limit: 5
+    ) {
+      stock
+      from
+      to
+      destination_stock
+    }
+  }
+`;
+
+const FETCH_STOCK_BRANCH_BY_PK_QUERY = `
+  query StockBranchByPk($id: uuid!) {
+    stock_by_pk(id: $id) {
+      id
+      branch
+    }
+  }
+`;
+
 type StockRowForTransfer = {
   id: string;
   model_number?: string | null;
@@ -298,6 +367,81 @@ type StockRowForTransfer = {
   unit?: string | null;
 };
 
+async function fetchReusableDestinationStockId(input: {
+  sourceId: string;
+  fromBranch: string;
+  toBranch: string;
+}) {
+  try {
+    const response = await fetch(config.graphql.endpoint, {
+      method: 'POST',
+      headers: getGraphQLHeaders(),
+      body: JSON.stringify({
+        query: FIND_REUSABLE_DESTINATION_TRANSFER_QUERY,
+        variables: {
+          sourceId: input.sourceId,
+          from: input.fromBranch,
+          to: input.toBranch,
+        },
+      }),
+    });
+
+    if (!response.ok) return null;
+    const result = await response.json();
+    if (result.errors) return null;
+
+    const rows = Array.isArray(result.data?.transfers) ? result.data.transfers : [];
+    let destId: string | null = null;
+    for (const row of rows) {
+      const rowFrom = typeof row?.from === 'string' ? row.from : '';
+      const rowTo = typeof row?.to === 'string' ? row.to : '';
+      const rowStock = typeof row?.stock === 'string' ? row.stock : '';
+      const rowDest =
+        typeof row?.destination_stock === 'string' && row.destination_stock.trim() !== ''
+          ? row.destination_stock
+          : null;
+
+      // Forward repeat transfer: same source line and direction.
+      if (rowFrom === input.fromBranch && rowTo === input.toBranch && rowDest) {
+        destId = rowDest;
+        break;
+      }
+
+      // Reverse transfer: current source was previous destination.
+      if (
+        rowFrom === input.toBranch &&
+        rowTo === input.fromBranch &&
+        rowStock &&
+        rowStock.trim() !== ''
+      ) {
+        destId = rowStock;
+        break;
+      }
+    }
+    if (!destId) return null;
+
+    // Guard against stale references when a destination stock row was deleted.
+    const stockResp = await fetch(config.graphql.endpoint, {
+      method: 'POST',
+      headers: getGraphQLHeaders(),
+      body: JSON.stringify({
+        query: FETCH_STOCK_BRANCH_BY_PK_QUERY,
+        variables: { id: destId },
+      }),
+    });
+    if (!stockResp.ok) return null;
+    const stockResult = await stockResp.json();
+    if (stockResult.errors) return null;
+
+    const destStock = stockResult.data?.stock_by_pk;
+    if (!destStock?.id) return null;
+    if (destStock.branch !== input.toBranch) return null;
+    return String(destStock.id);
+  } catch {
+    return null;
+  }
+}
+
 function buildNewStockInsertInput(
   row: StockRowForTransfer,
   toBranch: string,
@@ -305,9 +449,11 @@ function buildNewStockInsertInput(
   assigneeId: string,
   /** Branch the quantity was transferred from (initiator’s / source branch). */
   originBranchId: string,
+  destinationStockId?: string,
 ): Record<string, unknown> {
   const inv = Array.isArray(row.investors) ? row.investors : [];
   return {
+    ...(destinationStockId ? { id: destinationStockId } : {}),
     branch: toBranch,
     origin: originBranchId,
     quantity: transferQty,
@@ -342,57 +488,119 @@ async function transferStockPartial(input: {
     throw new Error('Invalid remaining quantity');
   }
 
-  const newStock = buildNewStockInsertInput(
+  const reusableDestinationId = await fetchReusableDestinationStockId({
+    sourceId: sourceRow.id,
+    fromBranch,
+    toBranch,
+  });
+
+  if (reusableDestinationId) {
+    const transfer: Record<string, unknown> = {
+      stock: sourceRow.id,
+      from: fromBranch,
+      to: toBranch,
+      quantity: transferQty,
+      created_by: actorId,
+      destination_stock: reusableDestinationId,
+    };
+
+    const reuseResp = await fetch(config.graphql.endpoint, {
+      method: 'POST',
+      headers: getGraphQLHeaders(),
+      body: JSON.stringify({
+        query: REUSE_TRANSFER_STOCK_MUTATION,
+        variables: {
+          destinationId: reusableDestinationId,
+          transferQty,
+          assigneeId,
+          sourceId: sourceRow.id,
+          remainingQty,
+          actorId,
+          transfer,
+        },
+      }),
+    });
+
+    if (!reuseResp.ok) {
+      const errorText = await reuseResp.text();
+      throw new Error(`HTTP error! status: ${reuseResp.status}, body: ${errorText}`);
+    }
+
+    const reuseResult = await reuseResp.json();
+    if (reuseResult.errors) {
+      throw new Error(`GraphQL errors: ${JSON.stringify(reuseResult.errors)}`);
+    }
+
+    const updatedDest = reuseResult.data?.update_destination;
+    const updatedSource = reuseResult.data?.update_source;
+    const insertedTr = reuseResult.data?.insert_transfers?.returning?.[0];
+    if (!updatedDest?.id || !updatedSource?.id || !insertedTr?.id) {
+      throw new Error('Transfer did not complete');
+    }
+
+    return {
+      destinationStockId: updatedDest.id as string,
+      transferId: insertedTr.id as string,
+    };
+  }
+
+  const newDestinationStockId = crypto.randomUUID();
+  const newStockWithFixedId = buildNewStockInsertInput(
     sourceRow,
     toBranch,
     transferQty,
     assigneeId,
     fromBranch,
+    newDestinationStockId,
   );
 
-  const transfer: Record<string, unknown> = {
+  const insertTransfer: Record<string, unknown> = {
     stock: sourceRow.id,
     from: fromBranch,
     to: toBranch,
     quantity: transferQty,
     created_by: actorId,
+    destination_stock: newDestinationStockId,
   };
 
-  const variables = {
-    newStock,
+  const insertVariables = {
+    newStock: newStockWithFixedId,
     sourceId: sourceRow.id,
     remainingQty,
     actorId,
-    transfer,
+    transfer: insertTransfer,
   };
 
-  const response = await fetch(config.graphql.endpoint, {
+  const insertResp = await fetch(config.graphql.endpoint, {
     method: 'POST',
     headers: getGraphQLHeaders(),
     body: JSON.stringify({
       query: PARTIAL_TRANSFER_STOCK_MUTATION,
-      variables,
+      variables: insertVariables,
     }),
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+  if (!insertResp.ok) {
+    const errorText = await insertResp.text();
+    throw new Error(`HTTP error! status: ${insertResp.status}, body: ${errorText}`);
   }
 
-  const result = await response.json();
-  if (result.errors) {
-    throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
+  const insertResult = await insertResp.json();
+  if (insertResult.errors) {
+    throw new Error(`GraphQL errors: ${JSON.stringify(insertResult.errors)}`);
   }
 
-  const insertedStock = result.data?.insert_stock?.returning?.[0];
-  const updated = result.data?.update_stock_by_pk;
-  const insertedTr = result.data?.insert_transfers?.returning?.[0];
+  const insertedStock = insertResult.data?.insert_stock?.returning?.[0];
+  const updated = insertResult.data?.update_stock_by_pk;
+  const insertedTr = insertResult.data?.insert_transfers?.returning?.[0];
   if (!insertedStock?.id || !updated?.id || !insertedTr?.id) {
     throw new Error('Transfer did not complete');
   }
 
-  return { newStockId: insertedStock.id as string, transferId: insertedTr.id as string };
+  return {
+    destinationStockId: insertedStock.id as string,
+    transferId: insertedTr.id as string,
+  };
 }
 
 export const actions: Actions = {

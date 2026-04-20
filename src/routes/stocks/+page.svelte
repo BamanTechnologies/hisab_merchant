@@ -1,6 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import { goto } from "$app/navigation";
+  import { onMount } from "svelte";
   import type { PageData } from "./$types";
 
   type Investor = {
@@ -54,6 +55,106 @@
   type SortColumn = "none" | "type" | "country" | "color" | "figure";
   let sortColumn = $state<SortColumn>("none");
   let sortDirection = $state<"asc" | "desc">("asc");
+  let listStateReady = $state(false);
+
+  const STOCK_LIST_STATE_KEY = "stocks:list-state:v1";
+  const SORT_COLUMNS: SortColumn[] = [
+    "none",
+    "type",
+    "country",
+    "color",
+    "figure",
+  ];
+  const TYPE_FILTERS = ["all", "glass", "brake_lining"] as const;
+
+  function isSortColumn(v: string | null): v is SortColumn {
+    return v != null && (SORT_COLUMNS as string[]).includes(v);
+  }
+
+  function isSortDirection(v: string | null): v is "asc" | "desc" {
+    return v === "asc" || v === "desc";
+  }
+
+  function isTypeFilter(
+    v: string | null,
+  ): v is (typeof TYPE_FILTERS)[number] {
+    return v != null && (TYPE_FILTERS as readonly string[]).includes(v);
+  }
+
+  function applyListStateFromParams(params: URLSearchParams) {
+    const nextType = params.get("type");
+    const nextSort = params.get("sort");
+    const nextDir = params.get("dir");
+
+    typeFilter = isTypeFilter(nextType) ? nextType : "all";
+    sortColumn = isSortColumn(nextSort) ? nextSort : "none";
+    sortDirection = isSortDirection(nextDir) ? nextDir : "asc";
+  }
+
+  function currentListStateParams(): URLSearchParams {
+    const params = new URLSearchParams();
+    if (typeFilter !== "all") params.set("type", typeFilter);
+    if (sortColumn !== "none") {
+      params.set("sort", sortColumn);
+      params.set("dir", sortDirection);
+    }
+    return params;
+  }
+
+  function currentListQueryString(): string {
+    const q = currentListStateParams().toString();
+    return q ? `?${q}` : "";
+  }
+
+  onMount(() => {
+    const params = new URLSearchParams(window.location.search);
+    const hasListStateInUrl =
+      params.has("type") || params.has("sort") || params.has("dir");
+
+    if (hasListStateInUrl) {
+      applyListStateFromParams(params);
+    } else {
+      try {
+        const raw = window.sessionStorage.getItem(STOCK_LIST_STATE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as {
+            type?: string;
+            sort?: string;
+            dir?: string;
+          };
+          const fallbackParams = new URLSearchParams();
+          if (typeof parsed.type === "string")
+            fallbackParams.set("type", parsed.type);
+          if (typeof parsed.sort === "string")
+            fallbackParams.set("sort", parsed.sort);
+          if (typeof parsed.dir === "string") fallbackParams.set("dir", parsed.dir);
+          applyListStateFromParams(fallbackParams);
+        }
+      } catch {
+        // Ignore bad persisted state and use defaults.
+      }
+    }
+
+    listStateReady = true;
+  });
+
+  $effect(() => {
+    if (!listStateReady) return;
+
+    const params = currentListStateParams();
+    const qs = params.toString();
+    const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+    window.history.replaceState(window.history.state, "", url);
+
+    window.sessionStorage.setItem(
+      STOCK_LIST_STATE_KEY,
+      JSON.stringify({
+        type: typeFilter,
+        sort: sortColumn,
+        dir: sortDirection,
+      }),
+    );
+  });
 
   function sortKey(s: Stock, col: Exclude<SortColumn, "none">): string {
     switch (col) {
@@ -827,7 +928,7 @@
       {#each filteredStocks as s}
         <tr
           class="row"
-          onclick={() => goto(`/stocks/${s.id}`)}
+          onclick={() => goto(`/stocks/${s.id}${currentListQueryString()}`)}
           tabindex="0"
           role="button"
         >
