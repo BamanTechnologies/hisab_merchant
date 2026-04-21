@@ -419,7 +419,7 @@
   }
   function attributeLabel(key: string): string {
     if (key === "model_number") return "Model No";
-    if (key === "capacity_unit") return "Unit";
+    if (key === "capacity_unit") return "Capacity unit";
     return key.replaceAll("_", " ").replace(/\b\w/g, (m) => m.toUpperCase());
   }
 
