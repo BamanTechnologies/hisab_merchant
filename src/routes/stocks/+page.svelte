@@ -57,6 +57,7 @@
   const PRODUCT_TYPE_FIELDS: Record<string, string[]> = {
     glass: ["thickness", "color", "figure", "factor"],
     brake_lining: ["model_number", "country"],
+    coffee_tools: ["name", "capacity"],
   };
 
   let typeFilter = $state<string>("all");
@@ -86,7 +87,13 @@
   function isTypeFilter(v: string | null): v is string {
     if (v == null) return false;
     if (v === "all") return true;
-    const names = new Set(productTypes.map((p) => String(p.name ?? "").trim().toLowerCase()));
+    const names = new Set(
+      productTypes.map((p) =>
+        String(p.name ?? "")
+          .trim()
+          .toLowerCase(),
+      ),
+    );
     for (const n of Object.keys(PRODUCT_TYPE_FIELDS)) names.add(n);
     return names.has(v);
   }
@@ -137,7 +144,8 @@
             fallbackParams.set("type", parsed.type);
           if (typeof parsed.sort === "string")
             fallbackParams.set("sort", parsed.sort);
-          if (typeof parsed.dir === "string") fallbackParams.set("dir", parsed.dir);
+          if (typeof parsed.dir === "string")
+            fallbackParams.set("dir", parsed.dir);
           applyListStateFromParams(fallbackParams);
         }
       } catch {
@@ -153,7 +161,9 @@
 
     const params = currentListStateParams();
     const qs = params.toString();
-    const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+    const url = qs
+      ? `${window.location.pathname}?${qs}`
+      : window.location.pathname;
     window.history.replaceState(window.history.state, "", url);
 
     window.sessionStorage.setItem(
@@ -287,8 +297,12 @@
     const pTypeName = typeFromStock(stock);
     const pTypeId =
       stock.product_type?.id ??
-      productTypes.find((p) => String(p.name ?? "").trim().toLowerCase() === pTypeName)
-        ?.id ??
+      productTypes.find(
+        (p) =>
+          String(p.name ?? "")
+            .trim()
+            .toLowerCase() === pTypeName,
+      )?.id ??
       "";
     selectedProductTypeId = pTypeId;
     selectedProductTypeName = pTypeName;
@@ -297,7 +311,9 @@
       factor: String(stock.attributes?.factor ?? stock.factor ?? ""),
       color: String(stock.attributes?.color ?? stock.color ?? ""),
       figure: String(stock.attributes?.figure ?? stock.figure ?? ""),
-      model_number: String(stock.attributes?.model_number ?? stock.model_number ?? ""),
+      model_number: String(
+        stock.attributes?.model_number ?? stock.model_number ?? "",
+      ),
       country: String(stock.attributes?.country ?? stock.country ?? ""),
     };
     selectedBranchId = stock.branch ?? "";
@@ -407,15 +423,11 @@
     if (!x) return "—";
     if (x === "brake_lining" || x === "brake_pad" || x === "break_pad")
       return "Brake lining";
-    return x
-      .replaceAll("_", " ")
-      .replace(/\b\w/g, (m) => m.toUpperCase());
+    return x.replaceAll("_", " ").replace(/\b\w/g, (m) => m.toUpperCase());
   }
   function attributeLabel(key: string): string {
     if (key === "model_number") return "Model No";
-    return key
-      .replaceAll("_", " ")
-      .replace(/\b\w/g, (m) => m.toUpperCase());
+    return key.replaceAll("_", " ").replace(/\b\w/g, (m) => m.toUpperCase());
   }
 
   function currentTypeFields(): string[] {
@@ -574,8 +586,16 @@
       {#if editingStockId}
         <input type="hidden" name="id" value={editingStockId} />
       {/if}
-      <input type="hidden" name="product_type_name" value={selectedProductTypeName} />
-      <input type="hidden" name="attributes" value={JSON.stringify(attributes)} />
+      <input
+        type="hidden"
+        name="product_type_name"
+        value={selectedProductTypeName}
+      />
+      <input
+        type="hidden"
+        name="attributes"
+        value={JSON.stringify(attributes)}
+      />
       <div class="grid">
         <label>
           <span>Product type</span>
@@ -585,8 +605,12 @@
             required
             class="native-select"
             onchange={() => {
-              const found = productTypes.find((p) => p.id === selectedProductTypeId);
-              selectedProductTypeName = String(found?.name ?? "").trim().toLowerCase();
+              const found = productTypes.find(
+                (p) => p.id === selectedProductTypeId,
+              );
+              selectedProductTypeName = String(found?.name ?? "")
+                .trim()
+                .toLowerCase();
               attributes = {};
             }}
           >
@@ -922,7 +946,10 @@
       {/each}
       {#if filteredStocks.length === 0}
         <tr>
-          <td colspan={isSingleTypeFilter ? 7 + activeFields.length : 9} class="empty-state">
+          <td
+            colspan={isSingleTypeFilter ? 7 + activeFields.length : 9}
+            class="empty-state"
+          >
             <p class="muted">
               {#if stocks.length === 0}
                 No stocks found. Create your first stock to get started.
