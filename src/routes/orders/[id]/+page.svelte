@@ -1,5 +1,6 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import { formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
   import type { PageData } from "./$types";
 
   type OrderStock = {
@@ -53,16 +54,22 @@
     if (t === "glass") return "Glass";
     if (t === "brake_lining" || t === "brake_pad" || t === "break_pad")
       return "Brake lining";
+    if (t === "coffee_tools") return "Coffee tools";
     return t && String(t).trim() !== "" ? String(t) : "—";
   }
   const PRODUCT_TYPE_FIELDS: Record<string, string[]> = {
     glass: ["thickness", "color", "figure", "factor"],
     brake_lining: ["model_number", "country"],
+    coffee_tools: ["name", "capacity", "capacity_unit"],
   };
   function stockTypeKey(s: OrderStock): string {
     return String(s.type ?? s.product_type ?? "").trim().toLowerCase();
   }
   function stockAttr(s: OrderStock, key: string): string {
+    if (stockTypeKey(s) === "coffee_tools" && key === "capacity") {
+      const merged = formatCoffeeCapacityWithUnit(s.attributes);
+      if (merged) return merged;
+    }
     const attrs = s.attributes ?? {};
     const fallback: Record<string, unknown> = {
       model_number: s.model_number,
@@ -76,9 +83,37 @@
   }
   function attrLabel(key: string): string {
     if (key === "model_number") return "Model No";
+    if (key === "capacity_unit") return "Unit";
     return key
       .replaceAll("_", " ")
       .replace(/\b\w/g, (m) => m.toUpperCase());
+  }
+
+  function orderStockAttrEntries(s: OrderStock): [string, string][] {
+    const attrs = s.attributes ?? {};
+    if (stockTypeKey(s) !== "coffee_tools") {
+      return Object.entries(attrs).map(([k, v]) => [
+        k,
+        v == null ? "" : String(v),
+      ]);
+    }
+    const merged = formatCoffeeCapacityWithUnit(attrs);
+    const out: [string, string][] = [];
+    let mergedShown = false;
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === "capacity" || k === "capacity_unit") {
+        if (!mergedShown && merged) {
+          out.push(["capacity", merged]);
+          mergedShown = true;
+        }
+        continue;
+      }
+      out.push([k, v == null ? "" : String(v)]);
+    }
+    if (!mergedShown && merged) {
+      out.push(["capacity", merged]);
+    }
+    return out;
   }
   function reportDash(v: unknown) {
     if (v === null || v === undefined || v === "") return "—";
@@ -106,9 +141,14 @@
     const keys = new Set(orderStocks.map((s) => stockTypeKey(s)));
     return keys.size === 1 ? [...keys][0] : "";
   });
-  const dynamicFields = $derived(
-    singleType ? (PRODUCT_TYPE_FIELDS[singleType] ?? []) : [],
-  );
+  const dynamicFields = $derived.by(() => {
+    if (!singleType) return [] as string[];
+    const fields = PRODUCT_TYPE_FIELDS[singleType] ?? [];
+    if (singleType === "coffee_tools") {
+      return fields.filter((k) => k !== "capacity_unit");
+    }
+    return fields;
+  });
 
   function stockInvestorLabels(stock: OrderStock): string {
     const ids = stock.investors ?? [];
@@ -283,7 +323,7 @@
                   {:else}
                     <td>
                       {#if s.attributes && Object.keys(s.attributes).length > 0}
-                        {Object.entries(s.attributes)
+                        {orderStockAttrEntries(s)
                           .map(([k, v]) => `${attrLabel(k)}: ${v}`)
                           .join(" · ")}
                       {:else}

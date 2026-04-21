@@ -2,6 +2,7 @@
   import { enhance } from "$app/forms";
   import { goto } from "$app/navigation";
   import { onMount } from "svelte";
+  import { formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
   import type { PageData } from "./$types";
 
   type Investor = {
@@ -57,7 +58,7 @@
   const PRODUCT_TYPE_FIELDS: Record<string, string[]> = {
     glass: ["thickness", "color", "figure", "factor"],
     brake_lining: ["model_number", "country"],
-    coffee_tools: ["name", "capacity"],
+    coffee_tools: ["name", "capacity", "capacity_unit"],
   };
 
   let typeFilter = $state<string>("all");
@@ -306,16 +307,7 @@
       "";
     selectedProductTypeId = pTypeId;
     selectedProductTypeName = pTypeName;
-    attributes = {
-      thickness: String(stock.attributes?.thickness ?? stock.thickness ?? ""),
-      factor: String(stock.attributes?.factor ?? stock.factor ?? ""),
-      color: String(stock.attributes?.color ?? stock.color ?? ""),
-      figure: String(stock.attributes?.figure ?? stock.figure ?? ""),
-      model_number: String(
-        stock.attributes?.model_number ?? stock.model_number ?? "",
-      ),
-      country: String(stock.attributes?.country ?? stock.country ?? ""),
-    };
+    attributes = buildAttributesForEdit(stock, pTypeName);
     selectedBranchId = stock.branch ?? "";
     stockUnit = (stock.unit ?? "").trim();
     selectedInvestorIds = [];
@@ -427,6 +419,7 @@
   }
   function attributeLabel(key: string): string {
     if (key === "model_number") return "Model No";
+    if (key === "capacity_unit") return "Unit";
     return key.replaceAll("_", " ").replace(/\b\w/g, (m) => m.toUpperCase());
   }
 
@@ -439,6 +432,10 @@
   }
 
   function attrValue(s: Stock, key: string): string {
+    if (typeFromStock(s) === "coffee_tools" && key === "capacity") {
+      const merged = formatCoffeeCapacityWithUnit(s.attributes);
+      if (merged) return merged;
+    }
     const attrs = s.attributes ?? {};
     const fallback: Record<string, unknown> = {
       thickness: s.thickness,
@@ -452,10 +449,80 @@
     return dash(v as unknown);
   }
 
+  /** Mixed-type attributes column: show capacity + unit as one value for coffee_tools. */
+  function attributeEntriesForList(s: Stock): [string, unknown][] {
+    const attrs = s.attributes ?? {};
+    if (typeFromStock(s) !== "coffee_tools") {
+      return Object.entries(attrs);
+    }
+    const merged = formatCoffeeCapacityWithUnit(attrs);
+    const out: [string, unknown][] = [];
+    let mergedShown = false;
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === "capacity" || k === "capacity_unit") {
+        if (!mergedShown && merged) {
+          out.push(["capacity", merged]);
+          mergedShown = true;
+        }
+        continue;
+      }
+      out.push([k, v]);
+    }
+    if (!mergedShown && merged) {
+      out.push(["capacity", merged]);
+    }
+    return out;
+  }
+
+  /** Single attribute value for forms: JSONB first, then legacy column. */
+  function attrFieldString(stock: Stock, key: string): string {
+    const attrs = stock.attributes ?? {};
+    const fallback: Record<string, unknown> = {
+      thickness: stock.thickness,
+      factor: stock.factor,
+      color: stock.color,
+      figure: stock.figure,
+      model_number: stock.model_number,
+      country: stock.country,
+    };
+    const v = attrs[key] ?? fallback[key];
+    if (v == null || v === "") return "";
+    return String(v).trim();
+  }
+
+  /**
+   * Edit modal: preserve every key already in `attributes`, then ensure configured
+   * fields for this type are filled from attributes or legacy columns.
+   */
+  function buildAttributesForEdit(
+    stock: Stock,
+    typeKey: string,
+  ): Record<string, string> {
+    const out: Record<string, string> = {};
+    const attrs = stock.attributes ?? {};
+    if (attrs && typeof attrs === "object" && !Array.isArray(attrs)) {
+      for (const [k, v] of Object.entries(attrs)) {
+        if (!k.trim()) continue;
+        if (v == null || v === "") continue;
+        out[k] = String(v).trim();
+      }
+    }
+    const fieldNames = PRODUCT_TYPE_FIELDS[typeKey] ?? [];
+    for (const key of fieldNames) {
+      out[key] = attrFieldString(stock, key);
+    }
+    return out;
+  }
+
   const isSingleTypeFilter = $derived(typeFilter !== "all");
-  const activeFields = $derived(
-    isSingleTypeFilter ? (PRODUCT_TYPE_FIELDS[typeFilter] ?? []) : [],
-  );
+  const activeFields = $derived.by(() => {
+    if (!isSingleTypeFilter) return [];
+    const fields = PRODUCT_TYPE_FIELDS[typeFilter] ?? [];
+    if (typeFilter === "coffee_tools") {
+      return fields.filter((k) => k !== "capacity_unit");
+    }
+    return fields;
+  });
 
   function quantityWithUnit(s: Stock) {
     const u = (s.unit ?? "").trim();
@@ -611,7 +678,16 @@
               selectedProductTypeName = String(found?.name ?? "")
                 .trim()
                 .toLowerCase();
-              attributes = {};
+              if (!editingStockId) {
+                attributes = {};
+              } else {
+                const keys = PRODUCT_TYPE_FIELDS[selectedProductTypeName] ?? [];
+                const next: Record<string, string> = {};
+                for (const k of keys) {
+                  next[k] = attributes[k] ?? "";
+                }
+                attributes = next;
+              }
             }}
           >
             <option value="">Select product type</option>
@@ -662,7 +738,7 @@
         </div>
         {#each currentTypeFields() as fieldName}
           <label>
-            <span>{typeDisplay(fieldName)}</span>
+            <span>{attributeLabel(fieldName)}</span>
             <input type="text" bind:value={attributes[fieldName]} />
           </label>
         {/each}
@@ -812,7 +888,7 @@
           <strong>Attributes:</strong>
           {#if stockToDelete.attributes && Object.keys(stockToDelete.attributes).length > 0}
             <span class="attr-stack">
-              {#each Object.entries(stockToDelete.attributes) as [k, v]}
+              {#each attributeEntriesForList(stockToDelete) as [k, v]}
                 <span>{attributeLabel(k)}: {v}</span>
               {/each}
             </span>
@@ -909,7 +985,7 @@
             <td>
               {#if s.attributes && Object.keys(s.attributes).length > 0}
                 <div class="attr-stack">
-                  {#each Object.entries(s.attributes) as [k, v]}
+                  {#each attributeEntriesForList(s) as [k, v]}
                     <div class="attr-row">
                       <span class="attr-key">{attributeLabel(k)}</span>
                       <span class="attr-sep">:</span>

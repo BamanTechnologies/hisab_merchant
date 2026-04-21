@@ -2,7 +2,7 @@
   import { deserialize } from "$app/forms";
   import { goto } from "$app/navigation";
   import { tick } from "svelte";
-  import { buildStockLabel } from "$lib/stockLabel";
+  import { buildStockLabel, formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
   import type { PageData } from "./$types";
 
   type StockPanelPos = {
@@ -136,6 +136,7 @@
     if (t === "glass") return "Glass";
     if (t === "brake_lining" || t === "brake_pad" || t === "break_pad")
       return "Brake lining";
+    if (t === "coffee_tools") return "Coffee tools";
     return t ?? "—";
   }
 
@@ -198,6 +199,16 @@
           ? parts.join(" ")
           : modelFromAttr || s.model_number?.trim() || s.id.slice(0, 8) + "…";
       return `${typePart} · ${desc}${ctry}${orig} (${qtyHint})`;
+    }
+
+    if (rawType === "coffee_tools") {
+      const name =
+        s.attributes?.name != null ? String(s.attributes.name).trim() : "";
+      const capU = formatCoffeeCapacityWithUnit(s.attributes ?? null);
+      const desc =
+        [name, capU].filter(Boolean).join(" ").trim() ||
+        s.id.slice(0, 8) + "…";
+      return `${typePart} · ${desc}${orig} (${qtyHint})`;
     }
 
     const modelFromAttr =

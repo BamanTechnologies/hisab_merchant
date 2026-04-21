@@ -19,9 +19,33 @@ export function formatProductTypeLabel(t: string | null | undefined): string {
   return x.replaceAll("_", " ").replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
+/** e.g. capacity `1000` + unit `ml` → `1000ML` */
+export function formatCoffeeCapacityWithUnit(
+  attrs: Record<string, unknown> | null | undefined,
+): string {
+  const a = attrs ?? {};
+  const cap = a.capacity != null ? String(a.capacity).trim() : "";
+  const u =
+    a.capacity_unit != null
+      ? String(a.capacity_unit).trim().replace(/\s+/g, "").toUpperCase()
+      : "";
+  if (!cap && !u) return "";
+  if (!u) return cap;
+  if (!cap) return u;
+  return `${cap}${u}`;
+}
+
 export function buildStockLabel(stock: StockLabelInput): string {
   const attrs = stock.attributes ?? {};
   const typeSuffix = formatProductTypeLabel(stock.type ?? stock.product_type ?? null);
+  const typeKey = String(stock.type ?? "").trim().toLowerCase();
+  if (typeKey === "coffee_tools") {
+    const name = attrs.name != null ? String(attrs.name).trim() : "";
+    const capU = formatCoffeeCapacityWithUnit(attrs);
+    const descriptor =
+      [name, capU].filter(Boolean).join(" ").trim() || "Stock";
+    return `${descriptor} (${typeSuffix})`.trim();
+  }
   const thickness =
     attrs.thickness != null
       ? String(attrs.thickness).trim()

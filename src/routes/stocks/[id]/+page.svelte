@@ -1,5 +1,6 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import { formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
   import type { PageData } from "./$types";
 
   type Investor = {
@@ -91,6 +92,7 @@
   const PRODUCT_TYPE_FIELDS: Record<string, string[]> = {
     glass: ["thickness", "color", "figure", "factor"],
     brake_lining: ["model_number", "country"],
+    coffee_tools: ["name", "capacity", "capacity_unit"],
   };
 
   const canSubmitTransfer = $derived(
@@ -129,11 +131,16 @@
   }
   function attributeLabel(key: string) {
     if (key === "model_number") return "Model No";
+    if (key === "capacity_unit") return "Unit";
     return key
       .replaceAll("_", " ")
       .replace(/\b\w/g, (m) => m.toUpperCase());
   }
   function attr(key: string) {
+    if (productTypeName() === "coffee_tools" && key === "capacity") {
+      const merged = formatCoffeeCapacityWithUnit(stock?.attributes ?? null);
+      if (merged) return merged;
+    }
     const attrs = (stock?.attributes ?? {}) as Record<string, unknown>;
     const fallback: Record<string, unknown> = {
       model_number: stock?.model_number,
@@ -156,9 +163,15 @@
       maximumFractionDigits: 2,
     })}`;
   }
-  const dynamicFields = $derived(
-    PRODUCT_TYPE_FIELDS[productTypeName()] ?? Object.keys(stock?.attributes ?? {}),
-  );
+  const dynamicFields = $derived.by(() => {
+    const raw =
+      PRODUCT_TYPE_FIELDS[productTypeName()] ??
+      Object.keys(stock?.attributes ?? {});
+    if (productTypeName() === "coffee_tools") {
+      return raw.filter((k) => k !== "capacity_unit");
+    }
+    return raw;
+  });
   function dash(v: unknown) {
     if (v === null || v === undefined || v === "") return "—";
     return String(v);

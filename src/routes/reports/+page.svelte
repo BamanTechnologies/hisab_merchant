@@ -111,6 +111,7 @@
     if (t === "glass") return "Glass";
     if (t === "brake_lining" || t === "brake_pad" || t === "break_pad")
       return "Brake lining";
+    if (t === "coffee_tools") return "Coffee tools";
     return t && String(t).trim() !== "" ? String(t) : "—";
   }
 
