@@ -7,6 +7,7 @@ import {
 } from '$lib/companyInvestors.server';
 import { config, getGraphQLHeaders } from '$lib/config';
 import { soldUnitPriceForReportOrder } from '$lib/reportSoldPrice';
+import { buildStockLabel } from '$lib/stockLabel';
 
 const FETCH_REPORTS_QUERY = `
   query GetReports($merchantId: uuid!) {
@@ -28,6 +29,8 @@ const GENERATE_INVESTOR_REPORT_QUERY = `
   query GenerateInvestorReport($merchant_id: uuid!, $investor_phone: String!, $investor_id: uuid!) {
     stocks: stock(where: {_and: {created_by: {_eq: $merchant_id}, investors: {_contains: [$investor_id]}}}) {
       id
+      product_type
+      attributes
       type
       model_number
       country
@@ -172,15 +175,23 @@ async function generateInvestorReport(investorId: string, investorPhone: string,
 function withComputedSoldPrice(reportData: Record<string, unknown>): Record<string, unknown> {
   const stocksRaw = Array.isArray(reportData.stocks) ? reportData.stocks : [];
   const stocks = stocksRaw.filter((s): s is Record<string, unknown> => s != null && typeof s === 'object');
+  const stockLabelById = new Map<string, string>();
+  for (const s of stocks) {
+    const sid = typeof s.id === 'string' ? s.id : '';
+    if (!sid) continue;
+    stockLabelById.set(sid, buildStockLabel(s));
+  }
 
   const ordersRaw = Array.isArray(reportData.orders) ? reportData.orders : [];
   const orders = ordersRaw.map((row) => {
     if (!row || typeof row !== 'object') return row;
     const rec = row as Record<string, unknown>;
+    const sid = typeof rec.stock_id === 'string' ? rec.stock_id : '';
     return {
       ...rec,
       // String for downstream SMS formatter that calls `.replace(...)`.
       selling_price: soldUnitPriceForReportOrder(rec, stocks),
+      stock_name: stockLabelById.get(sid) ?? (sid ? sid.slice(0, 8) + '…' : '—'),
     };
   });
   return { ...reportData, orders };

@@ -4,6 +4,8 @@
 
   type OrderStock = {
     id: string;
+    product_type?: string | null;
+    attributes?: Record<string, unknown> | null;
     model_number?: string | null;
     country?: string | null;
     branch?: string | null;
@@ -53,10 +55,50 @@
       return "Brake lining";
     return t && String(t).trim() !== "" ? String(t) : "—";
   }
+  const PRODUCT_TYPE_FIELDS: Record<string, string[]> = {
+    glass: ["thickness", "color", "figure", "factor"],
+    brake_lining: ["model_number", "country"],
+  };
+  function stockTypeKey(s: OrderStock): string {
+    return String(s.type ?? s.product_type ?? "").trim().toLowerCase();
+  }
+  function stockAttr(s: OrderStock, key: string): string {
+    const attrs = s.attributes ?? {};
+    const fallback: Record<string, unknown> = {
+      model_number: s.model_number,
+      country: s.country,
+      color: s.color,
+      figure: s.figure,
+      thickness: s.thickness,
+      factor: s.factor,
+    };
+    return reportDash(attrs[key] ?? fallback[key]);
+  }
+  function attrLabel(key: string): string {
+    if (key === "model_number") return "Model No";
+    return key
+      .replaceAll("_", " ")
+      .replace(/\b\w/g, (m) => m.toUpperCase());
+  }
+  const singleType = $derived.by(() => {
+    const keys = new Set(orderStocks.map((s) => stockTypeKey(s)));
+    return keys.size === 1 ? [...keys][0] : "";
+  });
+  const dynamicFields = $derived(
+    singleType ? (PRODUCT_TYPE_FIELDS[singleType] ?? []) : [],
+  );
 
   function reportDash(v: unknown) {
     if (v === null || v === undefined || v === "") return "—";
     return String(v);
+  }
+  function formatMoney(v: number | string | null | undefined): string {
+    const n =
+      typeof v === "string"
+        ? Number(v.replace(/[^0-9.-]/g, ""))
+        : Number(v ?? 0);
+    const safe = Number.isFinite(n) ? n : 0;
+    return `ETB ${safe.toLocaleString()}`;
   }
 
   let { data, form }: { data: PageData; form?: any } = $props();
@@ -199,12 +241,12 @@
         </div>
         <div>
           <span class="label">Total amount:</span><span
-            >Birr {order.total_amount.toLocaleString()}</span
+            >{formatMoney(order.total_amount)}</span
           >
         </div>
         <div>
           <span class="label">Outstanding:</span><span
-            >Birr {order.outstanding_amount.toLocaleString()}</span
+            >{formatMoney(order.outstanding_amount)}</span
           >
         </div>
       </div>
@@ -218,14 +260,15 @@
             <thead>
               <tr>
                 <th>Type</th>
-                <th>Model #</th>
-                <th>Country</th>
-                <th>Color</th>
-                <th>Figure</th>
-                <th>Thickness</th>
+                {#if dynamicFields.length > 0}
+                  {#each dynamicFields as f}
+                    <th>{attrLabel(f)}</th>
+                  {/each}
+                {:else}
+                  <th>Attributes</th>
+                {/if}
                 <th>Quantity</th>
                 <th>Price</th>
-                <th>Factor</th>
                 <th>Investors</th>
                 <th></th>
               </tr>
@@ -233,19 +276,28 @@
             <tbody>
               {#each orderStocks as s (s.id)}
                 <tr>
-                  <td>{reportStockTypeLabel(s.type)}</td>
-                  <td>{reportDash(s.model_number)}</td>
-                  <td>{reportDash(s.country)}</td>
-                  <td>{reportDash(s.color)}</td>
-                  <td>{reportDash(s.figure)}</td>
-                  <td>{reportDash(s.thickness)}</td>
+                  <td>{reportStockTypeLabel(stockTypeKey(s))}</td>
+                  {#if dynamicFields.length > 0}
+                    {#each dynamicFields as f}
+                      <td>{stockAttr(s, f)}</td>
+                    {/each}
+                  {:else}
+                    <td>
+                      {#if s.attributes && Object.keys(s.attributes).length > 0}
+                        {Object.entries(s.attributes)
+                          .map(([k, v]) => `${attrLabel(k)}: ${v}`)
+                          .join(" · ")}
+                      {:else}
+                        —
+                      {/if}
+                    </td>
+                  {/if}
                   <td>
                     {(s.unit ?? "").trim()
                       ? `${s.quantity} ${(s.unit ?? "").trim()}`
                       : String(s.quantity)}
                   </td>
-                  <td>{s.selling_price}</td>
-                  <td>{reportDash(s.factor)}</td>
+                  <td>{formatMoney(s.selling_price)}</td>
                   <td class="investors-cell">{stockInvestorLabels(s)}</td>
                   <td class="actions-cell">
                     <a class="stock-link" href="/stocks/{s.id}">View stock</a>

@@ -5,6 +5,7 @@ import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
 import { fetchBranchCompanyId } from '$lib/companyInvestors.server';
 import { fetchCustomerLatestBalance } from '$lib/customerTransactions.server';
 import { config, getGraphQLHeaders } from '$lib/config';
+import { buildStockLabel } from '$lib/stockLabel';
 
 const VERIFY_COMPANY_CUSTOMER_JUNCTION_QUERY = `
   query CustomerDetailVerifyJunction($companyId: uuid!, $customerId: uuid!, $branchId: uuid!) {
@@ -71,6 +72,17 @@ const FETCH_CUSTOMER_ACTIVITY_QUERY = `
       total_amount
       outstanding_amount
       unit
+      stock {
+        unit
+        type
+        product_type
+        attributes
+        model_number
+        country
+        color
+        figure
+        thickness
+      }
     }
     orders_aggregate(
       where: {
@@ -158,6 +170,16 @@ const FETCH_PAYMENTS_FOR_ORDERS_QUERY = `
   }
 `;
 
+const FETCH_MERCHANTS_BY_IDS_QUERY = `
+  query CustomerDetailPaymentMerchantsByIds($ids: [uuid!]!) {
+    merchant(where: { id: { _in: $ids } }) {
+      id
+      first_name
+      last_name
+    }
+  }
+`;
+
 const FETCH_CUSTOMER_ORDERS_ONLY_QUERY = `
   query CustomerDetailOrdersOnly(
     $customerId: uuid!
@@ -184,6 +206,17 @@ const FETCH_CUSTOMER_ORDERS_ONLY_QUERY = `
       total_amount
       outstanding_amount
       unit
+      stock {
+        unit
+        type
+        product_type
+        attributes
+        model_number
+        country
+        color
+        figure
+        thickness
+      }
     }
     orders_aggregate(
       where: {
@@ -264,19 +297,36 @@ export type CustomerDetailOrder = {
   stock_id: string;
   total_amount: number;
   outstanding_amount: number;
+  stock_name?: string;
   unit?: string | null;
-  stock?: { unit?: string | null } | null;
+  stock?: {
+    unit?: string | null;
+    type?: string | null;
+    product_type?: string | null;
+    attributes?: Record<string, unknown> | null;
+    model_number?: string | null;
+    country?: string | null;
+    color?: string | null;
+    figure?: string | null;
+    thickness?: number | string | null;
+  } | null;
 };
 
 export type CustomerDetailPayment = {
   id: string;
   amount: number;
   created_by: string;
+  created_by_name?: string;
   order_id: string;
   payment_method: string;
 };
 
 function normalizeOrderRow(raw: Record<string, unknown>): CustomerDetailOrder {
+  const stock =
+    raw.stock && typeof raw.stock === 'object'
+      ? (raw.stock as Record<string, unknown>)
+      : null;
+  const stockId = String(raw.stock_id ?? '');
   return {
     id: String(raw.id),
     created_at: String(raw.created_at ?? ''),
@@ -286,9 +336,10 @@ function normalizeOrderRow(raw: Record<string, unknown>): CustomerDetailOrder {
     customer_address: String(raw.customer_address ?? ''),
     order_quantity: Number(raw.order_quantity) || 0,
     status: String(raw.status ?? ''),
-    stock_id: String(raw.stock_id ?? ''),
+    stock_id: stockId,
     total_amount: parseMoney(raw.total_amount),
     outstanding_amount: parseMoney(raw.outstanding_amount),
+    stock_name: stock ? buildStockLabel(stock) : stockId.slice(0, 8) + '…',
     unit: raw.unit as string | null | undefined,
     stock: raw.stock as CustomerDetailOrder['stock'],
   };
@@ -302,6 +353,37 @@ function normalizePaymentRow(raw: Record<string, unknown>): CustomerDetailPaymen
     order_id: String(raw.order_id ?? ''),
     payment_method: String(raw.payment_method ?? ''),
   };
+}
+
+function merchantDisplayName(first?: string | null, last?: string | null): string {
+  const name = [first, last].filter(Boolean).join(' ').trim();
+  return name || '—';
+}
+
+async function attachPaymentCreatorNames(
+  rows: CustomerDetailPayment[],
+): Promise<CustomerDetailPayment[]> {
+  const ids = [
+    ...new Set(rows.map((r) => r.created_by).filter((id) => typeof id === 'string' && id.length > 0)),
+  ];
+  if (ids.length === 0) {
+    return rows.map((r) => ({ ...r, created_by_name: '—' }));
+  }
+
+  let nameById = new Map<string, string>();
+  try {
+    const data = await gql<{
+      merchant: { id: string; first_name?: string | null; last_name?: string | null }[];
+    }>(FETCH_MERCHANTS_BY_IDS_QUERY, { ids });
+    for (const m of data.merchant ?? []) {
+      nameById.set(m.id, merchantDisplayName(m.first_name, m.last_name));
+    }
+  } catch {}
+
+  return rows.map((r) => ({
+    ...r,
+    created_by_name: nameById.get(r.created_by) ?? '—',
+  }));
 }
 
 export const load: PageServerLoad = async ({ params, request, parent }) => {
@@ -428,6 +510,7 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
       }
     }
   }
+  payments = await attachPaymentCreatorNames(payments);
 
   /** Latest `customer_transactions.balance` for this customer + company (positive = owes, negative = credit / overpaid). */
   const outstandingAmount = await fetchCustomerLatestBalance(companyId, customerId);

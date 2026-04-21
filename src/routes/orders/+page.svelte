@@ -2,6 +2,7 @@
   import { deserialize } from "$app/forms";
   import { goto } from "$app/navigation";
   import { tick } from "svelte";
+  import { buildStockLabel } from "$lib/stockLabel";
   import type { PageData } from "./$types";
 
   type StockPanelPos = {
@@ -30,6 +31,7 @@
     quantity: number;
     selling_price: unknown;
     factor?: unknown;
+    attributes?: Record<string, unknown> | null;
     model_number?: string | null;
     type?: string | null;
     country?: string | null;
@@ -51,10 +53,21 @@
     order_quantity: number;
     status: string;
     stock_id: string;
+    stock_name?: string;
     total_amount: number;
     outstanding_amount: number;
     unit?: string | null;
-    stock?: { unit?: string | null } | null;
+    stock?: {
+      unit?: string | null;
+      type?: string | null;
+      product_type?: string | null;
+      attributes?: Record<string, unknown> | null;
+      model_number?: string | null;
+      country?: string | null;
+      color?: string | null;
+      figure?: string | null;
+      thickness?: number | string | null;
+    } | null;
   };
 
   type LineRow = {
@@ -133,7 +146,9 @@
   }
 
   function countrySuffix(s: StockRow): string {
-    const c = s.country?.trim();
+    const fromAttr =
+      s.attributes?.country != null ? String(s.attributes.country).trim() : "";
+    const c = fromAttr || s.country?.trim();
     return c ? ` · ${c}` : "";
   }
 
@@ -157,25 +172,39 @@
 
     if (rawType === "glass") {
       const parts: string[] = [];
-      const th = s.thickness;
+      const th = s.attributes?.thickness ?? s.thickness;
       if (th != null && String(th).trim() !== "") {
         const n = Number(th);
         parts.push(
           Number.isFinite(n) ? `${n}mm` : `${String(th).trim()}mm`,
         );
       }
-      const col = s.color?.trim();
+      const col =
+        s.attributes?.color != null
+          ? String(s.attributes.color).trim()
+          : (s.color?.trim() ?? "");
       if (col) parts.push(col);
-      const fig = s.figure?.trim();
+      const fig =
+        s.attributes?.figure != null
+          ? String(s.attributes.figure).trim()
+          : (s.figure?.trim() ?? "");
       if (fig) parts.push(fig);
+      const modelFromAttr =
+        s.attributes?.model_number != null
+          ? String(s.attributes.model_number).trim()
+          : "";
       const desc =
         parts.length > 0
           ? parts.join(" ")
-          : s.model_number?.trim() || s.id.slice(0, 8) + "…";
+          : modelFromAttr || s.model_number?.trim() || s.id.slice(0, 8) + "…";
       return `${typePart} · ${desc}${ctry}${orig} (${qtyHint})`;
     }
 
-    const model = s.model_number?.trim() || s.id.slice(0, 8) + "…";
+    const modelFromAttr =
+      s.attributes?.model_number != null
+        ? String(s.attributes.model_number).trim()
+        : "";
+    const model = modelFromAttr || s.model_number?.trim() || s.id.slice(0, 8) + "…";
     return `${typePart} · ${model}${ctry}${orig} (${qtyHint})`;
   }
 
@@ -183,6 +212,9 @@
     const oid = s.origin != null ? String(s.origin).trim() : "";
     const br = oid ? branchesList.find((b) => b.id === oid) : undefined;
     const oName = br?.name != null ? String(br.name).trim() : "";
+    const attrText = Object.entries(s.attributes ?? {})
+      .map(([k, v]) => `${k} ${v == null ? "" : String(v)}`)
+      .join(" ");
     const parts = [
       typeDisplay(s.type),
       s.type,
@@ -194,6 +226,7 @@
       String(s.thickness ?? ""),
       String(s.quantity ?? ""),
       oName,
+      attrText,
     ];
     return parts
       .filter((p) => p != null && String(p).trim() !== "")
@@ -561,10 +594,24 @@
       return "—";
     }
   }
+  function formatMoney(v: number | string | null | undefined): string {
+    const n =
+      typeof v === "string"
+        ? Number(v.replace(/[^0-9.-]/g, ""))
+        : Number(v ?? 0);
+    const safe = Number.isFinite(n) ? n : 0;
+    return `ETB ${safe.toLocaleString()}`;
+  }
 
   function orderQtyCell(o: OrderSummary) {
     const u = (o.unit ?? o.stock?.unit ?? "").trim();
     return u ? `${o.order_quantity} ${u}` : String(o.order_quantity);
+  }
+  function orderStockName(o: OrderSummary): string {
+    if (o.stock_name && o.stock_name.trim() !== "") return o.stock_name;
+    const s = o.stock;
+    if (!s) return o.stock_id.slice(0, 8) + "…";
+    return buildStockLabel(s);
   }
 
   function statusClass(status: string) {
@@ -772,7 +819,7 @@
               <span class="unit-value">{lineStockUnitLabel(row)}</span>
             </div>
             <label class="line-price">
-              <span class="sr-only">Unit price (Birr)</span>
+              <span class="sr-only">Unit price (ETB)</span>
               <input
                 type="number"
                 min="0"
@@ -962,7 +1009,7 @@
           {orderQtyCell(orderToCancel)}
         </p>
         <p>
-          <strong>Total Amount:</strong> Birr {orderToCancel.total_amount.toLocaleString()}
+          <strong>Total Amount:</strong> {formatMoney(orderToCancel.total_amount)}
         </p>
         <p><strong>Status:</strong> {orderToCancel.status}</p>
       </div>
@@ -994,10 +1041,10 @@
     <thead>
       <tr>
         <th>Date</th>
-        <th>Customer</th>
+        <th>Stock</th>
         <th class="right">Quantity</th>
         <th>Status</th>
-        <th class="right">Total amount</th>
+        <th>Total amount</th>
         <th class="center">Actions</th>
       </tr>
     </thead>
@@ -1010,10 +1057,10 @@
           role="button"
         >
           <td class="nowrap">{formatOrderDate(o.created_at)}</td>
-          <td>{o.customer_name}</td>
+          <td>{orderStockName(o)}</td>
           <td class="right">{orderQtyCell(o)}</td>
           <td><span class="chip {statusClass(o.status)}">{o.status}</span></td>
-          <td class="right">Birr {o.total_amount.toLocaleString()}</td>
+          <td>{formatMoney(o.total_amount)}</td>
           <td class="center">
             {#if o.status !== "cancelled" && o.status !== "paid"}
               <button

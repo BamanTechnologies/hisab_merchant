@@ -55,6 +55,18 @@
     const s = String(text).trim().replace(/\s+/g, " ");
     return s.length > max ? `${s.slice(0, max)}…` : s;
   }
+  function formatMoney(v: number | string | null | undefined): string {
+    const n =
+      typeof v === "string"
+        ? Number(v.replace(/[^0-9.-]/g, ""))
+        : Number(v ?? 0);
+    const safe = Number.isFinite(n) ? n : 0;
+    const amount = safe.toLocaleString(undefined, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    });
+    return `ETB ${amount}`;
+  }
 
   function openModal() {
     formError = "";
@@ -123,10 +135,7 @@
     <div class="total-pill" aria-live="polite">
       <span class="total-label">Total expense</span>
       <span class="total-value"
-        >Birr {totalExpenseAmount.toLocaleString(undefined, {
-          minimumFractionDigits: 0,
-          maximumFractionDigits: 2,
-        })}</span
+        >{formatMoney(totalExpenseAmount)}</span
       >
     </div>
     <button
@@ -163,7 +172,7 @@
         <th>Sent to</th>
         <th>Category</th>
         <th>Payment</th>
-        <th class="right">Amount</th>
+        <th>Amount</th>
         <th>Note</th>
         <th>Receipt</th>
         <th>Recorded by</th>
@@ -176,11 +185,8 @@
           <td>{ex.sent_to}</td>
           <td>{categoryLabel(ex.category)}</td>
           <td>{paymentLabel(ex.payment_type)}</td>
-          <td class="right amount"
-            >Birr {ex.amount.toLocaleString(undefined, {
-              minimumFractionDigits: 0,
-              maximumFractionDigits: 2,
-            })}</td
+          <td class="amount"
+            >{formatMoney(ex.amount)}</td
           >
           <td class="note-cell">{ex.note?.trim() ? ex.note : "—"}</td>
           <td class="receipt-cell" title={ex.receipt ?? ""}
@@ -259,7 +265,7 @@
       </label>
 
       <label class="field">
-        <span>Amount (Birr)</span>
+        <span>Amount (ETB)</span>
         <input
           type="number"
           name="amount"
@@ -406,10 +412,6 @@
     color: #94a3b8;
     font-weight: 700;
     font-size: 0.9rem;
-  }
-  th.right,
-  td.right {
-    text-align: right;
   }
   .nowrap {
     white-space: nowrap;

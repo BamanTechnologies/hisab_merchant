@@ -11,8 +11,11 @@
     phone_number: string;
   };
   type Branch = { id: string; name?: string | null };
+  type ProductType = { id: string; name?: string | null };
   type Stock = {
     id: string;
+    product_type?: ProductType | null;
+    attributes?: Record<string, unknown> | null;
     model_number?: string | null;
     country?: string | null;
     branch?: string | null;
@@ -48,24 +51,23 @@
 
   const investors = data.investors;
   const branches = data.branches as Branch[];
+  const productTypes = (data.productTypes ?? []) as ProductType[];
   const merchantBranchId = data.merchantBranchId as string | null;
 
-  let typeFilter = $state<"all" | "glass" | "brake_lining">("all");
+  const PRODUCT_TYPE_FIELDS: Record<string, string[]> = {
+    glass: ["thickness", "color", "figure", "factor"],
+    brake_lining: ["model_number", "country"],
+  };
 
-  type SortColumn = "none" | "type" | "country" | "color" | "figure";
+  let typeFilter = $state<string>("all");
+
+  type SortColumn = "none" | "type";
   let sortColumn = $state<SortColumn>("none");
   let sortDirection = $state<"asc" | "desc">("asc");
   let listStateReady = $state(false);
 
   const STOCK_LIST_STATE_KEY = "stocks:list-state:v1";
-  const SORT_COLUMNS: SortColumn[] = [
-    "none",
-    "type",
-    "country",
-    "color",
-    "figure",
-  ];
-  const TYPE_FILTERS = ["all", "glass", "brake_lining"] as const;
+  const SORT_COLUMNS: SortColumn[] = ["none", "type"];
 
   function isSortColumn(v: string | null): v is SortColumn {
     return v != null && (SORT_COLUMNS as string[]).includes(v);
@@ -75,10 +77,18 @@
     return v === "asc" || v === "desc";
   }
 
-  function isTypeFilter(
-    v: string | null,
-  ): v is (typeof TYPE_FILTERS)[number] {
-    return v != null && (TYPE_FILTERS as readonly string[]).includes(v);
+  function typeFromStock(s: Stock): string {
+    return String(s.product_type?.name ?? s.type ?? "")
+      .trim()
+      .toLowerCase();
+  }
+
+  function isTypeFilter(v: string | null): v is string {
+    if (v == null) return false;
+    if (v === "all") return true;
+    const names = new Set(productTypes.map((p) => String(p.name ?? "").trim().toLowerCase()));
+    for (const n of Object.keys(PRODUCT_TYPE_FIELDS)) names.add(n);
+    return names.has(v);
   }
 
   function applyListStateFromParams(params: URLSearchParams) {
@@ -159,13 +169,7 @@
   function sortKey(s: Stock, col: Exclude<SortColumn, "none">): string {
     switch (col) {
       case "type":
-        return (s.type?.trim() ?? "").toLowerCase();
-      case "country":
-        return (s.country?.trim() ?? "").toLowerCase();
-      case "color":
-        return (s.color?.trim() ?? "").toLowerCase();
-      case "figure":
-        return (s.figure?.trim() ?? "").toLowerCase();
+        return typeFromStock(s);
     }
   }
 
@@ -186,15 +190,7 @@
   const filteredStocks = $derived.by(() => {
     let list = stocks;
     if (typeFilter !== "all") {
-      list =
-        typeFilter === "brake_lining"
-          ? list.filter(
-              (s: Stock) =>
-                s.type === "brake_lining" ||
-                s.type === "brake_pad" ||
-                s.type === "break_pad",
-            )
-          : list.filter((s: Stock) => s.type === typeFilter);
+      list = list.filter((s: Stock) => typeFromStock(s) === typeFilter);
     }
     if (sortColumn !== "none") {
       const col = sortColumn;
@@ -210,14 +206,10 @@
   let purchasedPrice = $state<number | undefined>(undefined);
   let sellingPrice = $state<number | undefined>(undefined);
   let quantity = $state<number | undefined>(undefined);
-  let thickness = $state<number | undefined>(undefined);
-  let factor = $state<number | undefined>(undefined);
-  let color = $state("");
-  let figure = $state("");
-  let modelNumber = $state("");
-  let country = $state("");
+  let selectedProductTypeId = $state("");
+  let selectedProductTypeName = $state("");
+  let attributes = $state<Record<string, string>>({});
   let selectedBranchId = $state("");
-  let stockType = $state<"glass" | "brake_lining">("glass");
   /** Unit of measure (e.g. Pieces, Set, kg) — free text, max 64 chars on server */
   let stockUnit = $state("");
   let selectedInvestorIds = $state<string[]>([]);
@@ -237,18 +229,23 @@
     return Number.isFinite(parsed) ? parsed : undefined;
   }
 
+  function formatMoneyValue(value: number | string | null | undefined): string {
+    const parsed = parseMoneyValue(value) ?? 0;
+    const amount = parsed.toLocaleString(undefined, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    });
+    return `ETB ${amount}`;
+  }
+
   function resetForm() {
     purchasedPrice = undefined;
     sellingPrice = undefined;
     quantity = undefined;
-    thickness = undefined;
-    factor = undefined;
-    color = "";
-    figure = "";
-    modelNumber = "";
-    country = "";
+    selectedProductTypeId = "";
+    selectedProductTypeName = "";
+    attributes = {};
     selectedBranchId = "";
-    stockType = "glass";
     stockUnit = "Pieces";
     selectedInvestorIds = [];
     investorDropdownOpen = false;
@@ -287,27 +284,23 @@
     purchasedPrice = parseMoneyValue(stock.purchased_price);
     sellingPrice = parseMoneyValue(stock.selling_price);
     quantity = Number(stock.quantity);
-    thickness =
-      stock.thickness != null && String(stock.thickness).trim() !== ""
-        ? Number(stock.thickness)
-        : undefined;
-    factor =
-      stock.factor != null && String(stock.factor).trim() !== ""
-        ? Number(stock.factor)
-        : undefined;
-    color = stock.color ?? "";
-    figure = stock.figure ?? "";
-    modelNumber = stock.model_number ?? "";
-    country = stock.country ?? "";
+    const pTypeName = typeFromStock(stock);
+    const pTypeId =
+      stock.product_type?.id ??
+      productTypes.find((p) => String(p.name ?? "").trim().toLowerCase() === pTypeName)
+        ?.id ??
+      "";
+    selectedProductTypeId = pTypeId;
+    selectedProductTypeName = pTypeName;
+    attributes = {
+      thickness: String(stock.attributes?.thickness ?? stock.thickness ?? ""),
+      factor: String(stock.attributes?.factor ?? stock.factor ?? ""),
+      color: String(stock.attributes?.color ?? stock.color ?? ""),
+      figure: String(stock.attributes?.figure ?? stock.figure ?? ""),
+      model_number: String(stock.attributes?.model_number ?? stock.model_number ?? ""),
+      country: String(stock.attributes?.country ?? stock.country ?? ""),
+    };
     selectedBranchId = stock.branch ?? "";
-    stockType =
-      stock.type === "brake_lining" ||
-      stock.type === "brake_pad" ||
-      stock.type === "break_pad"
-        ? "brake_lining"
-        : stock.type === "glass"
-          ? "glass"
-          : "glass";
     stockUnit = (stock.unit ?? "").trim();
     selectedInvestorIds = [];
     investorDropdownOpen = false;
@@ -321,6 +314,12 @@
   }
 
   function onSubmitStock(e: Event) {
+    if (!selectedProductTypeId || !selectedProductTypeName) {
+      e.preventDefault();
+      errorMessage = "Please select a product type";
+      return;
+    }
+
     // Clear previous messages
     errorMessage = "";
     successMessage = "";
@@ -404,11 +403,47 @@
   }
 
   function typeDisplay(t: string | null | undefined) {
-    if (t === "glass") return "Glass";
-    if (t === "brake_lining" || t === "brake_pad" || t === "break_pad")
+    const x = String(t ?? "").trim();
+    if (!x) return "—";
+    if (x === "brake_lining" || x === "brake_pad" || x === "break_pad")
       return "Brake lining";
-    return t ?? "—";
+    return x
+      .replaceAll("_", " ")
+      .replace(/\b\w/g, (m) => m.toUpperCase());
   }
+  function attributeLabel(key: string): string {
+    if (key === "model_number") return "Model No";
+    return key
+      .replaceAll("_", " ")
+      .replace(/\b\w/g, (m) => m.toUpperCase());
+  }
+
+  function currentTypeFields(): string[] {
+    return PRODUCT_TYPE_FIELDS[selectedProductTypeName] ?? [];
+  }
+
+  function productTypeLabel(s: Stock): string {
+    return typeDisplay(typeFromStock(s));
+  }
+
+  function attrValue(s: Stock, key: string): string {
+    const attrs = s.attributes ?? {};
+    const fallback: Record<string, unknown> = {
+      thickness: s.thickness,
+      factor: s.factor,
+      color: s.color,
+      figure: s.figure,
+      model_number: s.model_number,
+      country: s.country,
+    };
+    const v = attrs?.[key] ?? fallback[key];
+    return dash(v as unknown);
+  }
+
+  const isSingleTypeFilter = $derived(typeFilter !== "all");
+  const activeFields = $derived(
+    isSingleTypeFilter ? (PRODUCT_TYPE_FIELDS[typeFilter] ?? []) : [],
+  );
 
   function quantityWithUnit(s: Stock) {
     const u = (s.unit ?? "").trim();
@@ -480,8 +515,13 @@
       <span class="filter-label">Type</span>
       <select class="filter-select" bind:value={typeFilter}>
         <option value="all">All</option>
-        <option value="glass">Glass</option>
-        <option value="brake_lining">Brake lining</option>
+        {#each productTypes as pt}
+          {#if pt.name}
+            <option value={String(pt.name).trim().toLowerCase()}>
+              {typeDisplay(pt.name)}
+            </option>
+          {/if}
+        {/each}
       </select>
     </label>
     <button class="primary" onclick={openCreateModal}>New Stock</button>
@@ -534,17 +574,26 @@
       {#if editingStockId}
         <input type="hidden" name="id" value={editingStockId} />
       {/if}
+      <input type="hidden" name="product_type_name" value={selectedProductTypeName} />
+      <input type="hidden" name="attributes" value={JSON.stringify(attributes)} />
       <div class="grid">
         <label>
-          <span>Type</span>
+          <span>Product type</span>
           <select
-            name="type"
-            bind:value={stockType}
+            name="product_type"
+            bind:value={selectedProductTypeId}
             required
             class="native-select"
+            onchange={() => {
+              const found = productTypes.find((p) => p.id === selectedProductTypeId);
+              selectedProductTypeName = String(found?.name ?? "").trim().toLowerCase();
+              attributes = {};
+            }}
           >
-            <option value="glass">Glass</option>
-            <option value="brake_lining">Brake lining</option>
+            <option value="">Select product type</option>
+            {#each productTypes as pt}
+              <option value={pt.id}>{typeDisplay(pt.name ?? "")}</option>
+            {/each}
           </select>
         </label>
         <label class="unit-field">
@@ -587,14 +636,12 @@
             {/if}
           </div>
         </div>
-        <label>
-          <span>Model number</span>
-          <input type="text" name="model_number" bind:value={modelNumber} />
-        </label>
-        <label>
-          <span>Country</span>
-          <input type="text" name="country" bind:value={country} />
-        </label>
+        {#each currentTypeFields() as fieldName}
+          <label>
+            <span>{typeDisplay(fieldName)}</span>
+            <input type="text" bind:value={attributes[fieldName]} />
+          </label>
+        {/each}
         <label>
           <span>Purchased price</span>
           <input
@@ -628,35 +675,6 @@
             required
           />
         </label>
-        <label>
-          <span>Thickness</span>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            name="thickness"
-            bind:value={thickness}
-          />
-        </label>
-        <label>
-          <span>Factor</span>
-          <input
-            type="number"
-            min="0"
-            step="0.00001"
-            name="factor"
-            bind:value={factor}
-          />
-        </label>
-        <label>
-          <span>Color</span>
-          <input type="text" name="color" bind:value={color} />
-        </label>
-        <label>
-          <span>Figure</span>
-          <input type="text" name="figure" bind:value={figure} />
-        </label>
-
         {#if !editingStockId}
           <div class="field">
             <span>Investors</span>
@@ -764,12 +782,20 @@
     <div class="modal-content">
       <p>Are you sure you want to delete this stock?</p>
       <div class="stock-details">
-        <p><strong>Type:</strong> {typeDisplay(stockToDelete.type)}</p>
+        <p><strong>Type:</strong> {productTypeLabel(stockToDelete)}</p>
         <p><strong>Branch:</strong> {branchLabel(stockToDelete.branch)}</p>
-        <p><strong>Model:</strong> {dash(stockToDelete.model_number)}</p>
-        <p><strong>Thickness:</strong> {dash(stockToDelete.thickness)}</p>
-        <p><strong>Color:</strong> {dash(stockToDelete.color)}</p>
-        <p><strong>Figure:</strong> {dash(stockToDelete.figure)}</p>
+        <p>
+          <strong>Attributes:</strong>
+          {#if stockToDelete.attributes && Object.keys(stockToDelete.attributes).length > 0}
+            <span class="attr-stack">
+              {#each Object.entries(stockToDelete.attributes) as [k, v]}
+                <span>{attributeLabel(k)}: {v}</span>
+              {/each}
+            </span>
+          {:else}
+            —
+          {/if}
+        </p>
         <p><strong>Quantity:</strong> {quantityWithUnit(stockToDelete)}</p>
       </div>
       <p class="warning">This action cannot be undone.</p>
@@ -828,98 +854,14 @@
         </th>
         <th>Branch</th>
         <th>Origin</th>
-        <th>Model #</th>
-        <th
-          class="th-sort"
-          aria-sort={sortColumn === "country"
-            ? sortDirection === "asc"
-              ? "ascending"
-              : "descending"
-            : "none"}
-        >
-          <button
-            type="button"
-            class="sort-header-btn"
-            onclick={(e) => cycleSort("country", e)}
-            aria-label="Sort by country. Cycles default, A to Z, Z to A, then clear."
-            title="Sort by country: default → A–Z → Z–A → default"
-          >
-            <span class="sort-header-label">Country</span>
-            <span class="sort-arrows" aria-hidden="true">
-              <span
-                class="sort-arrow"
-                class:sort-arrow-on={sortColumn === "country" &&
-                  sortDirection === "asc"}>▲</span
-              >
-              <span
-                class="sort-arrow"
-                class:sort-arrow-on={sortColumn === "country" &&
-                  sortDirection === "desc"}>▼</span
-              >
-            </span>
-          </button>
-        </th>
-        <th>Thickness</th>
-        <th
-          class="th-sort"
-          aria-sort={sortColumn === "color"
-            ? sortDirection === "asc"
-              ? "ascending"
-              : "descending"
-            : "none"}
-        >
-          <button
-            type="button"
-            class="sort-header-btn"
-            onclick={(e) => cycleSort("color", e)}
-            aria-label="Sort by color. Cycles default, A to Z, Z to A, then clear."
-            title="Sort by color: default → A–Z → Z–A → default"
-          >
-            <span class="sort-header-label">Color</span>
-            <span class="sort-arrows" aria-hidden="true">
-              <span
-                class="sort-arrow"
-                class:sort-arrow-on={sortColumn === "color" &&
-                  sortDirection === "asc"}>▲</span
-              >
-              <span
-                class="sort-arrow"
-                class:sort-arrow-on={sortColumn === "color" &&
-                  sortDirection === "desc"}>▼</span
-              >
-            </span>
-          </button>
-        </th>
-        <th
-          class="th-sort"
-          aria-sort={sortColumn === "figure"
-            ? sortDirection === "asc"
-              ? "ascending"
-              : "descending"
-            : "none"}
-        >
-          <button
-            type="button"
-            class="sort-header-btn"
-            onclick={(e) => cycleSort("figure", e)}
-            aria-label="Sort by figure. Cycles default, A to Z, Z to A, then clear."
-            title="Sort by figure: default → A–Z → Z–A → default"
-          >
-            <span class="sort-header-label">Figure</span>
-            <span class="sort-arrows" aria-hidden="true">
-              <span
-                class="sort-arrow"
-                class:sort-arrow-on={sortColumn === "figure" &&
-                  sortDirection === "asc"}>▲</span
-              >
-              <span
-                class="sort-arrow"
-                class:sort-arrow-on={sortColumn === "figure" &&
-                  sortDirection === "desc"}>▼</span
-              >
-            </span>
-          </button>
-        </th>
+        {#if isSingleTypeFilter}
+          {#each activeFields as field}
+            <th>{attributeLabel(field)}</th>
+          {/each}
+        {:else}
+          <th>Attributes</th>
+        {/if}
+        <th>Price</th>
         <th class="right">Quantity</th>
         <th class="center">Actions</th>
       </tr>
@@ -932,14 +874,31 @@
           tabindex="0"
           role="button"
         >
-          <td>{typeDisplay(s.type)}</td>
+          <td>{productTypeLabel(s)}</td>
           <td>{branchLabel(s.branch)}</td>
           <td>{s.origin ? branchLabel(s.origin) : "-"}</td>
-          <td>{dash(s.model_number)}</td>
-          <td>{dash(s.country)}</td>
-          <td>{dash(s.thickness)}</td>
-          <td>{dash(s.color)}</td>
-          <td>{dash(s.figure)}</td>
+          {#if isSingleTypeFilter}
+            {#each activeFields as field}
+              <td>{attrValue(s, field)}</td>
+            {/each}
+          {:else}
+            <td>
+              {#if s.attributes && Object.keys(s.attributes).length > 0}
+                <div class="attr-stack">
+                  {#each Object.entries(s.attributes) as [k, v]}
+                    <div class="attr-row">
+                      <span class="attr-key">{attributeLabel(k)}</span>
+                      <span class="attr-sep">:</span>
+                      <span class="attr-val">{v}</span>
+                    </div>
+                  {/each}
+                </div>
+              {:else}
+                —
+              {/if}
+            </td>
+          {/if}
+          <td>{formatMoneyValue(s.selling_price)}</td>
           <td class="right">{quantityWithUnit(s)}</td>
           <td class="center">
             <button
@@ -963,7 +922,7 @@
       {/each}
       {#if filteredStocks.length === 0}
         <tr>
-          <td colspan="10" class="empty-state">
+          <td colspan={isSingleTypeFilter ? 7 + activeFields.length : 9} class="empty-state">
             <p class="muted">
               {#if stocks.length === 0}
                 No stocks found. Create your first stock to get started.
@@ -1365,6 +1324,28 @@
   .stock-details p {
     margin: 0.25rem 0;
     font-size: 0.9rem;
+  }
+  .attr-stack {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 0.38rem;
+    margin-left: 0.25rem;
+  }
+  .attr-row {
+    display: inline-flex;
+    align-items: baseline;
+    column-gap: 0.35rem;
+  }
+  .attr-key {
+    font-weight: 600;
+    font-size: 0.88em;
+  }
+  .attr-sep {
+    opacity: 0.75;
+    margin: 0 0.15rem;
+  }
+  .attr-val {
+    font-size: 0.88em;
   }
 
   .warning {

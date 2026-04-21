@@ -5,12 +5,13 @@
     id: string;
     amount: number;
     created_by: string;
+    created_by_name?: string;
     order_id: string;
     payment_method: string;
   };
 
   let { data }: { data: PageData } = $props();
-  const payments = data.payments;
+  const payments = (data.payments ?? []) as Payment[];
 
   function formatDate(dateString: string) {
     return new Date(dateString).toLocaleDateString("en-US", {
@@ -20,6 +21,14 @@
       hour: "2-digit",
       minute: "2-digit",
     });
+  }
+  function formatMoney(v: number | string | null | undefined): string {
+    const n =
+      typeof v === "string"
+        ? Number(v.replace(/[^0-9.-]/g, ""))
+        : Number(v ?? 0);
+    const safe = Number.isFinite(n) ? n : 0;
+    return `ETB ${safe.toLocaleString()}`;
   }
 </script>
 
@@ -37,16 +46,18 @@
         <th>Amount</th>
         <th>Method</th>
         <th>Created By</th>
-        <th>Order ID</th>
+        <th>Actions</th>
       </tr>
     </thead>
     <tbody>
       {#each payments as p}
         <tr class="row">
-          <td class="amount">Birr {p.amount.toLocaleString()}</td>
+          <td class="amount">{formatMoney(p.amount)}</td>
           <td class="method">{p.payment_method}</td>
-          <td class="date">{p.created_by}</td>
-          <td class="order-id">{p.order_id}</td>
+          <td class="date">{p.created_by_name || "—"}</td>
+          <td>
+            <a class="action-link" href={`/orders/${p.order_id}`}>View order</a>
+          </td>
         </tr>
       {/each}
       {#if payments.length === 0}
@@ -100,7 +111,6 @@
     font-size: 0.9rem;
   }
   .amount {
-    text-align: right;
     font-weight: 600;
   }
   .method {
@@ -109,9 +119,20 @@
   .date {
     color: #94a3b8;
   }
-  .order-id {
-    font-family: monospace;
+  .action-link {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.35rem 0.65rem;
+    border-radius: 0.45rem;
+    border: 1px solid color-mix(in oklab, #60a5fa, white 35%);
     color: #60a5fa;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.86rem;
+    transition: background-color 120ms ease;
+  }
+  .action-link:hover {
+    background: color-mix(in oklab, #60a5fa, transparent 88%);
   }
   td {
     border-top: 1px solid color-mix(in oklab, var(--surface-2), white 8%);

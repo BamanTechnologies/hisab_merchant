@@ -12,14 +12,12 @@ const FETCH_STOCK_BY_PK_QUERY = `
   query GetStockByPk($id: uuid!) {
     stock_by_pk(id: $id) {
       id
-      model_number
-      country
       branch
       origin
       type
-      color
+      product_type
+      attributes
       created_by
-      figure
       investors
       merchant {
         id
@@ -27,8 +25,6 @@ const FETCH_STOCK_BY_PK_QUERY = `
       purchased_price
       quantity
       selling_price
-      thickness
-      factor
       unit
     }
   }
@@ -87,6 +83,18 @@ const FETCH_BRANCHES_SAME_COMPANY_QUERY = `
   }
 `;
 
+const FETCH_PRODUCT_TYPES_QUERY = `
+  query StockProductTypes($merchantId: uuid!) {
+    product_types(
+      where: { merchant_id: { _eq: $merchantId } }
+      order_by: [{ name: asc }, { created_at: asc }]
+    ) {
+      id
+      name
+    }
+  }
+`;
+
 async function fetchBranchByPk(id: string) {
   try {
     const response = await fetch(config.graphql.endpoint, {
@@ -106,6 +114,26 @@ async function fetchBranchByPk(id: string) {
     return result.data.branches_by_pk ?? null;
   } catch {
     return null;
+  }
+}
+
+async function fetchProductTypes(merchantId: string | null) {
+  if (!merchantId) return [];
+  try {
+    const response = await fetch(config.graphql.endpoint, {
+      method: 'POST',
+      headers: getGraphQLHeaders(),
+      body: JSON.stringify({
+        query: FETCH_PRODUCT_TYPES_QUERY,
+        variables: { merchantId },
+      }),
+    });
+    if (!response.ok) return [];
+    const result = await response.json();
+    if (result.errors) return [];
+    return result.data.product_types ?? [];
+  } catch {
+    return [];
   }
 }
 
@@ -209,31 +237,56 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
     companyId = await fetchBranchCompanyId(merchantBranchId);
   }
 
-  const [stock, investors] = await Promise.all([
+  const [stockRaw, investors, productTypes] = await Promise.all([
     fetchStockByPk(params.id),
     fetchInvestorsForCompany(companyId),
+    fetchProductTypes(merchantId),
   ]);
+
+  const typeById = new Map<string, { id: string; name?: string | null }>();
+  for (const raw of productTypes as Array<Record<string, unknown>>) {
+    const id = typeof raw.id === 'string' ? raw.id : '';
+    if (!id) continue;
+    const name = raw.name == null ? null : String(raw.name);
+    typeById.set(id, { id, name });
+  }
+  const productTypeRef =
+    stockRaw && typeof (stockRaw as Record<string, unknown>).product_type === 'string'
+      ? String((stockRaw as Record<string, unknown>).product_type)
+      : '';
+  const productTypeObj = productTypeRef ? typeById.get(productTypeRef) : undefined;
+  const stock = (stockRaw
+    ? {
+        ...(stockRaw as Record<string, unknown>),
+        product_type: productTypeObj
+          ? { id: productTypeObj.id, name: productTypeObj.name ?? null }
+          : null,
+      }
+    : null) as Record<string, unknown> | null;
 
   if (!stock) {
     error(404, 'Stock not found');
   }
 
-  if (merchantBranchId != null && stock.branch !== merchantBranchId) {
+  const stockBranch = typeof stock?.branch === 'string' ? stock.branch : null;
+  const stockOrigin = typeof stock?.origin === 'string' ? stock.origin : null;
+
+  if (merchantBranchId != null && stockBranch !== merchantBranchId) {
     error(404, 'Stock not found');
   }
 
   let originBranchName: string | null = null;
-  if (stock.origin) {
-    const ob = await fetchBranchByPk(String(stock.origin));
+  if (stockOrigin) {
+    const ob = await fetchBranchByPk(stockOrigin);
     originBranchName = ob?.name != null && String(ob.name).trim() !== '' ? String(ob.name) : null;
   }
 
   let transferTargetBranches: { id: string; name?: string | null }[] = [];
-  if (stock.branch) {
-    const sourceBranch = await fetchBranchByPk(stock.branch);
+  if (stockBranch) {
+    const sourceBranch = await fetchBranchByPk(stockBranch);
     const companyId = sourceBranch?.company;
     if (companyId) {
-      transferTargetBranches = await fetchTransferTargetBranches(companyId, stock.branch);
+      transferTargetBranches = await fetchTransferTargetBranches(companyId, stockBranch);
     }
   }
 
@@ -352,18 +405,17 @@ const FETCH_STOCK_BRANCH_BY_PK_QUERY = `
 
 type StockRowForTransfer = {
   id: string;
-  model_number?: string | null;
-  country?: string | null;
   branch?: string | null;
   type?: string | null;
-  color?: string | null;
-  figure?: string | null;
+  product_type?:
+    | { id?: string | null; name?: string | null }
+    | string
+    | null;
+  attributes?: Record<string, unknown> | null;
   investors?: string[] | null;
   purchased_price?: unknown;
   quantity: unknown;
   selling_price?: unknown;
-  thickness?: unknown;
-  factor?: unknown;
   unit?: string | null;
 };
 
@@ -452,6 +504,12 @@ function buildNewStockInsertInput(
   destinationStockId?: string,
 ): Record<string, unknown> {
   const inv = Array.isArray(row.investors) ? row.investors : [];
+  const productTypeId =
+    row.product_type && typeof row.product_type === 'object'
+      ? (row.product_type.id ?? null)
+      : typeof row.product_type === 'string'
+        ? row.product_type
+        : null;
   return {
     ...(destinationStockId ? { id: destinationStockId } : {}),
     branch: toBranch,
@@ -459,15 +517,11 @@ function buildNewStockInsertInput(
     quantity: transferQty,
     created_by: assigneeId,
     updated_by: assigneeId,
-    model_number: row.model_number ?? null,
-    country: row.country ?? null,
+    product_type: productTypeId,
+    attributes: row.attributes ?? {},
     type: row.type ?? null,
-    color: row.color ?? null,
-    figure: row.figure ?? null,
     purchased_price: row.purchased_price ?? null,
     selling_price: row.selling_price ?? null,
-    thickness: row.thickness ?? null,
-    factor: row.factor ?? null,
     unit: row.unit ?? null,
     investors: inv,
   };

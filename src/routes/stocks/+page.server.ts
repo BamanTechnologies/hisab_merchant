@@ -9,14 +9,12 @@ import { config, getGraphQLHeaders } from '$lib/config';
 
 const STOCK_FIELDS = `
       id
-      model_number
-      country
       branch
       origin
       type
-      color
+      product_type
+      attributes
       created_by
-      figure
       investors
       merchant {
         id
@@ -24,8 +22,6 @@ const STOCK_FIELDS = `
       purchased_price
       quantity
       selling_price
-      thickness
-      factor
       unit
 `;
 
@@ -51,6 +47,20 @@ const FETCH_BRANCHES_QUERY = `
     branches {
       id
       name
+    }
+  }
+`;
+
+const FETCH_PRODUCT_TYPES_QUERY = `
+  query GetProductTypes($merchantId: uuid!) {
+    product_types(
+      where: { merchant_id: { _eq: $merchantId } }
+      order_by: [{ name: asc }, { created_at: asc }]
+    ) {
+      id
+      name
+      merchant_id
+      created_at
     }
   }
 `;
@@ -111,6 +121,27 @@ async function fetchBranches() {
   }
 }
 
+async function fetchProductTypes(merchantId: string | null) {
+  if (!merchantId) return [];
+  try {
+    const response = await fetch(config.graphql.endpoint, {
+      method: 'POST',
+      headers: getGraphQLHeaders(),
+      body: JSON.stringify({
+        query: FETCH_PRODUCT_TYPES_QUERY,
+        variables: { merchantId },
+      }),
+    });
+
+    if (!response.ok) return [];
+    const result = await response.json();
+    if (result.errors) return [];
+    return result.data.product_types ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export const load: PageServerLoad = async ({ request, parent }) => {
   const { merchantContext } = await parent();
   const merchantId =
@@ -124,16 +155,36 @@ export const load: PageServerLoad = async ({ request, parent }) => {
     companyId = await fetchBranchCompanyId(merchantBranchId);
   }
 
-  const [stocks, investors, branches] = await Promise.all([
+  const [stocksRaw, investors, branches, productTypes] = await Promise.all([
     fetchStocks(merchantBranchId),
     fetchInvestorsForCompany(companyId),
     fetchBranches(),
+    fetchProductTypes(merchantId),
   ]);
+
+  const typeById = new Map<string, { id: string; name?: string | null }>();
+  for (const raw of productTypes as Array<Record<string, unknown>>) {
+    const id = typeof raw.id === 'string' ? raw.id : '';
+    if (!id) continue;
+    const name = raw.name == null ? null : String(raw.name);
+    typeById.set(id, { id, name });
+  }
+  const stocks = (stocksRaw ?? []).map((s: Record<string, unknown>) => {
+    const productTypeRef = s.product_type;
+    if (productTypeRef && typeof productTypeRef === 'object') return s;
+    const ptId = typeof productTypeRef === 'string' ? productTypeRef : '';
+    const pt = ptId ? typeById.get(ptId) : undefined;
+    return {
+      ...s,
+      product_type: pt ? { id: pt.id, name: pt.name ?? null } : null,
+    };
+  });
 
   return {
     stocks,
     investors,
     branches,
+    productTypes,
     merchantId,
     merchantBranchId,
   };
@@ -142,34 +193,26 @@ export const load: PageServerLoad = async ({ request, parent }) => {
 const CREATE_STOCK_MUTATION = `
   mutation CreateStock(
     $branch: uuid
-    $color: String
-    $country: String
     $created_by: uuid
-    $factor: numeric
-    $figure: String
     $investors: [uuid!]
-    $model_number: String
     $purchased_price: money
     $quantity: numeric
     $selling_price: money
-    $thickness: numeric
+    $product_type: uuid
+    $attributes: jsonb
     $type: String
     $unit: String
   ) {
     insert_stock(
       objects: {
         branch: $branch
-        color: $color
-        country: $country
         created_by: $created_by
-        factor: $factor
-        figure: $figure
         investors: $investors
-        model_number: $model_number
         purchased_price: $purchased_price
         quantity: $quantity
         selling_price: $selling_price
-        thickness: $thickness
+        product_type: $product_type
+        attributes: $attributes
         type: $type
         unit: $unit
       }
@@ -193,15 +236,11 @@ const UPDATE_STOCK_MUTATION = `
   mutation UpdateStock(
     $id: uuid!
     $branch: uuid
-    $color: String
-    $country: String
-    $factor: numeric
-    $figure: String
-    $model_number: String
     $purchased_price: money
     $quantity: numeric
     $selling_price: money
-    $thickness: numeric
+    $product_type: uuid
+    $attributes: jsonb
     $type: String
     $unit: String
     $updated_at: timestamptz
@@ -211,15 +250,11 @@ const UPDATE_STOCK_MUTATION = `
       pk_columns: { id: $id }
       _set: {
         branch: $branch
-        color: $color
-        country: $country
-        factor: $factor
-        figure: $figure
-        model_number: $model_number
         purchased_price: $purchased_price
         quantity: $quantity
         selling_price: $selling_price
-        thickness: $thickness
+        product_type: $product_type
+        attributes: $attributes
         type: $type
         unit: $unit
         updated_at: $updated_at
@@ -237,41 +272,27 @@ function parseOptionalString(raw: FormDataEntryValue | null): string | null {
   return s === '' ? null : s;
 }
 
-function parseOptionalNumber(raw: FormDataEntryValue | null): number | null {
-  if (raw === null || raw === undefined || raw === '') return null;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : null;
-}
-
 async function createStock(stockData: {
   branch: string | null;
-  color: string | null;
-  country: string | null;
-  factor: number | null;
-  figure: string | null;
   investors: string[];
-  model_number: string | null;
   purchased_price: number;
   quantity: number;
   selling_price: number;
-  thickness: number | null;
+  product_type: string;
+  attributes: Record<string, unknown>;
   type: string;
   unit: string;
   userId: string;
 }) {
   const variables = {
     branch: stockData.branch,
-    color: stockData.color,
-    country: stockData.country,
     created_by: stockData.userId,
-    factor: stockData.factor,
-    figure: stockData.figure,
     investors: stockData.investors,
-    model_number: stockData.model_number,
     purchased_price: stockData.purchased_price,
     quantity: stockData.quantity,
     selling_price: stockData.selling_price,
-    thickness: stockData.thickness,
+    product_type: stockData.product_type,
+    attributes: stockData.attributes,
     type: stockData.type,
     unit: stockData.unit,
   };
@@ -330,15 +351,11 @@ async function deleteStock(stockId: string) {
 async function updateStock(stockData: {
   id: string;
   branch: string | null;
-  color: string | null;
-  country: string | null;
-  factor: number | null;
-  figure: string | null;
-  model_number: string | null;
   purchased_price: number;
   quantity: number;
   selling_price: number;
-  thickness: number | null;
+  product_type: string;
+  attributes: Record<string, unknown>;
   type: string;
   unit: string;
   updated_by: string;
@@ -346,15 +363,11 @@ async function updateStock(stockData: {
   const variables = {
     id: stockData.id,
     branch: stockData.branch,
-    color: stockData.color,
-    country: stockData.country,
-    factor: stockData.factor,
-    figure: stockData.figure,
-    model_number: stockData.model_number,
     purchased_price: stockData.purchased_price,
     quantity: stockData.quantity,
     selling_price: stockData.selling_price,
-    thickness: stockData.thickness,
+    product_type: stockData.product_type,
+    attributes: stockData.attributes,
     type: stockData.type,
     unit: stockData.unit,
     updated_at: new Date().toISOString(),
@@ -383,7 +396,6 @@ async function updateStock(stockData: {
   return result.data.update_stock_by_pk;
 }
 
-const VALID_TYPES = new Set(['glass', 'brake_lining']);
 const MAX_UNIT_LENGTH = 64;
 
 function parseUnit(raw: FormDataEntryValue | null): string | null {
@@ -397,6 +409,31 @@ function normalizeStockType(raw: string): string {
   const t = raw.trim();
   if (t === 'brake_pad' || t === 'break_pad') return 'brake_lining';
   return t;
+}
+
+function parseAttributes(raw: FormDataEntryValue | null): Record<string, unknown> {
+  if (raw == null) return {};
+  const s = String(raw).trim();
+  if (!s) return {};
+  try {
+    const parsed = JSON.parse(s) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (!k.trim()) continue;
+      if (v == null) continue;
+      if (typeof v === 'string') {
+        const t = v.trim();
+        if (!t) continue;
+        out[k] = t;
+      } else {
+        out[k] = v;
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
 }
 
 function assertBranchAllowed(branchId: string | null, merchantBranchId: string | null) {
@@ -422,14 +459,10 @@ export const actions: Actions = {
     const purchased_price = Number(formData.get('purchased_price'));
     const selling_price = Number(formData.get('selling_price'));
     const quantity = Number(formData.get('quantity'));
-    const thickness = parseOptionalNumber(formData.get('thickness'));
-    const factor = parseOptionalNumber(formData.get('factor'));
-    const color = parseOptionalString(formData.get('color'));
-    const figure = parseOptionalString(formData.get('figure'));
-    const model_number = parseOptionalString(formData.get('model_number'));
-    const country = parseOptionalString(formData.get('country'));
     const branchRaw = parseOptionalString(formData.get('branch'));
-    const type = normalizeStockType(String(formData.get('type') ?? ''));
+    const productTypeId = parseOptionalString(formData.get('product_type'));
+    const productTypeName = normalizeStockType(String(formData.get('product_type_name') ?? ''));
+    const attributes = parseAttributes(formData.get('attributes'));
     const unit = parseUnit(formData.get('unit'));
 
     let investors: string[] = [];
@@ -440,8 +473,12 @@ export const actions: Actions = {
       investors = [];
     }
 
-    if (!VALID_TYPES.has(type)) {
-      return { success: false, message: 'Invalid stock type' };
+    if (!productTypeId) {
+      return { success: false, message: 'Product type is required' };
+    }
+
+    if (!productTypeName) {
+      return { success: false, message: 'Product type name is required' };
     }
 
     if (!unit) {
@@ -471,17 +508,13 @@ export const actions: Actions = {
     try {
       const result = await createStock({
         branch: branchRaw,
-        color,
-        country,
-        factor,
-        figure,
         investors,
-        model_number,
         purchased_price,
         quantity,
         selling_price,
-        thickness,
-        type,
+        product_type: productTypeId,
+        attributes,
+        type: productTypeName,
         unit,
         userId,
       });
@@ -541,14 +574,10 @@ export const actions: Actions = {
     const purchased_price = Number(formData.get('purchased_price'));
     const selling_price = Number(formData.get('selling_price'));
     const quantity = Number(formData.get('quantity'));
-    const thickness = parseOptionalNumber(formData.get('thickness'));
-    const factor = parseOptionalNumber(formData.get('factor'));
-    const color = parseOptionalString(formData.get('color'));
-    const figure = parseOptionalString(formData.get('figure'));
-    const model_number = parseOptionalString(formData.get('model_number'));
-    const country = parseOptionalString(formData.get('country'));
     const branchRaw = parseOptionalString(formData.get('branch'));
-    const type = normalizeStockType(String(formData.get('type') ?? ''));
+    const productTypeId = parseOptionalString(formData.get('product_type'));
+    const productTypeName = normalizeStockType(String(formData.get('product_type_name') ?? ''));
+    const attributes = parseAttributes(formData.get('attributes'));
     const unit = parseUnit(formData.get('unit'));
 
     if (!id) {
@@ -558,8 +587,12 @@ export const actions: Actions = {
       };
     }
 
-    if (!VALID_TYPES.has(type)) {
-      return { success: false, message: 'Invalid stock type' };
+    if (!productTypeId) {
+      return { success: false, message: 'Product type is required' };
+    }
+
+    if (!productTypeName) {
+      return { success: false, message: 'Product type name is required' };
     }
 
     if (!unit) {
@@ -590,16 +623,12 @@ export const actions: Actions = {
       const result = await updateStock({
         id,
         branch: branchRaw,
-        color,
-        country,
-        factor,
-        figure,
-        model_number,
         purchased_price,
         quantity,
         selling_price,
-        thickness,
-        type,
+        product_type: productTypeId,
+        attributes,
+        type: productTypeName,
         unit,
         updated_by: userId,
       });

@@ -2,6 +2,7 @@
   import { enhance } from "$app/forms";
   import type { PageData } from "./$types";
   import { soldUnitPriceForReportOrder } from "$lib/reportSoldPrice";
+  import { buildStockLabel } from "$lib/stockLabel";
 
   type Report = {
     id: string;
@@ -34,6 +35,7 @@
     orders: Array<{
       id: string;
       stock_id: string;
+      stock_name?: string;
       order_quantity: number;
       total_amount: string;
       created_at: string;
@@ -116,6 +118,24 @@
     if (v === null || v === undefined || v === "") return "—";
     return String(v);
   }
+  function formatMoney(v: number | string | null | undefined): string {
+    const n =
+      typeof v === "string"
+        ? Number(v.replace(/[^0-9.-]/g, ""))
+        : Number(v ?? 0);
+    const safe = Number.isFinite(n) ? n : 0;
+    return `ETB ${safe.toLocaleString(undefined, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    })}`;
+  }
+  const reportStockNameByStockId = $derived.by(() => {
+    const map = new Map<string, string>();
+    for (const s of generatedReportData?.stocks ?? []) {
+      map.set(s.id, buildStockLabel(s));
+    }
+    return map;
+  });
 
   function getStatusClass(status: string) {
     switch (status.toLowerCase()) {
@@ -492,7 +512,7 @@
                       <td>{reportDash(stock.figure)}</td>
                       <td>{reportDash(stock.thickness)}</td>
                       <td>{stock.quantity}</td>
-                      <td>{stock.selling_price}</td>
+                      <td>{formatMoney(stock.selling_price)}</td>
                       <td>{reportDash(stock.factor)}</td>
                     </tr>
                   {/each}
@@ -511,7 +531,7 @@
               <table>
                 <thead>
                   <tr>
-                    <th>Customer</th>
+                    <th>Stock</th>
                     <th>Quantity</th>
                     <th>Price</th>
                     <th>Total</th>
@@ -521,15 +541,19 @@
                 <tbody>
                   {#each generatedReportData.orders as order (order.id)}
                     <tr>
-                      <td>{order.customer_name}</td>
+                      <td
+                        >{order.stock_name ??
+                          reportStockNameByStockId.get(order.stock_id) ??
+                          order.stock_id.slice(0, 8) + "…"}</td
+                      >
                       <td>{order.order_quantity}</td>
                       <td
-                        >{soldUnitPriceForReportOrder(
+                        >{formatMoney(soldUnitPriceForReportOrder(
                           order,
                           generatedReportData.stocks,
-                        )}</td
+                        ))}</td
                       >
-                      <td>{order.total_amount}</td>
+                      <td>{formatMoney(order.total_amount)}</td>
                       <td>{formatDate(order.created_at)}</td>
                     </tr>
                   {/each}
@@ -538,8 +562,9 @@
             </div>
             <div class="summary">
               <strong
-                >Total Orders: {generatedReportData.orders_aggregate.aggregate
-                  .sum.total_amount}</strong
+                >Total Orders: {formatMoney(
+                  generatedReportData.orders_aggregate.aggregate.sum.total_amount,
+                )}</strong
               >
             </div>
           {:else}
@@ -564,7 +589,7 @@
                   {#each generatedReportData.payments as payment (payment.id)}
                     <tr>
                       <td>{payment.customer_name}</td>
-                      <td>{payment.amount}</td>
+                      <td>{formatMoney(payment.amount)}</td>
                       <td>{payment.payment_method}</td>
                       <td>{formatDate(payment.created_at)}</td>
                     </tr>
@@ -574,8 +599,9 @@
             </div>
             <div class="summary">
               <strong
-                >Total Payments: {generatedReportData.payments_aggregate
-                  .aggregate.sum.amount}</strong
+                >Total Payments: {formatMoney(
+                  generatedReportData.payments_aggregate.aggregate.sum.amount,
+                )}</strong
               >
             </div>
           {:else}

@@ -1,9 +1,16 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
+  import { buildStockLabel } from "$lib/stockLabel";
   import type { PageData } from "./$types";
   import type { CustomerDetailOrder } from "./+page.server";
 
   let { data }: { data: PageData } = $props();
+  const payments = data.payments as Array<{
+    amount: number | string;
+    payment_method: string;
+    created_by_name?: string;
+    order_id: string;
+  }>;
 
   /** From latest `customer_transactions.balance`: negative = credit (show as Overpaid); positive = outstanding. */
   const balanceSummary = $derived.by(() => {
@@ -60,6 +67,20 @@
     if (status === "partially_paid") return "warn";
     return "bad";
   }
+  function stockName(o: CustomerDetailOrder): string {
+    if (o.stock_name && o.stock_name.trim() !== "") return o.stock_name;
+    const s = o.stock;
+    if (!s) return o.stock_id.slice(0, 8) + "…";
+    return buildStockLabel(s);
+  }
+  function formatMoney(v: number | string | null | undefined): string {
+    const n =
+      typeof v === "string"
+        ? Number(v.replace(/[^0-9.-]/g, ""))
+        : Number(v ?? 0);
+    const safe = Number.isFinite(n) ? n : 0;
+    return `ETB ${safe.toLocaleString()}`;
+  }
 </script>
 
 <section class="back-row">
@@ -93,13 +114,11 @@
 <section class="summary">
   <div class="metric">
     <span class="label">Total orders</span>
-    <span class="value">Birr {data.totalOrderAmount.toLocaleString()}</span>
+    <span class="value">{formatMoney(data.totalOrderAmount)}</span>
   </div>
   <div class="metric">
     <span class="label">Cash &amp; bank paid in</span>
-    <span class="value pay"
-      >Birr {data.totalPaymentAmount.toLocaleString()}</span
-    >
+    <span class="value pay">{formatMoney(data.totalPaymentAmount)}</span>
   </div>
   <div
     class="metric highlight"
@@ -112,7 +131,7 @@
       class="value"
       class:out={!balanceSummary.isOverpaid}
       class:overpaid={balanceSummary.isOverpaid}
-      >Birr {balanceSummary.displayAmount.toLocaleString()}</span
+      >{formatMoney(balanceSummary.displayAmount)}</span
     >
   </div>
 </section>
@@ -140,10 +159,10 @@
       <thead>
         <tr>
           <th>Date</th>
-          <th>Customer</th>
+          <th>Stock</th>
           <th class="right">Quantity</th>
           <th>Status</th>
-          <th class="right">Total amount</th>
+          <th>Total amount</th>
         </tr>
       </thead>
       <tbody>
@@ -155,11 +174,11 @@
             role="button"
           >
             <td class="nowrap">{formatOrderDate(o.created_at)}</td>
-            <td>{o.customer_name}</td>
+            <td>{stockName(o)}</td>
             <td class="right">{orderQtyCell(o)}</td>
             <td><span class="chip {statusClass(o.status)}">{o.status}</span></td
             >
-            <td class="right">Birr {o.total_amount.toLocaleString()}</td>
+            <td>{formatMoney(o.total_amount)}</td>
           </tr>
         {/each}
         {#if orders.length === 0}
@@ -180,19 +199,21 @@
           <th>Amount</th>
           <th>Method</th>
           <th>Created By</th>
-          <th>Order ID</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
-        {#each data.payments as p}
+        {#each payments as p}
           <tr class="row">
-            <td class="amount">Birr {p.amount.toLocaleString()}</td>
+            <td class="amount">{formatMoney(p.amount)}</td>
             <td class="method">{p.payment_method}</td>
-            <td class="date">{p.created_by}</td>
-            <td class="order-id">{p.order_id}</td>
+            <td class="date">{p.created_by_name || "—"}</td>
+            <td>
+              <a class="action-link" href={`/orders/${p.order_id}`}>View order</a>
+            </td>
           </tr>
         {/each}
-        {#if data.payments.length === 0}
+        {#if payments.length === 0}
           <tr>
             <td colspan="4" class="empty-state">
               <p class="muted">No payments linked to this customer’s orders.</p>
@@ -363,7 +384,6 @@
     color: #cbd5e1;
   }
   .amount {
-    text-align: right;
     font-weight: 600;
   }
   .method {
@@ -372,9 +392,20 @@
   .date {
     color: #94a3b8;
   }
-  .order-id {
-    font-family: monospace;
+  .action-link {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.35rem 0.65rem;
+    border-radius: 0.45rem;
+    border: 1px solid color-mix(in oklab, #60a5fa, white 35%);
     color: #60a5fa;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.86rem;
+    transition: background-color 120ms ease;
+  }
+  .action-link:hover {
+    background: color-mix(in oklab, #60a5fa, transparent 88%);
   }
   .empty-state {
     text-align: center;

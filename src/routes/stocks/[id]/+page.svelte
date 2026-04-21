@@ -10,6 +10,8 @@
   };
   type Stock = {
     id: string;
+    product_type?: { id?: string | null; name?: string | null } | null;
+    attributes?: Record<string, unknown> | null;
     model_number?: string | null;
     country?: string | null;
     branch?: string | null;
@@ -38,7 +40,7 @@
   };
 
   let { data, form }: { data: PageData; form?: any } = $props();
-  const stock = data.stock;
+  const stock = data.stock as Stock | null;
   const originBranchName = data.originBranchName ?? null;
   const investors = data.investors;
   const transferTargetBranches = (data.transferTargetBranches ??
@@ -86,6 +88,10 @@
   const maxTransferQty = $derived(
     stock ? Math.max(0, Number(stock.quantity)) : 0,
   );
+  const PRODUCT_TYPE_FIELDS: Record<string, string[]> = {
+    glass: ["thickness", "color", "figure", "factor"],
+    brake_lining: ["model_number", "country"],
+  };
 
   const canSubmitTransfer = $derived(
     !!transferToBranchId &&
@@ -107,28 +113,52 @@
     return name || m.id;
   }
 
-  const sellingPriceString = $derived(String(stock?.selling_price ?? "0"));
-  const sellingPrice = $derived(
-    Number(sellingPriceString.replace(/[^0-9.-]/g, "")) || 0
-  );
-  const factor = $derived(
-    stock?.factor != null && String(stock.factor).trim() !== ""
-      ? Number(stock.factor)
-      : 1
-  );
-  const sellingPriceDisplay = $derived(
-    sellingPrice.toLocaleString(undefined, {
+  function typeDisplay(t: string | null | undefined) {
+    const x = String(t ?? "").trim();
+    if (!x) return "—";
+    if (x === "brake_lining" || x === "brake_pad" || x === "break_pad")
+      return "Brake lining";
+    return x
+      .replaceAll("_", " ")
+      .replace(/\b\w/g, (m) => m.toUpperCase());
+  }
+  function productTypeName() {
+    return String(stock?.product_type?.name ?? stock?.type ?? "")
+      .trim()
+      .toLowerCase();
+  }
+  function attributeLabel(key: string) {
+    if (key === "model_number") return "Model No";
+    return key
+      .replaceAll("_", " ")
+      .replace(/\b\w/g, (m) => m.toUpperCase());
+  }
+  function attr(key: string) {
+    const attrs = (stock?.attributes ?? {}) as Record<string, unknown>;
+    const fallback: Record<string, unknown> = {
+      model_number: stock?.model_number,
+      country: stock?.country,
+      thickness: stock?.thickness,
+      color: stock?.color,
+      figure: stock?.figure,
+      factor: stock?.factor,
+    };
+    return dash(attrs?.[key] ?? fallback[key]);
+  }
+  function formatMoney(v: number | string | null | undefined): string {
+    const n =
+      typeof v === "string"
+        ? Number(v.replace(/[^0-9.-]/g, ""))
+        : Number(v ?? 0);
+    const safe = Number.isFinite(n) ? n : 0;
+    return `ETB ${safe.toLocaleString(undefined, {
       minimumFractionDigits: 0,
       maximumFractionDigits: 2,
-    })
-  );
-
-  function typeDisplay(t: string | null | undefined) {
-    if (t === "glass") return "Glass";
-    if (t === "brake_lining" || t === "brake_pad" || t === "break_pad")
-      return "Brake lining";
-    return t ?? "—";
+    })}`;
   }
+  const dynamicFields = $derived(
+    PRODUCT_TYPE_FIELDS[productTypeName()] ?? Object.keys(stock?.attributes ?? {}),
+  );
   function dash(v: unknown) {
     if (v === null || v === undefined || v === "") return "—";
     return String(v);
@@ -232,7 +262,7 @@
 
     <div class="detail">
       <div>
-        <span class="label">Type:</span><span>{typeDisplay(stock.type)}</span>
+        <span class="label">Type:</span><span class="value-chip">{typeDisplay(productTypeName())}</span>
       </div>
       <div>
         <span class="label">Origin:</span><span
@@ -240,24 +270,18 @@
         >
       </div>
       <div>
-        <span class="label">Model #:</span><span>{dash(stock.model_number)}</span>
-      </div>
-      <div>
-        <span class="label">Country:</span><span>{dash(stock.country)}</span>
-      </div>
-      <div>
         <span class="label">Selling price:</span><span
-          >Birr {sellingPriceDisplay}</span
+          >{formatMoney(stock.selling_price)}</span
         >
       </div>
       <div>
         <span class="label">Quantity:</span><span>{quantityDisplay}</span>
       </div>
-      <div>
-        <span class="label">Thickness:</span><span>{dash(stock.thickness)}</span>
-      </div>
-      <div><span class="label">Color:</span><span>{dash(stock.color)}</span></div>
-      <div><span class="label">Figure:</span><span>{dash(stock.figure)}</span></div>
+      {#each dynamicFields as key}
+        <div>
+          <span class="label">{attributeLabel(key)}:</span><span>{attr(key)}</span>
+        </div>
+      {/each}
       <div>
         <span class="label">Investors:</span><span>{investorNames}</span>
       </div>
@@ -431,15 +455,37 @@
   .detail {
     display: grid;
     grid-template-columns: 240px 1fr;
-    gap: 0.6rem 1rem;
-    background: color-mix(in oklab, var(--surface-2), white 4%);
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-    border-radius: 0.75rem;
-    padding: 1rem;
+    gap: 0.75rem 1.1rem;
+    background:
+      radial-gradient(
+        120% 90% at 0% 0%,
+        color-mix(in oklab, var(--brand), transparent 88%),
+        transparent 55%
+      ),
+      color-mix(in oklab, var(--surface-2), white 4%);
+    border: 1px solid color-mix(in oklab, var(--surface-2), white 12%);
+    border-radius: 0.9rem;
+    padding: 1.05rem 1.1rem;
+    box-shadow: 0 14px 26px rgba(0, 0, 0, 0.22);
+  }
+  .detail > div {
+    display: flex;
+    align-items: baseline;
+    gap: 0.55rem;
   }
   .label {
     color: #94a3b8;
     font-weight: 700;
+  }
+  .value-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--brand), black 70%);
+    color: #dbeafe;
+    font-weight: 700;
+    font-size: 0.86rem;
   }
 
   .primary {

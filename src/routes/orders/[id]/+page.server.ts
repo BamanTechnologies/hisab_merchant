@@ -31,10 +31,12 @@ const FETCH_ORDER_FOR_MERCHANT_QUERY = `
       stock {
         id
         branch
+        product_type
+        attributes
+        type
         model_number
         country
         branch
-        type
         color
         created_by
         figure

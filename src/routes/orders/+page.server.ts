@@ -8,6 +8,7 @@ import {
   sumOrderLedgerOrderDebits,
 } from '$lib/customerTransactions.server';
 import { config, getGraphQLHeaders } from '$lib/config';
+import { buildStockLabel } from '$lib/stockLabel';
 
 const FETCH_BRANCH_BY_PK_QUERY = `
   query OrdersBranchByPk($id: uuid!) {
@@ -91,6 +92,8 @@ const FETCH_STOCKS_BY_BRANCH_QUERY = `
       id
       branch
       origin
+      product_type
+      attributes
       quantity
       selling_price
       factor
@@ -110,6 +113,9 @@ const FETCH_STOCKS_BY_IDS_QUERY = `
     stock(where: { id: { _in: $ids } }) {
       id
       branch
+      product_type
+      attributes
+      type
       quantity
       selling_price
       factor
@@ -139,6 +145,14 @@ const FETCH_ORDERS_QUERY = `
       unit
       stock {
         unit
+        type
+        product_type
+        attributes
+        model_number
+        country
+        color
+        figure
+        thickness
       }
     }
   }
@@ -173,6 +187,9 @@ const FETCH_ORDER_CANCEL_CONTEXT_QUERY = `
       outstanding_amount
       stock {
         branch
+        type
+        product_type
+        attributes
       }
     }
   }
@@ -406,7 +423,19 @@ async function fetchBranchesForCompany(companyId: string | null) {
 async function fetchOrders(merchantId: string) {
   try {
     const data = await gql<{ orders: unknown[] }>(FETCH_ORDERS_QUERY, { merchantId });
-    return data.orders ?? [];
+    return (data.orders ?? []).map((row) => {
+      if (!row || typeof row !== 'object') return row;
+      const rec = row as Record<string, unknown>;
+      const stock =
+        rec.stock && typeof rec.stock === 'object'
+          ? (rec.stock as Record<string, unknown>)
+          : null;
+      const fallbackId = String(rec.stock_id ?? '').slice(0, 8) + '…';
+      return {
+        ...rec,
+        stock_name: stock ? buildStockLabel(stock) : fallbackId,
+      };
+    });
   } catch {
     return [];
   }
