@@ -6,6 +6,7 @@
 
   let { data }: { data: PageData } = $props();
   const payments = data.payments as Array<{
+    created_at?: string;
     amount: number | string;
     payment_method: string;
     created_by_name?: string;
@@ -196,6 +197,7 @@
     <table class="data-table">
       <thead>
         <tr>
+          <th>Date</th>
           <th>Amount</th>
           <th>Method</th>
           <th>Created By</th>
@@ -205,6 +207,7 @@
       <tbody>
         {#each payments as p}
           <tr class="row">
+            <td class="date">{p.created_at ? formatOrderDate(p.created_at) : "—"}</td>
             <td class="amount">{formatMoney(p.amount)}</td>
             <td class="method">{p.payment_method}</td>
             <td class="date">{p.created_by_name || "—"}</td>
@@ -215,7 +218,7 @@
         {/each}
         {#if payments.length === 0}
           <tr>
-            <td colspan="4" class="empty-state">
+            <td colspan="5" class="empty-state">
               <p class="muted">No payments linked to this customer’s orders.</p>
             </td>
           </tr>

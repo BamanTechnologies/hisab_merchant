@@ -1042,6 +1042,7 @@
       <tr>
         <th>Date</th>
         <th>Stock</th>
+        <th>Customer</th>
         <th class="right">Quantity</th>
         <th>Status</th>
         <th>Total amount</th>
@@ -1058,6 +1059,7 @@
         >
           <td class="nowrap">{formatOrderDate(o.created_at)}</td>
           <td>{orderStockName(o)}</td>
+          <td>{o.customer_name}</td>
           <td class="right">{orderQtyCell(o)}</td>
           <td><span class="chip {statusClass(o.status)}">{o.status}</span></td>
           <td>{formatMoney(o.total_amount)}</td>
@@ -1080,7 +1082,7 @@
       {/each}
       {#if orders.length === 0}
         <tr>
-          <td colspan="6" class="empty-state">
+          <td colspan="7" class="empty-state">
             <p class="muted">
               No orders found. Create your first order to get started.
             </p>

@@ -667,11 +667,31 @@ async function insertOrdersBulk(objects: OrderInsertObject[]) {
 type StockRowForOrder = {
   id: string;
   branch?: string | null;
+  type?: string | null;
+  product_type?: string | null;
+  attributes?: Record<string, unknown> | null;
   quantity: unknown;
   selling_price: unknown;
   factor?: unknown;
   unit?: string | null;
 };
+
+function parsePositiveNumber(v: unknown): number | null {
+  if (v == null) return null;
+  if (typeof v === 'string' && v.trim() === '') return null;
+  const n =
+    typeof v === 'number' ? v : Number(String(v).replace(/[^0-9.-]/g, ''));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+
+function resolveOrderFactor(stockRow: StockRowForOrder): number {
+  const attrFactor = parsePositiveNumber(stockRow.attributes?.factor);
+  if (attrFactor != null) return attrFactor;
+  const legacyFactor = parsePositiveNumber(stockRow.factor);
+  if (legacyFactor != null) return legacyFactor;
+  return 1;
+}
 
 async function fetchStocksByIdsForOrder(stockIds: string[]): Promise<StockRowForOrder[]> {
   if (stockIds.length === 0) return [];
@@ -835,12 +855,7 @@ export const actions: Actions = {
         };
       }
 
-      const factorRaw = stockRow.factor;
-      const factor =
-        factorRaw != null && String(factorRaw).trim() !== ''
-          ? Number(factorRaw)
-          : 1;
-      const f = Number.isFinite(factor) && factor > 0 ? factor : 1;
+      const f = resolveOrderFactor(stockRow);
       const total_amount = q * unitPrice * f;
       const outstanding_amount = total_amount;
 

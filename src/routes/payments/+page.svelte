@@ -6,6 +6,8 @@
     amount: number;
     created_by: string;
     created_by_name?: string;
+    created_at?: string;
+    order?: { customer_name?: string | null } | null;
     order_id: string;
     payment_method: string;
   };
@@ -43,7 +45,9 @@
   <table class="data-table">
     <thead>
       <tr>
+        <th>Date</th>
         <th>Amount</th>
+        <th>Customer</th>
         <th>Method</th>
         <th>Created By</th>
         <th>Actions</th>
@@ -52,7 +56,9 @@
     <tbody>
       {#each payments as p}
         <tr class="row">
+          <td class="date">{p.created_at ? formatDate(p.created_at) : "—"}</td>
           <td class="amount">{formatMoney(p.amount)}</td>
+          <td>{p.order?.customer_name?.trim() || "—"}</td>
           <td class="method">{p.payment_method}</td>
           <td class="date">{p.created_by_name || "—"}</td>
           <td>
@@ -62,7 +68,7 @@
       {/each}
       {#if payments.length === 0}
         <tr>
-          <td colspan="4" class="empty-state">
+          <td colspan="6" class="empty-state">
             <p class="muted">
               No payments found. Payments will appear here once orders are paid.
             </p>

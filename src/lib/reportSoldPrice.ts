@@ -1,4 +1,4 @@
-/** Matches order creation: glass lines use stock `factor` in total = qty × unit × factor. */
+/** Matches order creation: factor is attributes-first (`attributes.factor`), then legacy `factor`, then default 1. */
 
 function asFiniteNumber(v: unknown): number {
   if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
@@ -9,8 +9,8 @@ function asFiniteNumber(v: unknown): number {
   return 0;
 }
 
-function isGlassType(t: unknown): boolean {
-  return String(t ?? '')
+function isGlassType(typeOrProductType: unknown): boolean {
+  return String(typeOrProductType ?? '')
     .trim()
     .toLowerCase() === 'glass';
 }
@@ -27,6 +27,8 @@ function parsePositiveFactor(v: unknown): number | null {
 export type ReportStockRow = {
   id?: string;
   type?: unknown;
+  product_type?: unknown;
+  attributes?: Record<string, unknown> | null;
   factor?: unknown;
 };
 
@@ -52,9 +54,13 @@ export function soldUnitPriceForReportOrder(
   const perQtyLine = total / qty;
   const sid = order.stock_id != null ? String(order.stock_id).trim() : '';
   const stock = sid ? stocks.find((s) => s.id === sid) : undefined;
-  const factor = stock != null ? parsePositiveFactor(stock.factor) : null;
+  const factor =
+    stock != null
+      ? (parsePositiveFactor(stock.attributes?.factor) ??
+        parsePositiveFactor(stock.factor))
+      : null;
 
-  if (stock && isGlassType(stock.type) && factor != null) {
+  if (stock && isGlassType(stock.type ?? stock.product_type) && factor != null) {
     return (perQtyLine / factor).toFixed(2);
   }
   return perQtyLine.toFixed(2);

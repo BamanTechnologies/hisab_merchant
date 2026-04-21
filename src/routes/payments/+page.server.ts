@@ -4,12 +4,16 @@ import { config, getGraphQLHeaders } from '$lib/config';
 
 const FETCH_PAYMENTS_QUERY = `
   query GetPayments($merchantId: uuid!) {
-    payment(where: { created_by: { _eq: $merchantId } }) {
+    payment(where: { created_by: { _eq: $merchantId } }, order_by: { created_at: desc }) {
       amount
       created_by
+      created_at
       id
       order_id
       payment_method
+      order {
+        customer_name
+      }
     }
   }
 `;

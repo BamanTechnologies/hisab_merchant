@@ -108,10 +108,11 @@ const FETCH_CUSTOMER_ACTIVITY_QUERY = `
           ]
         }
       }
-      order_by: { id: desc }
+      order_by: { created_at: desc }
     ) {
       id
       amount
+      created_at
       created_by
       order_id
       payment_method
@@ -145,10 +146,11 @@ const FETCH_PAYMENTS_FOR_ORDERS_QUERY = `
   query CustomerDetailPayments($orderIds: [uuid!]!) {
     payment(
       where: { order_id: { _in: $orderIds } }
-      order_by: { id: desc }
+      order_by: { created_at: desc }
     ) {
       id
       amount
+      created_at
       created_by
       order_id
       payment_method
@@ -315,6 +317,7 @@ export type CustomerDetailOrder = {
 export type CustomerDetailPayment = {
   id: string;
   amount: number;
+  created_at: string;
   created_by: string;
   created_by_name?: string;
   order_id: string;
@@ -349,6 +352,7 @@ function normalizePaymentRow(raw: Record<string, unknown>): CustomerDetailPaymen
   return {
     id: String(raw.id),
     amount: parseMoney(raw.amount),
+    created_at: String(raw.created_at ?? ''),
     created_by: String(raw.created_by ?? ''),
     order_id: String(raw.order_id ?? ''),
     payment_method: String(raw.payment_method ?? ''),

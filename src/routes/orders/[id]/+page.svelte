@@ -80,14 +80,6 @@
       .replaceAll("_", " ")
       .replace(/\b\w/g, (m) => m.toUpperCase());
   }
-  const singleType = $derived.by(() => {
-    const keys = new Set(orderStocks.map((s) => stockTypeKey(s)));
-    return keys.size === 1 ? [...keys][0] : "";
-  });
-  const dynamicFields = $derived(
-    singleType ? (PRODUCT_TYPE_FIELDS[singleType] ?? []) : [],
-  );
-
   function reportDash(v: unknown) {
     if (v === null || v === undefined || v === "") return "—";
     return String(v);
@@ -109,6 +101,13 @@
   /** One row per linked stock today; same shape if orders gain multiple lines later. */
   const orderStocks = $derived(
     order?.stock ? [order.stock as OrderStock] : ([] as OrderStock[]),
+  );
+  const singleType = $derived.by(() => {
+    const keys = new Set(orderStocks.map((s) => stockTypeKey(s)));
+    return keys.size === 1 ? [...keys][0] : "";
+  });
+  const dynamicFields = $derived(
+    singleType ? (PRODUCT_TYPE_FIELDS[singleType] ?? []) : [],
   );
 
   function stockInvestorLabels(stock: OrderStock): string {
