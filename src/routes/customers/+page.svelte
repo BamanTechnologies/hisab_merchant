@@ -57,6 +57,7 @@
   <table class="data-table">
     <thead>
       <tr>
+        <th class="col-num">#</th>
         <th>Name</th>
         <th>Address</th>
         <th>Registered</th>
@@ -64,13 +65,14 @@
       </tr>
     </thead>
     <tbody>
-      {#each customers as c}
+      {#each customers as c, i}
         <tr
           class="row"
           onclick={() => goto(`/customers/${c.id}`)}
           tabindex="0"
           role="button"
         >
+          <td class="col-num">{i + 1}</td>
           <td>{fullName(c)}</td>
           <td>{dash(c.address)}</td>
           <td class="nowrap">{formatRegistered(c.created_at)}</td>
@@ -79,7 +81,7 @@
       {/each}
       {#if customers.length === 0 && data.companyId}
         <tr>
-          <td colspan="4" class="empty-state">
+          <td colspan="5" class="empty-state">
             <p class="muted">No customers to display.</p>
           </td>
         </tr>
@@ -127,6 +129,12 @@
   }
   .nowrap {
     white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .col-num {
+    width: 2.25rem;
+    white-space: nowrap;
+    text-align: center;
     font-variant-numeric: tabular-nums;
   }
   td {

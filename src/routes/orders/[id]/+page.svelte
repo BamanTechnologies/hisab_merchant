@@ -298,6 +298,7 @@
           <table>
             <thead>
               <tr>
+                <th class="col-num">#</th>
                 <th>Type</th>
                 {#if dynamicFields.length > 0}
                   {#each dynamicFields as f}
@@ -313,8 +314,9 @@
               </tr>
             </thead>
             <tbody>
-              {#each orderStocks as s (s.id)}
+              {#each orderStocks as s, i (s.id)}
                 <tr>
+                  <td class="col-num">{i + 1}</td>
                   <td>{reportStockTypeLabel(stockTypeKey(s))}</td>
                   {#if dynamicFields.length > 0}
                     {#each dynamicFields as f}
@@ -460,6 +462,12 @@
   .data-table table {
     width: 100%;
     border-collapse: collapse;
+  }
+  .col-num {
+    width: 2.25rem;
+    white-space: nowrap;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
   }
   .data-table th {
     background: var(--surface-1);

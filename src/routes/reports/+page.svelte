@@ -247,6 +247,7 @@
       <table>
         <thead>
           <tr>
+            <th class="col-num">#</th>
             <th>Date</th>
             <th>Investor Phone</th>
             <th>SMS Status</th>
@@ -254,8 +255,9 @@
           </tr>
         </thead>
         <tbody>
-          {#each reports as report (report.id)}
+          {#each reports as report, i (report.id)}
             <tr onclick={() => openModal(report)}>
+              <td class="col-num">{i + 1}</td>
               <td>{formatDate(report.updated_at)}</td>
               <td>{report.investor_phone}</td>
               <td>
@@ -492,6 +494,7 @@
               <table>
                 <thead>
                   <tr>
+                    <th class="col-num">#</th>
                     <th>Type</th>
                     <th>Model #</th>
                     <th>Country</th>
@@ -504,8 +507,9 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {#each generatedReportData.stocks as stock (stock.id)}
+                  {#each generatedReportData.stocks as stock, i (stock.id)}
                     <tr>
+                      <td class="col-num">{i + 1}</td>
                       <td>{reportStockTypeLabel(stock.type)}</td>
                       <td>{reportDash(stock.model_number)}</td>
                       <td>{reportDash(stock.country)}</td>
@@ -532,6 +536,7 @@
               <table>
                 <thead>
                   <tr>
+                    <th class="col-num">#</th>
                     <th>Stock</th>
                     <th>Quantity</th>
                     <th>Price</th>
@@ -540,8 +545,9 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {#each generatedReportData.orders as order (order.id)}
+                  {#each generatedReportData.orders as order, i (order.id)}
                     <tr>
+                      <td class="col-num">{i + 1}</td>
                       <td
                         >{order.stock_name ??
                           reportStockNameByStockId.get(order.stock_id) ??
@@ -580,6 +586,7 @@
               <table>
                 <thead>
                   <tr>
+                    <th class="col-num">#</th>
                     <th>Customer</th>
                     <th>Amount</th>
                     <th>Method</th>
@@ -587,8 +594,9 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {#each generatedReportData.payments as payment (payment.id)}
+                  {#each generatedReportData.payments as payment, i (payment.id)}
                     <tr>
+                      <td class="col-num">{i + 1}</td>
                       <td>{payment.customer_name}</td>
                       <td>{formatMoney(payment.amount)}</td>
                       <td>{payment.payment_method}</td>
@@ -1021,6 +1029,12 @@
     color: #cbd5e1;
     font-size: 0.875rem;
     border-bottom: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
+  }
+  .col-num {
+    width: 2.25rem;
+    white-space: nowrap;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
   }
 
   .summary {

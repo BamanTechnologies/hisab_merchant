@@ -1,5 +1,6 @@
 <script lang="ts">
   import { deserialize } from "$app/forms";
+  import { onMount } from "svelte";
   import type { PageData } from "./$types";
 
   type ExpenseRow = PageData["expenses"][number];
@@ -7,17 +8,27 @@
   let { data }: { data: PageData } = $props();
 
   let expenses = $state(data.expenses as ExpenseRow[]);
-  let totalExpenseAmount = $state(data.totalExpenseAmount);
+  let totalOperationalExpenseAmount = $state(
+    data.totalOperationalExpenseAmount,
+  );
+  let totalMajorExpenseAmount = $state(data.totalMajorExpenseAmount);
+  let typeFilter = $state<"all" | "operation" | "major">("all");
+  let listStateReady = $state(false);
 
   $effect(() => {
     expenses = data.expenses as ExpenseRow[];
-    totalExpenseAmount = data.totalExpenseAmount;
+    totalOperationalExpenseAmount = data.totalOperationalExpenseAmount;
+    totalMajorExpenseAmount = data.totalMajorExpenseAmount;
   });
 
   let showModal = $state(false);
   let submitting = $state(false);
   let formError = $state("");
   let sentTo = $state("");
+  let expenseType = $state<"operation" | "major">("operation");
+  let fromPerson = $state("");
+  let fromAccount = $state("");
+  let toAccount = $state("");
   let category = $state("");
   let paymentType = $state("");
   let amount = $state("");
@@ -25,14 +36,30 @@
   let receipt = $state("");
 
   const paymentTypes = data.paymentTypes ?? [];
+  const expenseTypes = data.expenseTypes ?? ["operation", "major"];
   const categories = data.categories ?? [];
+  const EXPENSE_LIST_STATE_KEY = "expenses:list-state:v1";
+
+  const filteredExpenses = $derived.by(() => {
+    if (typeFilter === "all") return expenses;
+    return expenses.filter((ex) => (ex.expense_type ?? "operation") === typeFilter);
+  });
+  const isMajorOnly = $derived(typeFilter === "major");
+  const isOperationOnly = $derived(typeFilter === "operation");
 
   function paymentLabel(p: string) {
     if (p === "bank transfer") return "Bank transfer";
     return p.charAt(0).toUpperCase() + p.slice(1);
   }
+  function expenseTypeLabel(t: string) {
+    const x = String(t ?? "").trim().toLowerCase();
+    if (x === "major") return "Major";
+    return "Operation";
+  }
 
   function categoryLabel(c: string) {
+    const v = String(c ?? "").trim().toLowerCase();
+    if (v === "lc") return "LC";
     return c.replace(/\b\w/g, (ch) => ch.toUpperCase());
   }
 
@@ -67,9 +94,32 @@
     });
     return `ETB ${amount}`;
   }
+  function detailsEntries(ex: ExpenseRow): Array<[string, string]> {
+    const type = String(ex.expense_type ?? "operation").toLowerCase();
+    if (type === "major") {
+      return [
+        ["Paid by", ex.from_person || "—"],
+        ["From account", ex.from_account || "—"],
+        ["Sent to", ex.sent_to || "—"],
+        ["To account", ex.to_account || "—"],
+      ];
+    }
+    return [
+      ["Paid by", ex.from_person || "—"],
+      ["Sent to", ex.sent_to || "—"],
+      ["Category", categoryLabel(ex.category)],
+      ["Payment", paymentLabel(ex.payment_type)],
+      ["Note", ex.note?.trim() ? ex.note : "—"],
+      ["Receipt", receiptPreview(ex.receipt)],
+    ];
+  }
 
   function openModal() {
     formError = "";
+    expenseType = "operation";
+    fromPerson = "";
+    fromAccount = "";
+    toAccount = "";
     sentTo = "";
     category = categories[0] ?? "";
     paymentType = paymentTypes[0] ?? "";
@@ -94,6 +144,10 @@
     submitting = true;
     try {
       const fd = new FormData();
+      fd.append("expense_type", expenseType);
+      fd.append("from_person", fromPerson.trim());
+      fd.append("from_account", fromAccount.trim());
+      fd.append("to_account", toAccount.trim());
       fd.append("sent_to", sentTo.trim());
       fd.append("category", category);
       fd.append("payment_type", paymentType);
@@ -124,6 +178,47 @@
       submitting = false;
     }
   }
+
+  function applyListStateFromParams(params: URLSearchParams) {
+    const nextType = String(params.get("type") ?? "").trim().toLowerCase();
+    if (nextType === "operation" || nextType === "major" || nextType === "all") {
+      typeFilter = nextType;
+      return;
+    }
+    typeFilter = "all";
+  }
+
+  onMount(() => {
+    const params = new URLSearchParams(window.location.search);
+    const hasTypeInUrl = params.has("type");
+    if (hasTypeInUrl) {
+      applyListStateFromParams(params);
+    } else {
+      try {
+        const raw = window.sessionStorage.getItem(EXPENSE_LIST_STATE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as { type?: string };
+          const fallback = new URLSearchParams();
+          if (typeof parsed.type === "string") fallback.set("type", parsed.type);
+          applyListStateFromParams(fallback);
+        }
+      } catch {}
+    }
+    listStateReady = true;
+  });
+
+  $effect(() => {
+    if (!listStateReady) return;
+    const params = new URLSearchParams();
+    if (typeFilter !== "all") params.set("type", typeFilter);
+    const qs = params.toString();
+    const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+    window.history.replaceState(window.history.state, "", url);
+    window.sessionStorage.setItem(
+      EXPENSE_LIST_STATE_KEY,
+      JSON.stringify({ type: typeFilter }),
+    );
+  });
 </script>
 
 <section class="header">
@@ -132,10 +227,25 @@
     <p class="muted">Branch expenses for your assigned location.</p>
   </div>
   <div class="header-right">
+    <label class="filter-field">
+      <span class="filter-label">Type</span>
+      <select class="native-select" bind:value={typeFilter}>
+        <option value="all">All</option>
+        {#each expenseTypes as t}
+          <option value={t}>{expenseTypeLabel(t)}</option>
+        {/each}
+      </select>
+    </label>
     <div class="total-pill" aria-live="polite">
-      <span class="total-label">Total expense</span>
-      <span class="total-value"
-        >{formatMoney(totalExpenseAmount)}</span
+      <span class="total-label">Total Operational Expenses</span>
+      <span class="total-value operational"
+        >{formatMoney(totalOperationalExpenseAmount)}</span
+      >
+    </div>
+    <div class="total-pill" aria-live="polite">
+      <span class="total-label">Total Major Expenses</span>
+      <span class="total-value major"
+        >{formatMoney(totalMajorExpenseAmount)}</span
       >
     </div>
     <button
@@ -167,44 +277,92 @@
 <section class="table-wrap">
   <table class="data-table">
     <thead>
-      <tr>
-        <th>Date</th>
-        <th>Sent to</th>
-        <th>Category</th>
-        <th>Payment</th>
-        <th>Amount</th>
-        <th>Note</th>
-        <th>Receipt</th>
-        <th>Recorded by</th>
-      </tr>
+      {#if isMajorOnly}
+        <tr>
+          <th class="col-num">#</th>
+          <th>Date</th>
+          <th>Amount</th>
+          <th>Paid by</th>
+          <th>From account</th>
+          <th>Sent to</th>
+          <th>To account</th>
+        </tr>
+      {:else if isOperationOnly}
+        <tr>
+          <th class="col-num">#</th>
+          <th>Date</th>
+          <th>Amount</th>
+          <th>Paid by</th>
+          <th>Sent to</th>
+          <th>Category</th>
+          <th>Payment</th>
+          <th>Note</th>
+          <th>Receipt</th>
+        </tr>
+      {:else}
+        <tr>
+          <th class="col-num">#</th>
+          <th>Date</th>
+          <th>Type</th>
+          <th>Amount</th>
+          <th>Details</th>
+        </tr>
+      {/if}
     </thead>
     <tbody>
-      {#each expenses as ex}
-        <tr class="row">
-          <td class="nowrap">{formatDate(ex.created_at)}</td>
-          <td>{ex.sent_to}</td>
-          <td>{categoryLabel(ex.category)}</td>
-          <td>{paymentLabel(ex.payment_type)}</td>
-          <td class="amount"
-            >{formatMoney(ex.amount)}</td
-          >
-          <td class="note-cell">{ex.note?.trim() ? ex.note : "—"}</td>
-          <td class="receipt-cell" title={ex.receipt ?? ""}
-            >{receiptPreview(ex.receipt)}</td
-          >
-          <td>{ex.created_by_name}</td>
-        </tr>
+      {#each filteredExpenses as ex, i}
+        {#if isMajorOnly}
+          <tr class="row">
+            <td class="col-num">{i + 1}</td>
+            <td class="nowrap">{formatDate(ex.created_at)}</td>
+            <td class="amount">{formatMoney(ex.amount)}</td>
+            <td>{ex.from_person || "—"}</td>
+            <td>{ex.from_account || "—"}</td>
+            <td>{ex.sent_to || "—"}</td>
+            <td>{ex.to_account || "—"}</td>
+          </tr>
+        {:else if isOperationOnly}
+          <tr class="row">
+            <td class="col-num">{i + 1}</td>
+            <td class="nowrap">{formatDate(ex.created_at)}</td>
+            <td class="amount">{formatMoney(ex.amount)}</td>
+            <td>{ex.from_person || "—"}</td>
+            <td>{ex.sent_to}</td>
+            <td>{categoryLabel(ex.category)}</td>
+            <td>{paymentLabel(ex.payment_type)}</td>
+            <td class="note-cell">{ex.note?.trim() ? ex.note : "—"}</td>
+            <td class="receipt-cell" title={ex.receipt ?? ""}>{receiptPreview(ex.receipt)}</td>
+          </tr>
+        {:else}
+          <tr class="row">
+            <td class="col-num">{i + 1}</td>
+            <td class="nowrap">{formatDate(ex.created_at)}</td>
+            <td>{expenseTypeLabel(ex.expense_type ?? "operation")}</td>
+            <td class="amount">{formatMoney(ex.amount)}</td>
+            <td>
+              <div class="attr-stack">
+                {#each detailsEntries(ex) as [k, v]}
+                  <div class="attr-row">
+                    <span class="attr-key">{k}</span>
+                    <span class="attr-sep">:</span>
+                    <span class="attr-val">{v}</span>
+                  </div>
+                {/each}
+              </div>
+            </td>
+          </tr>
+        {/if}
       {/each}
-      {#if expenses.length === 0 && data.merchantBranchId}
+      {#if filteredExpenses.length === 0 && data.merchantBranchId}
         <tr>
-          <td colspan="8" class="empty-state">
+          <td colspan={typeFilter === "all" ? 5 : typeFilter === "major" ? 7 : 9} class="empty-state">
             <p class="muted">No expenses yet. Create one to get started.</p>
           </td>
         </tr>
       {/if}
       {#if !data.merchantBranchId}
         <tr>
-          <td colspan="8" class="empty-state">
+          <td colspan={typeFilter === "all" ? 5 : typeFilter === "major" ? 7 : 9} class="empty-state">
             <p class="muted">Assign a branch to your account to see expenses.</p>
           </td>
         </tr>
@@ -232,6 +390,51 @@
     <form class="modal-body" onsubmit={submitExpense}>
       {#if formError}
         <p class="inline-error">{formError}</p>
+      {/if}
+
+      <label class="field">
+        <span>Expense type</span>
+        <select bind:value={expenseType} required class="native-select">
+          {#each expenseTypes as t}
+            <option value={t}>{expenseTypeLabel(t)}</option>
+          {/each}
+        </select>
+      </label>
+
+      <label class="field">
+        <span>Paid by</span>
+        <input
+          type="text"
+          name="from_person"
+          bind:value={fromPerson}
+          required
+          autocomplete="name"
+          placeholder="Who paid"
+        />
+      </label>
+
+      {#if expenseType === "major"}
+        <label class="field">
+          <span>From account</span>
+          <input
+            type="text"
+            name="from_account"
+            bind:value={fromAccount}
+            required
+            placeholder="Bank or source account"
+          />
+        </label>
+
+        <label class="field">
+          <span>To account</span>
+          <input
+            type="text"
+            name="to_account"
+            bind:value={toAccount}
+            required
+            placeholder="Destination account"
+          />
+        </label>
       {/if}
 
       <label class="field">
@@ -342,27 +545,45 @@
     gap: 0.75rem;
     flex-wrap: wrap;
   }
+  .filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .filter-label {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 700;
+  }
   .total-pill {
     display: flex;
     flex-direction: column;
     align-items: flex-end;
-    padding: 0.5rem 0.85rem;
+    padding: 0.42rem 0.72rem;
     border-radius: 0.65rem;
     border: 1px solid color-mix(in oklab, var(--surface-2), white 12%);
     background: color-mix(in oklab, var(--surface-2), white 4%);
+    min-width: 11.5rem;
   }
   .total-label {
-    font-size: 0.7rem;
+    font-size: 0.62rem;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: #94a3b8;
     font-weight: 700;
   }
   .total-value {
-    font-size: 1.2rem;
-    font-weight: 800;
+    font-size: 0.98rem;
+    font-weight: 750;
     font-variant-numeric: tabular-nums;
-    color: #fecaca;
+  }
+  .total-value.operational {
+    color: #93c5fd;
+  }
+  .total-value.major {
+    color: #fca5a5;
   }
   .primary {
     appearance: none;
@@ -417,6 +638,12 @@
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
+  .col-num {
+    width: 2.25rem;
+    white-space: nowrap;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
   .amount {
     font-weight: 600;
   }
@@ -425,6 +652,27 @@
     max-width: 12rem;
     font-size: 0.88rem;
     color: #cbd5e1;
+  }
+  .attr-stack {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 0.38rem;
+  }
+  .attr-row {
+    display: inline-flex;
+    align-items: baseline;
+    column-gap: 0.35rem;
+  }
+  .attr-key {
+    font-weight: 600;
+    font-size: 0.88em;
+  }
+  .attr-sep {
+    opacity: 0.75;
+    margin: 0 0.15rem;
+  }
+  .attr-val {
+    font-size: 0.88em;
   }
   td {
     border-top: 1px solid color-mix(in oklab, var(--surface-2), white 8%);

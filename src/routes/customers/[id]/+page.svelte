@@ -159,6 +159,7 @@
     <table class="data-table">
       <thead>
         <tr>
+          <th class="col-num">#</th>
           <th>Date</th>
           <th>Stock</th>
           <th class="right">Quantity</th>
@@ -167,13 +168,14 @@
         </tr>
       </thead>
       <tbody>
-        {#each orders as o}
+        {#each orders as o, i}
           <tr
             class="row"
             onclick={() => goto(`/orders/${o.id}`)}
             tabindex="0"
             role="button"
           >
+            <td class="col-num">{i + 1}</td>
             <td class="nowrap">{formatOrderDate(o.created_at)}</td>
             <td>{stockName(o)}</td>
             <td class="right">{orderQtyCell(o)}</td>
@@ -184,7 +186,7 @@
         {/each}
         {#if orders.length === 0}
           <tr>
-            <td colspan="5" class="empty-state">
+            <td colspan="6" class="empty-state">
               <p class="muted">No orders for this customer in your company.</p>
             </td>
           </tr>
@@ -197,6 +199,7 @@
     <table class="data-table">
       <thead>
         <tr>
+          <th class="col-num">#</th>
           <th>Date</th>
           <th>Amount</th>
           <th>Method</th>
@@ -205,8 +208,9 @@
         </tr>
       </thead>
       <tbody>
-        {#each payments as p}
+        {#each payments as p, i}
           <tr class="row">
+            <td class="col-num">{i + 1}</td>
             <td class="date">{p.created_at ? formatOrderDate(p.created_at) : "—"}</td>
             <td class="amount">{formatMoney(p.amount)}</td>
             <td class="method">{p.payment_method}</td>
@@ -218,7 +222,7 @@
         {/each}
         {#if payments.length === 0}
           <tr>
-            <td colspan="5" class="empty-state">
+            <td colspan="6" class="empty-state">
               <p class="muted">No payments linked to this customer’s orders.</p>
             </td>
           </tr>
@@ -394,6 +398,12 @@
   }
   .date {
     color: #94a3b8;
+  }
+  .col-num {
+    width: 2.25rem;
+    white-space: nowrap;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
   }
   .action-link {
     display: inline-flex;

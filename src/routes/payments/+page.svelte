@@ -45,6 +45,7 @@
   <table class="data-table">
     <thead>
       <tr>
+        <th class="col-num">#</th>
         <th>Date</th>
         <th>Amount</th>
         <th>Customer</th>
@@ -54,8 +55,9 @@
       </tr>
     </thead>
     <tbody>
-      {#each payments as p}
+      {#each payments as p, i}
         <tr class="row">
+          <td class="col-num">{i + 1}</td>
           <td class="date">{p.created_at ? formatDate(p.created_at) : "—"}</td>
           <td class="amount">{formatMoney(p.amount)}</td>
           <td>{p.order?.customer_name?.trim() || "—"}</td>
@@ -68,7 +70,7 @@
       {/each}
       {#if payments.length === 0}
         <tr>
-          <td colspan="6" class="empty-state">
+          <td colspan="7" class="empty-state">
             <p class="muted">
               No payments found. Payments will appear here once orders are paid.
             </p>
@@ -139,6 +141,12 @@
   }
   .action-link:hover {
     background: color-mix(in oklab, #60a5fa, transparent 88%);
+  }
+  .col-num {
+    width: 2.25rem;
+    white-space: nowrap;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
   }
   td {
     border-top: 1px solid color-mix(in oklab, var(--surface-2), white 8%);

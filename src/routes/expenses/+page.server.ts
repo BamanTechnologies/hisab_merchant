@@ -18,10 +18,35 @@ const FETCH_EXPENSES_BY_BRANCH_QUERY = `
       branch_id
       note
       payment_type
+      expense_type
+      from_person
+      from_account
+      to_account
       amount
       receipt
     }
-    expenses_aggregate(where: { branch_id: { _eq: $branchId } }) {
+    operation_expenses_aggregate: expenses_aggregate(
+      where: {
+        _and: [
+          { branch_id: { _eq: $branchId } }
+          { expense_type: { _eq: "operation" } }
+        ]
+      }
+    ) {
+      aggregate {
+        sum {
+          amount
+        }
+      }
+    }
+    major_expenses_aggregate: expenses_aggregate(
+      where: {
+        _and: [
+          { branch_id: { _eq: $branchId } }
+          { expense_type: { _eq: "major" } }
+        ]
+      }
+    ) {
       aggregate {
         sum {
           amount
@@ -87,6 +112,10 @@ type ExpenseRow = {
   branch_id: string;
   note: string;
   payment_type: string;
+  expense_type: string;
+  from_person: string;
+  from_account: string;
+  to_account: string;
   amount: number;
   receipt?: string | null;
 };
@@ -102,6 +131,10 @@ function normalizeExpense(raw: Record<string, unknown>): Omit<ExpenseRow, 'creat
     branch_id: String(raw.branch_id ?? ''),
     note: String(raw.note ?? ''),
     payment_type: String(raw.payment_type ?? ''),
+    expense_type: String(raw.expense_type ?? 'operation').trim().toLowerCase() || 'operation',
+    from_person: String(raw.from_person ?? ''),
+    from_account: String(raw.from_account ?? ''),
+    to_account: String(raw.to_account ?? ''),
     amount: parseMoney(raw.amount),
     receipt: raw.receipt != null ? String(raw.receipt) : null,
   };
@@ -141,6 +174,7 @@ async function attachCreatorNames(rows: Omit<ExpenseRow, 'created_by_name'>[]): 
 }
 
 const PAYMENT_TYPE_VALUES = ['cash', 'telebirr', 'bank transfer'] as const;
+const EXPENSE_TYPE_VALUES = ['operation', 'major'] as const;
 const CATEGORY_VALUES = [
   'transportation',
   'delivery cost',
@@ -151,10 +185,12 @@ const CATEGORY_VALUES = [
   'salary',
   'staff and payroll',
   'marketing and sales',
+  'lc',
   'other',
 ] as const;
 
 const paymentTypeSet = new Set<string>(PAYMENT_TYPE_VALUES);
+const expenseTypeSet = new Set<string>(EXPENSE_TYPE_VALUES);
 const categorySet = new Set<string>(CATEGORY_VALUES);
 
 export const load: PageServerLoad = async ({ request, parent }) => {
@@ -166,28 +202,39 @@ export const load: PageServerLoad = async ({ request, parent }) => {
     (merchantId ? await fetchMerchantBranchId(merchantId) : null);
 
   let expenses: ExpenseRow[] = [];
-  let totalExpenseAmount = 0;
+  let totalOperationalExpenseAmount = 0;
+  let totalMajorExpenseAmount = 0;
 
   if (merchantBranchId) {
     try {
       const data = await gql<{
         expenses: Record<string, unknown>[];
-        expenses_aggregate: {
+        operation_expenses_aggregate: {
+          aggregate: { sum: { amount: unknown } | null } | null;
+        } | null;
+        major_expenses_aggregate: {
           aggregate: { sum: { amount: unknown } | null } | null;
         } | null;
       }>(FETCH_EXPENSES_BY_BRANCH_QUERY, { branchId: merchantBranchId });
 
       const rawRows = (data.expenses ?? []).map((r) => normalizeExpense(r));
       expenses = await attachCreatorNames(rawRows);
-      totalExpenseAmount = parseMoney(data.expenses_aggregate?.aggregate?.sum?.amount ?? 0);
+      totalOperationalExpenseAmount = parseMoney(
+        data.operation_expenses_aggregate?.aggregate?.sum?.amount ?? 0,
+      );
+      totalMajorExpenseAmount = parseMoney(
+        data.major_expenses_aggregate?.aggregate?.sum?.amount ?? 0,
+      );
     } catch {}
   }
 
   return {
     expenses,
-    totalExpenseAmount,
+    totalOperationalExpenseAmount,
+    totalMajorExpenseAmount,
     merchantId,
     merchantBranchId,
+    expenseTypes: [...EXPENSE_TYPE_VALUES],
     paymentTypes: [...PAYMENT_TYPE_VALUES],
     categories: [...CATEGORY_VALUES],
   };
@@ -214,10 +261,28 @@ export const actions: Actions = {
     const category = String(formData.get('category') ?? '').trim();
     const note = String(formData.get('note') ?? '').trim();
     const payment_type = String(formData.get('payment_type') ?? '').trim();
+    const expense_type = String(formData.get('expense_type') ?? 'operation')
+      .trim()
+      .toLowerCase();
+    const from_person = String(formData.get('from_person') ?? '').trim();
+    const from_account = String(formData.get('from_account') ?? '').trim();
+    const to_account = String(formData.get('to_account') ?? '').trim();
     const amountRaw = formData.get('amount');
     const receipt = String(formData.get('receipt') ?? '').trim();
 
-    if (!sent_to) {
+    if (!expenseTypeSet.has(expense_type)) {
+      return { success: false, message: 'Select a valid expense type' };
+    }
+    if (!from_person) {
+      return { success: false, message: 'Paid by is required' };
+    }
+    if (expense_type === 'major') {
+      if (!from_account) return { success: false, message: 'From account is required for major expenses' };
+      if (!to_account) return { success: false, message: 'To account is required for major expenses' };
+    }
+
+    const effectiveSentTo = sent_to;
+    if (!effectiveSentTo) {
       return { success: false, message: 'Sent to (name) is required' };
     }
     if (!categorySet.has(category)) {
@@ -235,10 +300,14 @@ export const actions: Actions = {
     const object: Record<string, unknown> = {
       created_by: userId,
       branch_id: merchantBranchId,
-      sent_to,
+      sent_to: effectiveSentTo,
       category,
       note: note || null,
       payment_type,
+      expense_type,
+      from_person,
+      from_account: from_account || null,
+      to_account: to_account || null,
       amount,
     };
     if (receipt) {

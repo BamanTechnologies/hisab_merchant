@@ -1051,6 +1051,7 @@
   <table class="data-table">
     <thead>
       <tr>
+        <th class="col-num">#</th>
         <th>Date</th>
         <th>Stock</th>
         <th>Customer</th>
@@ -1061,13 +1062,14 @@
       </tr>
     </thead>
     <tbody>
-      {#each orders as o}
+      {#each orders as o, i}
         <tr
           class="row"
           onclick={() => goto(`/orders/${o.id}`)}
           tabindex="0"
           role="button"
         >
+          <td class="col-num">{i + 1}</td>
           <td class="nowrap">{formatOrderDate(o.created_at)}</td>
           <td>{orderStockName(o)}</td>
           <td>{o.customer_name}</td>
@@ -1093,7 +1095,7 @@
       {/each}
       {#if orders.length === 0}
         <tr>
-          <td colspan="7" class="empty-state">
+          <td colspan="8" class="empty-state">
             <p class="muted">
               No orders found. Create your first order to get started.
             </p>
@@ -1162,6 +1164,12 @@
   }
   .nowrap {
     white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .col-num {
+    width: 2.25rem;
+    white-space: nowrap;
+    text-align: center;
     font-variant-numeric: tabular-nums;
   }
   .right {

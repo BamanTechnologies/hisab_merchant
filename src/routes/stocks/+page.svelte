@@ -922,6 +922,7 @@
   <table class="data-table">
     <thead>
       <tr>
+        <th class="col-num">#</th>
         <th
           class="th-sort"
           aria-sort={sortColumn === "type"
@@ -967,13 +968,14 @@
       </tr>
     </thead>
     <tbody>
-      {#each filteredStocks as s}
+      {#each filteredStocks as s, i}
         <tr
           class="row"
           onclick={() => goto(`/stocks/${s.id}${currentListQueryString()}`)}
           tabindex="0"
           role="button"
         >
+          <td class="col-num">{i + 1}</td>
           <td>{productTypeLabel(s)}</td>
           <td>{branchLabel(s.branch)}</td>
           <td>{s.origin ? branchLabel(s.origin) : "-"}</td>
@@ -1023,7 +1025,7 @@
       {#if filteredStocks.length === 0}
         <tr>
           <td
-            colspan={isSingleTypeFilter ? 7 + activeFields.length : 9}
+            colspan={isSingleTypeFilter ? 8 + activeFields.length : 10}
             class="empty-state"
           >
             <p class="muted">
@@ -1130,6 +1132,12 @@
     color: #94a3b8;
     font-weight: 700;
     font-size: 0.9rem;
+  }
+  .col-num {
+    width: 2.25rem;
+    white-space: nowrap;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
   }
   .th-sort {
     vertical-align: middle;
