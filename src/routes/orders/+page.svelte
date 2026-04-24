@@ -757,8 +757,11 @@
     for (const o of filteredOrders) {
       const status = String(o.status ?? "").trim().toLowerCase();
       const total = parseMoneyValue(o.total_amount) ?? 0;
-      totalCreatedAmount += total;
-      if (status === "cancelled") continue;
+      if (status !== "cancelled") {
+        totalCreatedAmount += total;
+      } else {
+        continue;
+      }
       if (status === "unpaid" || status === "partially_paid" || status === "paid") {
         const outstanding = parseMoneyValue(o.outstanding_amount) ?? 0;
         totalUnpaidAmount += outstanding;
