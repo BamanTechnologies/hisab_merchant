@@ -116,6 +116,92 @@
   let stockPanelPos = $state<StockPanelPos | null>(null);
   let stockSearchInputEl = $state<HTMLInputElement | null>(null);
   let lastStockSearchFocusRowId: string | null = null;
+  let dateRangePreset = $state<"all" | "today" | "last7" | "last30" | "custom">(
+    "all",
+  );
+  let customerFilterName = $state("");
+  let customDateFrom = $state("");
+  let customDateTo = $state("");
+  let customDateFromInputEl = $state<HTMLInputElement | null>(null);
+  let customDateToInputEl = $state<HTMLInputElement | null>(null);
+  let sortColumn = $state<
+    "none" | "date" | "stock" | "customer" | "quantity" | "status" | "total"
+  >("none");
+  let sortDirection = $state<"asc" | "desc">("asc");
+  const customerFilterOptions = $derived.by(() => {
+    const names = new Set<string>();
+    for (const o of orders) {
+      const n = String(o.customer_name ?? "").trim();
+      if (n) names.add(n);
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
+  });
+  const filteredOrders = $derived.by(() => {
+    const now = new Date();
+    const startOfDay = (d: Date) =>
+      new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const endOfDay = (d: Date) =>
+      new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+    const todayStart = startOfDay(now);
+    const fromInputTs = customDateFrom ? startOfDay(new Date(customDateFrom)) : null;
+    const toInputTs = customDateTo ? endOfDay(new Date(customDateTo)) : null;
+    return orders.filter((o) => {
+      if (customerFilterName && String(o.customer_name ?? "").trim() !== customerFilterName) {
+        return false;
+      }
+      const created = new Date(o.created_at ?? "").getTime();
+      if (!Number.isFinite(created)) return false;
+      if (dateRangePreset === "all") return true;
+      if (dateRangePreset === "today") {
+        return created >= todayStart && created <= endOfDay(now);
+      }
+      if (dateRangePreset === "last7") {
+        const from = todayStart - 6 * 24 * 60 * 60 * 1000;
+        return created >= from && created <= endOfDay(now);
+      }
+      if (dateRangePreset === "last30") {
+        const from = todayStart - 29 * 24 * 60 * 60 * 1000;
+        return created >= from && created <= endOfDay(now);
+      }
+      if (fromInputTs != null && created < fromInputTs) return false;
+      if (toInputTs != null && created > toInputTs) return false;
+      return true;
+    });
+  });
+  const sortedOrders = $derived.by(() => {
+    if (sortColumn === "none") return filteredOrders;
+    return [...filteredOrders].sort((a, b) => {
+      const av =
+        sortColumn === "date"
+          ? new Date(a.created_at ?? 0).getTime()
+          : sortColumn === "stock"
+            ? orderStockName(a).toLowerCase()
+            : sortColumn === "customer"
+              ? String(a.customer_name ?? "").toLowerCase()
+              : sortColumn === "quantity"
+                ? Number(a.order_quantity ?? 0)
+                : sortColumn === "status"
+                  ? String(a.status ?? "").toLowerCase()
+                  : parseMoneyValue(a.total_amount);
+      const bv =
+        sortColumn === "date"
+          ? new Date(b.created_at ?? 0).getTime()
+          : sortColumn === "stock"
+            ? orderStockName(b).toLowerCase()
+            : sortColumn === "customer"
+              ? String(b.customer_name ?? "").toLowerCase()
+              : sortColumn === "quantity"
+                ? Number(b.order_quantity ?? 0)
+                : sortColumn === "status"
+                  ? String(b.status ?? "").toLowerCase()
+                  : parseMoneyValue(b.total_amount);
+      const cmp =
+        typeof av === "number" && typeof bv === "number"
+          ? av - bv
+          : String(av).localeCompare(String(bv));
+      return sortDirection === "asc" ? cmp : -cmp;
+    });
+  });
 
   const branchesList = $derived((data.branches ?? []) as BranchLite[]);
 
@@ -631,6 +717,61 @@
     if (status === "partially_paid") return "warn";
     return "bad";
   }
+  function cycleSort(
+    col: "date" | "stock" | "customer" | "quantity" | "status" | "total",
+  ) {
+    if (sortColumn !== col) {
+      sortColumn = col;
+      sortDirection = col === "date" ? "desc" : "asc";
+      return;
+    }
+    if (sortDirection === "asc") sortDirection = "desc";
+    else {
+      sortColumn = "none";
+      sortDirection = "asc";
+    }
+  }
+  function isSortActive(
+    col: "date" | "stock" | "customer" | "quantity" | "status" | "total",
+    dir: "asc" | "desc",
+  ) {
+    return sortColumn === col && sortDirection === dir;
+  }
+  function openDatePicker(el: HTMLInputElement | null) {
+    if (!el) return;
+    const inputWithPicker = el as HTMLInputElement & {
+      showPicker?: () => void;
+    };
+    if (typeof inputWithPicker.showPicker === "function") {
+      inputWithPicker.showPicker();
+      return;
+    }
+    el.focus();
+    el.click();
+  }
+  const orderSummary = $derived.by(() => {
+    let totalCreatedCount = filteredOrders.length;
+    let totalCreatedAmount = 0;
+    let totalPaidAmount = 0;
+    let totalUnpaidAmount = 0;
+    for (const o of filteredOrders) {
+      const status = String(o.status ?? "").trim().toLowerCase();
+      const total = parseMoneyValue(o.total_amount) ?? 0;
+      totalCreatedAmount += total;
+      if (status === "cancelled") continue;
+      if (status === "unpaid" || status === "partially_paid" || status === "paid") {
+        const outstanding = parseMoneyValue(o.outstanding_amount) ?? 0;
+        totalUnpaidAmount += outstanding;
+        totalPaidAmount += total - outstanding;
+      }
+    }
+    return {
+      totalCreatedCount,
+      totalCreatedAmount,
+      totalPaidAmount,
+      totalUnpaidAmount,
+    };
+  });
 
   function openCancelModal(order: OrderSummary, event: Event) {
     event.stopPropagation();
@@ -695,6 +836,80 @@
   <button type="button" class="primary" onclick={openCreateModal}>
     Create Order
   </button>
+</section>
+
+<section class="orders-filters" aria-label="Filter orders">
+  <label class="filter-field">
+    <span class="filter-label">Date range</span>
+    <select class="native-select" bind:value={dateRangePreset}>
+      <option value="all">All time</option>
+      <option value="today">Today</option>
+      <option value="last7">Last 7 days</option>
+      <option value="last30">Last 30 days</option>
+      <option value="custom">Custom range</option>
+    </select>
+  </label>
+
+  {#if dateRangePreset === "custom"}
+    <label class="filter-field">
+      <span class="filter-label">From</span>
+      <input
+        class="native-select date-clickable"
+        type="date"
+        bind:value={customDateFrom}
+        bind:this={customDateFromInputEl}
+        onclick={() => openDatePicker(customDateFromInputEl)}
+        onfocus={() => openDatePicker(customDateFromInputEl)}
+      />
+    </label>
+    <label class="filter-field">
+      <span class="filter-label">To</span>
+      <input
+        class="native-select date-clickable"
+        type="date"
+        bind:value={customDateTo}
+        bind:this={customDateToInputEl}
+        onclick={() => openDatePicker(customDateToInputEl)}
+        onfocus={() => openDatePicker(customDateToInputEl)}
+      />
+    </label>
+  {/if}
+
+  <label class="filter-field">
+    <span class="filter-label">Customer</span>
+    <select class="native-select" bind:value={customerFilterName}>
+      <option value="">All customers</option>
+      {#each customerFilterOptions as customerName}
+        <option value={customerName}>{customerName}</option>
+      {/each}
+    </select>
+  </label>
+</section>
+
+<section class="summary-cards" aria-label="Orders summary">
+  <div class="summary-card neutral">
+    <span class="summary-label">Total orders created</span>
+    <span class="summary-value">
+      {formatMoney(orderSummary.totalCreatedAmount)} ({orderSummary.totalCreatedCount.toLocaleString()}
+      {orderSummary.totalCreatedCount === 1 ? " order" : " orders"})
+    </span>
+  </div>
+  <div class="summary-card paid">
+    <span class="summary-label">Total amount paid</span>
+    <span class="summary-value">{formatMoney(orderSummary.totalPaidAmount)}</span>
+  </div>
+  <div class="summary-card unpaid">
+    <span class="summary-label">
+      {orderSummary.totalUnpaidAmount < 0 ? "Total amount overpaid" : "Total amount unpaid"}
+    </span>
+    <span class="summary-value">
+      {formatMoney(
+        orderSummary.totalUnpaidAmount < 0
+          ? Math.abs(orderSummary.totalUnpaidAmount)
+          : orderSummary.totalUnpaidAmount,
+      )}
+    </span>
+  </div>
 </section>
 
 {#if errorMessage}
@@ -1052,17 +1267,17 @@
     <thead>
       <tr>
         <th class="col-num">#</th>
-        <th>Date</th>
-        <th>Stock</th>
-        <th>Customer</th>
-        <th class="right">Quantity</th>
-        <th>Status</th>
-        <th>Total amount</th>
+        <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("date")}>Date <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("date","asc")}>▲</span><span class:sort-arrow-on={isSortActive("date","desc")}>▼</span></span></button></th>
+        <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("stock")}>Stock <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("stock","asc")}>▲</span><span class:sort-arrow-on={isSortActive("stock","desc")}>▼</span></span></button></th>
+        <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("customer")}>Customer <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("customer","asc")}>▲</span><span class:sort-arrow-on={isSortActive("customer","desc")}>▼</span></span></button></th>
+        <th class="right th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("quantity")}>Quantity <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("quantity","asc")}>▲</span><span class:sort-arrow-on={isSortActive("quantity","desc")}>▼</span></span></button></th>
+        <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("status")}>Status <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("status","asc")}>▲</span><span class:sort-arrow-on={isSortActive("status","desc")}>▼</span></span></button></th>
+        <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("total")}>Total amount <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("total","asc")}>▲</span><span class:sort-arrow-on={isSortActive("total","desc")}>▼</span></span></button></th>
         <th class="center">Actions</th>
       </tr>
     </thead>
     <tbody>
-      {#each orders as o, i}
+      {#each sortedOrders as o, i}
         <tr
           class="row"
           onclick={() => goto(`/orders/${o.id}`)}
@@ -1093,11 +1308,13 @@
           </td>
         </tr>
       {/each}
-      {#if orders.length === 0}
+      {#if sortedOrders.length === 0}
         <tr>
           <td colspan="8" class="empty-state">
             <p class="muted">
-              No orders found. Create your first order to get started.
+              {orders.length === 0
+                ? "No orders found. Create your first order to get started."
+                : "No orders match your current filters."}
             </p>
           </td>
         </tr>
@@ -1121,6 +1338,82 @@
     margin-bottom: 1rem;
     gap: 1rem;
     flex-wrap: wrap;
+  }
+  .orders-filters {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    align-items: end;
+    margin: 0 0 0.85rem;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
+    border-radius: 0.7rem;
+    background: color-mix(in oklab, var(--surface-2), white 2%);
+  }
+  .filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    min-width: 11.5rem;
+  }
+  .filter-label {
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #94a3b8;
+    font-weight: 700;
+  }
+  .date-clickable {
+    cursor: pointer;
+  }
+  .summary-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    gap: 0.75rem;
+    margin: 0 0 1rem;
+  }
+  .summary-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.75rem 0.9rem;
+    border-radius: 0.7rem;
+    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
+    background: color-mix(in oklab, var(--surface-2), white 3%);
+  }
+  .summary-card.neutral {
+    border-color: color-mix(in oklab, #64748b, transparent 65%);
+    background: color-mix(in oklab, #64748b, transparent 90%);
+  }
+  .summary-card.paid {
+    border-color: color-mix(in oklab, #22c55e, transparent 60%);
+    background: color-mix(in oklab, #22c55e, transparent 90%);
+  }
+  .summary-card.unpaid {
+    border-color: color-mix(in oklab, #f59e0b, transparent 55%);
+    background: color-mix(in oklab, #f59e0b, transparent 90%);
+  }
+  .summary-label {
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #94a3b8;
+    font-weight: 700;
+  }
+  .summary-value {
+    font-size: 1.08rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: #e2e8f0;
+  }
+  .summary-card.neutral .summary-value {
+    color: #60a5fa;
+  }
+  .summary-card.paid .summary-value {
+    color: #86efac;
+  }
+  .summary-card.unpaid .summary-value {
+    color: #fcd34d;
   }
   .primary {
     appearance: none;
@@ -1171,6 +1464,37 @@
     white-space: nowrap;
     text-align: center;
     font-variant-numeric: tabular-nums;
+  }
+  .th-sort {
+    padding: 0.35rem 0.5rem;
+    vertical-align: middle;
+  }
+  .sort-header-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    width: 100%;
+    margin: 0;
+    padding: 0.35rem 0.4rem;
+    border: none;
+    border-radius: 0.45rem;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    text-align: left;
+  }
+  .sort-arrows {
+    display: inline-flex;
+    flex-direction: column;
+    line-height: 0.8;
+    font-size: 0.6rem;
+    opacity: 0.45;
+  }
+  .sort-arrow-on {
+    opacity: 1;
+    color: #cbd5e1;
   }
   .right {
     text-align: right;

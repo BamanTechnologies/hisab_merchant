@@ -13,6 +13,8 @@
   );
   let totalMajorExpenseAmount = $state(data.totalMajorExpenseAmount);
   let typeFilter = $state<"all" | "operation" | "major">("all");
+  let sortColumn = $state<string>("none");
+  let sortDirection = $state<"asc" | "desc">("asc");
   let listStateReady = $state(false);
 
   $effect(() => {
@@ -46,6 +48,53 @@
   });
   const isMajorOnly = $derived(typeFilter === "major");
   const isOperationOnly = $derived(typeFilter === "operation");
+  const sortedExpenses = $derived.by(() => {
+    const base = filteredExpenses;
+    if (sortColumn === "none") return base;
+    return [...base].sort((a, b) => {
+      const av =
+        sortColumn === "date"
+          ? new Date(a.created_at ?? 0).getTime()
+          : sortColumn === "amount"
+            ? Number(a.amount ?? 0)
+            : sortColumn === "type"
+              ? String(a.expense_type ?? "").toLowerCase()
+              : sortColumn === "paid_by"
+                ? String(a.from_person ?? "").toLowerCase()
+                : sortColumn === "sent_to"
+                  ? String(a.sent_to ?? "").toLowerCase()
+                  : sortColumn === "from_account"
+                    ? String(a.from_account ?? "").toLowerCase()
+                    : sortColumn === "to_account"
+                      ? String(a.to_account ?? "").toLowerCase()
+                      : sortColumn === "category"
+                        ? String(a.category ?? "").toLowerCase()
+                        : String(a.payment_type ?? "").toLowerCase();
+      const bv =
+        sortColumn === "date"
+          ? new Date(b.created_at ?? 0).getTime()
+          : sortColumn === "amount"
+            ? Number(b.amount ?? 0)
+            : sortColumn === "type"
+              ? String(b.expense_type ?? "").toLowerCase()
+              : sortColumn === "paid_by"
+                ? String(b.from_person ?? "").toLowerCase()
+                : sortColumn === "sent_to"
+                  ? String(b.sent_to ?? "").toLowerCase()
+                  : sortColumn === "from_account"
+                    ? String(b.from_account ?? "").toLowerCase()
+                    : sortColumn === "to_account"
+                      ? String(b.to_account ?? "").toLowerCase()
+                      : sortColumn === "category"
+                        ? String(b.category ?? "").toLowerCase()
+                        : String(b.payment_type ?? "").toLowerCase();
+      const cmp =
+        typeof av === "number" && typeof bv === "number"
+          ? av - bv
+          : String(av).localeCompare(String(bv));
+      return sortDirection === "asc" ? cmp : -cmp;
+    });
+  });
 
   function paymentLabel(p: string) {
     if (p === "bank transfer") return "Bank transfer";
@@ -112,6 +161,21 @@
       ["Note", ex.note?.trim() ? ex.note : "—"],
       ["Receipt", receiptPreview(ex.receipt)],
     ];
+  }
+  function cycleSort(col: string) {
+    if (sortColumn !== col) {
+      sortColumn = col;
+      sortDirection = col === "date" ? "desc" : "asc";
+      return;
+    }
+    if (sortDirection === "asc") sortDirection = "desc";
+    else {
+      sortColumn = "none";
+      sortDirection = "asc";
+    }
+  }
+  function isSortActive(col: string, dir: "asc" | "desc") {
+    return sortColumn === col && sortDirection === dir;
   }
 
   function openModal() {
@@ -280,37 +344,37 @@
       {#if isMajorOnly}
         <tr>
           <th class="col-num">#</th>
-          <th>Date</th>
-          <th>Amount</th>
-          <th>Paid by</th>
-          <th>From account</th>
-          <th>Sent to</th>
-          <th>To account</th>
+          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("date")}>Date <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("date","asc")}>▲</span><span class:sort-arrow-on={isSortActive("date","desc")}>▼</span></span></button></th>
+          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("amount")}>Amount <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("amount","asc")}>▲</span><span class:sort-arrow-on={isSortActive("amount","desc")}>▼</span></span></button></th>
+          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("paid_by")}>Paid by <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("paid_by","asc")}>▲</span><span class:sort-arrow-on={isSortActive("paid_by","desc")}>▼</span></span></button></th>
+          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("from_account")}>From account <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("from_account","asc")}>▲</span><span class:sort-arrow-on={isSortActive("from_account","desc")}>▼</span></span></button></th>
+          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("sent_to")}>Sent to <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("sent_to","asc")}>▲</span><span class:sort-arrow-on={isSortActive("sent_to","desc")}>▼</span></span></button></th>
+          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("to_account")}>To account <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("to_account","asc")}>▲</span><span class:sort-arrow-on={isSortActive("to_account","desc")}>▼</span></span></button></th>
         </tr>
       {:else if isOperationOnly}
         <tr>
           <th class="col-num">#</th>
-          <th>Date</th>
-          <th>Amount</th>
-          <th>Paid by</th>
-          <th>Sent to</th>
-          <th>Category</th>
-          <th>Payment</th>
+          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("date")}>Date <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("date","asc")}>▲</span><span class:sort-arrow-on={isSortActive("date","desc")}>▼</span></span></button></th>
+          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("amount")}>Amount <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("amount","asc")}>▲</span><span class:sort-arrow-on={isSortActive("amount","desc")}>▼</span></span></button></th>
+          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("paid_by")}>Paid by <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("paid_by","asc")}>▲</span><span class:sort-arrow-on={isSortActive("paid_by","desc")}>▼</span></span></button></th>
+          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("sent_to")}>Sent to <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("sent_to","asc")}>▲</span><span class:sort-arrow-on={isSortActive("sent_to","desc")}>▼</span></span></button></th>
+          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("category")}>Category <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("category","asc")}>▲</span><span class:sort-arrow-on={isSortActive("category","desc")}>▼</span></span></button></th>
+          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("payment")}>Payment <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("payment","asc")}>▲</span><span class:sort-arrow-on={isSortActive("payment","desc")}>▼</span></span></button></th>
           <th>Note</th>
           <th>Receipt</th>
         </tr>
       {:else}
         <tr>
           <th class="col-num">#</th>
-          <th>Date</th>
-          <th>Type</th>
-          <th>Amount</th>
+          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("date")}>Date <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("date","asc")}>▲</span><span class:sort-arrow-on={isSortActive("date","desc")}>▼</span></span></button></th>
+          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("type")}>Type <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("type","asc")}>▲</span><span class:sort-arrow-on={isSortActive("type","desc")}>▼</span></span></button></th>
+          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("amount")}>Amount <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("amount","asc")}>▲</span><span class:sort-arrow-on={isSortActive("amount","desc")}>▼</span></span></button></th>
           <th>Details</th>
         </tr>
       {/if}
     </thead>
     <tbody>
-      {#each filteredExpenses as ex, i}
+      {#each sortedExpenses as ex, i}
         {#if isMajorOnly}
           <tr class="row">
             <td class="col-num">{i + 1}</td>
@@ -643,6 +707,37 @@
     white-space: nowrap;
     text-align: center;
     font-variant-numeric: tabular-nums;
+  }
+  .th-sort {
+    padding: 0.35rem 0.5rem;
+    vertical-align: middle;
+  }
+  .sort-header-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    width: 100%;
+    margin: 0;
+    padding: 0.35rem 0.4rem;
+    border: none;
+    border-radius: 0.45rem;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    text-align: left;
+  }
+  .sort-arrows {
+    display: inline-flex;
+    flex-direction: column;
+    line-height: 0.8;
+    font-size: 0.6rem;
+    opacity: 0.45;
+  }
+  .sort-arrow-on {
+    opacity: 1;
+    color: #cbd5e1;
   }
   .amount {
     font-weight: 600;

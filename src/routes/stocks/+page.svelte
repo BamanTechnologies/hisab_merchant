@@ -63,16 +63,13 @@
 
   let typeFilter = $state<string>("all");
 
-  type SortColumn = "none" | "type";
-  let sortColumn = $state<SortColumn>("none");
+  let sortColumn = $state<string>("none");
   let sortDirection = $state<"asc" | "desc">("asc");
   let listStateReady = $state(false);
 
   const STOCK_LIST_STATE_KEY = "stocks:list-state:v1";
-  const SORT_COLUMNS: SortColumn[] = ["none", "type"];
-
-  function isSortColumn(v: string | null): v is SortColumn {
-    return v != null && (SORT_COLUMNS as string[]).includes(v);
+  function isSortColumn(v: string | null): v is string {
+    return v != null && v.trim() !== "";
   }
 
   function isSortDirection(v: string | null): v is "asc" | "desc" {
@@ -177,14 +174,41 @@
     );
   });
 
-  function sortKey(s: Stock, col: Exclude<SortColumn, "none">): string {
+  function stockSortValue(s: Stock, col: string): string | number {
+    const attrs = s.attributes ?? {};
     switch (col) {
       case "type":
         return typeFromStock(s);
+      case "branch":
+        return branchLabel(s.branch);
+      case "origin":
+        return s.origin ? branchLabel(s.origin) : "";
+      case "price":
+        return parseMoneyValue(s.selling_price) ?? 0;
+      case "quantity":
+        return Number(s.quantity ?? 0);
+      default: {
+        const fallback: Record<string, unknown> = {
+          thickness: s.thickness,
+          factor: s.factor,
+          color: s.color,
+          figure: s.figure,
+          model_number: s.model_number,
+          country: s.country,
+        };
+        const v = attrs[col] ?? fallback[col];
+        if (v == null) return "";
+        const raw = String(v).trim();
+        const normalized = raw.replace(/[^0-9.-]/g, "");
+        const n = Number(normalized);
+        const looksNumeric = normalized !== "" && /[0-9]/.test(normalized);
+        if (looksNumeric && Number.isFinite(n)) return n;
+        return String(v).trim().toLowerCase();
+      }
     }
   }
 
-  function cycleSort(col: Exclude<SortColumn, "none">, e: Event) {
+  function cycleSort(col: string, e: Event) {
     e.stopPropagation();
     if (sortColumn !== col) {
       sortColumn = col;
@@ -206,7 +230,12 @@
     if (sortColumn !== "none") {
       const col = sortColumn;
       list = [...list].sort((a, b) => {
-        const cmp = sortKey(a, col).localeCompare(sortKey(b, col));
+        const av = stockSortValue(a, col);
+        const bv = stockSortValue(b, col);
+        const cmp =
+          typeof av === "number" && typeof bv === "number"
+            ? av - bv
+            : String(av).localeCompare(String(bv));
         return sortDirection === "asc" ? cmp : -cmp;
       });
     }
@@ -527,6 +556,9 @@
   function quantityWithUnit(s: Stock) {
     const u = (s.unit ?? "").trim();
     return u ? `${s.quantity} ${u}` : String(s.quantity);
+  }
+  function isSortActive(col: string, dir: "asc" | "desc"): boolean {
+    return sortColumn === col && sortDirection === dir;
   }
 
   function dash(v: unknown) {
@@ -953,17 +985,117 @@
             </span>
           </button>
         </th>
-        <th>Branch</th>
-        <th>Origin</th>
+        <th
+          class="th-sort"
+          aria-sort={sortColumn === "branch"
+            ? sortDirection === "asc"
+              ? "ascending"
+              : "descending"
+            : "none"}
+        >
+          <button
+            type="button"
+            class="sort-header-btn"
+            onclick={(e) => cycleSort("branch", e)}
+            aria-label="Sort by branch. Cycles default, A to Z, Z to A, then clear."
+          >
+            <span class="sort-header-label">Branch</span>
+            <span class="sort-arrows" aria-hidden="true">
+              <span class="sort-arrow" class:sort-arrow-on={isSortActive("branch", "asc")}>▲</span>
+              <span class="sort-arrow" class:sort-arrow-on={isSortActive("branch", "desc")}>▼</span>
+            </span>
+          </button>
+        </th>
+        <th
+          class="th-sort"
+          aria-sort={sortColumn === "origin"
+            ? sortDirection === "asc"
+              ? "ascending"
+              : "descending"
+            : "none"}
+        >
+          <button
+            type="button"
+            class="sort-header-btn"
+            onclick={(e) => cycleSort("origin", e)}
+            aria-label="Sort by origin. Cycles default, A to Z, Z to A, then clear."
+          >
+            <span class="sort-header-label">Origin</span>
+            <span class="sort-arrows" aria-hidden="true">
+              <span class="sort-arrow" class:sort-arrow-on={isSortActive("origin", "asc")}>▲</span>
+              <span class="sort-arrow" class:sort-arrow-on={isSortActive("origin", "desc")}>▼</span>
+            </span>
+          </button>
+        </th>
         {#if isSingleTypeFilter}
           {#each activeFields as field}
-            <th>{attributeLabel(field)}</th>
+            <th
+              class="th-sort"
+              aria-sort={sortColumn === field
+                ? sortDirection === "asc"
+                  ? "ascending"
+                  : "descending"
+                : "none"}
+            >
+              <button
+                type="button"
+                class="sort-header-btn"
+                onclick={(e) => cycleSort(field, e)}
+                aria-label={`Sort by ${attributeLabel(field)}. Cycles default, A to Z, Z to A, then clear.`}
+              >
+                <span class="sort-header-label">{attributeLabel(field)}</span>
+                <span class="sort-arrows" aria-hidden="true">
+                  <span class="sort-arrow" class:sort-arrow-on={isSortActive(field, "asc")}>▲</span>
+                  <span class="sort-arrow" class:sort-arrow-on={isSortActive(field, "desc")}>▼</span>
+                </span>
+              </button>
+            </th>
           {/each}
         {:else}
           <th>Attributes</th>
         {/if}
-        <th>Price</th>
-        <th class="right">Quantity</th>
+        <th
+          class="th-sort"
+          aria-sort={sortColumn === "price"
+            ? sortDirection === "asc"
+              ? "ascending"
+              : "descending"
+            : "none"}
+        >
+          <button
+            type="button"
+            class="sort-header-btn"
+            onclick={(e) => cycleSort("price", e)}
+            aria-label="Sort by price. Cycles default, low to high, high to low, then clear."
+          >
+            <span class="sort-header-label">Price</span>
+            <span class="sort-arrows" aria-hidden="true">
+              <span class="sort-arrow" class:sort-arrow-on={isSortActive("price", "asc")}>▲</span>
+              <span class="sort-arrow" class:sort-arrow-on={isSortActive("price", "desc")}>▼</span>
+            </span>
+          </button>
+        </th>
+        <th
+          class="right th-sort"
+          aria-sort={sortColumn === "quantity"
+            ? sortDirection === "asc"
+              ? "ascending"
+              : "descending"
+            : "none"}
+        >
+          <button
+            type="button"
+            class="sort-header-btn"
+            onclick={(e) => cycleSort("quantity", e)}
+            aria-label="Sort by quantity. Cycles default, low to high, high to low, then clear."
+          >
+            <span class="sort-header-label">Quantity</span>
+            <span class="sort-arrows" aria-hidden="true">
+              <span class="sort-arrow" class:sort-arrow-on={isSortActive("quantity", "asc")}>▲</span>
+              <span class="sort-arrow" class:sort-arrow-on={isSortActive("quantity", "desc")}>▼</span>
+            </span>
+          </button>
+        </th>
         <th class="center">Actions</th>
       </tr>
     </thead>
