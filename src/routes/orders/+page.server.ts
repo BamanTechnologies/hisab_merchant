@@ -155,6 +155,14 @@ const FETCH_ORDERS_QUERY = `
         thickness
       }
     }
+    payment(where: { created_by: { _eq: $merchantId } }, order_by: { created_at: desc }) {
+      id
+      order_id
+      amount
+      created_at
+      payment_method
+      created_by
+    }
   }
 `;
 
@@ -422,8 +430,10 @@ async function fetchBranchesForCompany(companyId: string | null) {
 
 async function fetchOrders(merchantId: string) {
   try {
-    const data = await gql<{ orders: unknown[] }>(FETCH_ORDERS_QUERY, { merchantId });
-    return (data.orders ?? []).map((row) => {
+    const data = await gql<{ orders: unknown[]; payment: unknown[] }>(FETCH_ORDERS_QUERY, {
+      merchantId,
+    });
+    const orders = (data.orders ?? []).map((row) => {
       if (!row || typeof row !== 'object') return row;
       const rec = row as Record<string, unknown>;
       const stock =
@@ -436,8 +446,12 @@ async function fetchOrders(merchantId: string) {
         stock_name: stock ? buildStockLabel(stock) : fallbackId,
       };
     });
+    const payments = (data.payment ?? []).filter(
+      (row): row is Record<string, unknown> => Boolean(row && typeof row === 'object'),
+    );
+    return { orders, payments };
   } catch {
-    return [];
+    return { orders: [], payments: [] as Record<string, unknown>[] };
   }
 }
 
@@ -726,14 +740,17 @@ export const load: PageServerLoad = async ({ request, parent }) => {
     companyId = await fetchBranchCompany(merchantBranchId);
   }
 
-  const [orders, stocks, branches] = await Promise.all([
-    merchantId ? fetchOrders(merchantId) : Promise.resolve([]),
+  const [ordersBlock, stocks, branches] = await Promise.all([
+    merchantId
+      ? fetchOrders(merchantId)
+      : Promise.resolve({ orders: [] as unknown[], payments: [] as Record<string, unknown>[] }),
     merchantBranchId ? fetchStocksForBranch(merchantBranchId) : Promise.resolve([]),
     fetchBranchesForCompany(companyId),
   ]);
 
   return {
-    orders,
+    orders: ordersBlock.orders,
+    payments: ordersBlock.payments,
     customers: customerCtx.customers,
     stocks,
     branches,

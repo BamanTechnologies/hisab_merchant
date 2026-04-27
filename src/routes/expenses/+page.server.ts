@@ -186,6 +186,7 @@ const CATEGORY_VALUES = [
   'staff and payroll',
   'marketing and sales',
   'lc',
+  'collector',
   'other',
 ] as const;
 

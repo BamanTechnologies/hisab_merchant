@@ -70,6 +70,15 @@
     } | null;
   };
 
+  type PaymentRow = {
+    id: string;
+    order_id: string;
+    amount: number | string;
+    created_at: string;
+    payment_method?: string;
+    created_by?: string;
+  };
+
   type LineRow = {
     rowId: string;
     stockId: string;
@@ -84,6 +93,7 @@
   let showCancelModal = $state(false);
   let orderToCancel = $state<OrderSummary | null>(null);
   let orders = $state(data.orders as OrderSummary[]);
+  let payments = $state((data.payments ?? []) as PaymentRow[]);
   let customers = $state(data.customers as CustomerRow[]);
   let stocks = $state(data.stocks as StockRow[]);
   let errorMessage = $state("");
@@ -214,6 +224,7 @@
 
   $effect(() => {
     orders = data.orders as OrderSummary[];
+    payments = (data.payments ?? []) as PaymentRow[];
     customers = data.customers as CustomerRow[];
     stocks = data.stocks as StockRow[];
   });
@@ -753,7 +764,9 @@
     let totalCreatedCount = filteredOrders.length;
     let totalCreatedAmount = 0;
     let totalPaidAmount = 0;
-    let totalUnpaidAmount = 0;
+    const filteredOrderIds = new Set(
+      filteredOrders.map((o) => String(o.id ?? "")).filter((id) => id.length > 0),
+    );
     for (const o of filteredOrders) {
       const status = String(o.status ?? "").trim().toLowerCase();
       const total = parseMoneyValue(o.total_amount) ?? 0;
@@ -762,12 +775,13 @@
       } else {
         continue;
       }
-      if (status === "unpaid" || status === "partially_paid" || status === "paid") {
-        const outstanding = parseMoneyValue(o.outstanding_amount) ?? 0;
-        totalUnpaidAmount += outstanding;
-        totalPaidAmount += total - outstanding;
-      }
     }
+    for (const p of payments) {
+      const orderId = String(p.order_id ?? "").trim();
+      if (!orderId || !filteredOrderIds.has(orderId)) continue;
+      totalPaidAmount += parseMoneyValue(p.amount) ?? 0;
+    }
+    const totalUnpaidAmount = totalCreatedAmount - totalPaidAmount;
     return {
       totalCreatedCount,
       totalCreatedAmount,

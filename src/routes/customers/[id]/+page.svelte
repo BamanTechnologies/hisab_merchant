@@ -64,9 +64,9 @@
     });
   });
 
-  /** From latest `customer_transactions.balance`: negative = credit (show as Overpaid); positive = outstanding. */
+  /** Branch-scoped net from this page's totals: positive = outstanding, negative = overpaid. */
   const balanceSummary = $derived.by(() => {
-    const raw = Number(data.outstandingAmount);
+    const raw = Number(data.totalOrderAmount) - Number(data.totalPaymentAmount);
     const n = Number.isFinite(raw) ? raw : 0;
     const overpaid = n < 0;
     return {
