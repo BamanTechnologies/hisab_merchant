@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { enhance } from "$app/forms";
   import { goto } from "$app/navigation";
+  import { showToast } from "$lib/toast";
   import type { PageData } from "./$types";
 
   let { data, form }: { data: PageData; form?: any } = $props();
@@ -7,6 +9,7 @@
   let password = $state("");
   let errorMessage = $state("");
   let successMessage = $state("");
+  let signInPending = $state(false);
 
   function handleLogin(e: Event) {
     // Clear previous messages
@@ -25,6 +28,7 @@
         // Login successful - token present
         successMessage = "Login successful";
         errorMessage = "";
+        showToast("Signed in successfully", "success");
 
         // Store token in localStorage
         localStorage.setItem("authToken", form.token);
@@ -42,6 +46,7 @@
         // Login failed - no token
         errorMessage = "One of the details is incorrect";
         successMessage = "";
+        showToast("One of the details is incorrect", "error");
       }
     }
   });
@@ -80,7 +85,7 @@
 <div class="signin-container">
   <div class="signin-card">
     <div class="signin-header">
-      <h1>Hisab</h1>
+      <h1 class="brand-wordmark brand-wordmark--hero">Bamanstock</h1>
       <p>Sign in to your account</p>
     </div>
 
@@ -101,6 +106,13 @@
       method="POST"
       action="?/login"
       onsubmit={handleLogin}
+      use:enhance={() => {
+        signInPending = true;
+        return async ({ update }) => {
+          await update();
+          signInPending = false;
+        };
+      }}
     >
       <div class="form-group">
         <label for="phone">Phone Number</label>
@@ -111,6 +123,7 @@
           bind:value={phone}
           placeholder="Enter your phone number"
           required
+          disabled={signInPending}
         />
       </div>
 
@@ -123,10 +136,13 @@
           bind:value={password}
           placeholder="Enter your password"
           required
+          disabled={signInPending}
         />
       </div>
 
-      <button type="submit" class="signin-button"> Sign In </button>
+      <button type="submit" class="signin-button" disabled={signInPending}>
+        {signInPending ? "Signing in…" : "Sign In"}
+      </button>
     </form>
   </div>
 </div>
@@ -159,9 +175,6 @@
   }
 
   .signin-header h1 {
-    font-size: 2.5rem;
-    font-weight: 700;
-    color: var(--brand);
     margin: 0 0 0.5rem 0;
   }
 
@@ -243,6 +256,13 @@
 
   .signin-button:active {
     transform: translateY(0);
+  }
+
+  .signin-button:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+    transform: none;
+    pointer-events: none;
   }
 
   .alert {

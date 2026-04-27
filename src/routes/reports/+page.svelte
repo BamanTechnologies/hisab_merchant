@@ -3,6 +3,7 @@
   import type { PageData } from "./$types";
   import { soldUnitPriceForReportOrder } from "$lib/reportSoldPrice";
   import { buildStockLabel } from "$lib/stockLabel";
+  import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
 
   type Report = {
     id: string;
@@ -76,7 +77,7 @@
     };
   };
 
-  let { data, form }: { data: PageData; form?: any } = $props();
+  let { data }: { data: PageData } = $props();
   const reports = data.reports;
   const investors = data.investors;
 
@@ -159,6 +160,7 @@
   }
 
   function closeModal() {
+    if (resendReportPending) return;
     showModal = false;
     selectedReport = null;
   }
@@ -169,6 +171,7 @@
   }
 
   function closeGenerateModal() {
+    if (generateReportPending) return;
     showGenerateModal = false;
     selectedInvestor = null;
   }
@@ -183,6 +186,7 @@
   }
 
   function closePreviewModal() {
+    if (sendReportPending) return;
     showPreviewModal = false;
     generatedReportData = null;
   }
@@ -192,30 +196,6 @@
     // Form will submit naturally to server action
   }
 
-  // Handle form responses
-  $effect(() => {
-    if (form) {
-      if (form.success) {
-        successMessage = form.message;
-        errorMessage = "";
-
-        // Handle generateReport response
-        if (form.reportData) {
-          generatedReportData = form.reportData;
-          showGenerateModal = false;
-          showPreviewModal = true;
-          selectedInvestor = null;
-        }
-        // Handle sendReport response - just show success message
-        else if (form.smsResult) {
-          // Keep the preview modal open, just show success message
-        }
-      } else {
-        errorMessage = form.message;
-        successMessage = "";
-      }
-    }
-  });
 </script>
 
 <section>
@@ -289,8 +269,9 @@
     class="modal-overlay"
     role="button"
     tabindex="0"
-    onclick={closeModal}
-    onkeydown={(e) => e.key === "Escape" && closeModal()}
+    onclick={() => !resendReportPending && closeModal()}
+    onkeydown={(e) =>
+      e.key === "Escape" && !resendReportPending && closeModal()}
   >
     <div
       class="modal"
@@ -298,11 +279,17 @@
       aria-modal="true"
       tabindex="0"
       onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => e.key === "Escape" && closeModal()}
+      onkeydown={(e) =>
+        e.key === "Escape" && !resendReportPending && closeModal()}
     >
       <header>
         <h2>SMS Message Details</h2>
-        <button class="icon" aria-label="Close" onclick={closeModal}>✕</button>
+        <button
+          class="icon"
+          aria-label="Close"
+          disabled={resendReportPending}
+          onclick={closeModal}>✕</button
+        >
       </header>
 
       <div class="message-content">
@@ -344,9 +331,25 @@
             style="display: inline-flex; gap: 0.5rem;"
             use:enhance={() => {
               resendReportPending = true;
-              return async ({ update }) => {
-                await update();
-                resendReportPending = false;
+              return async ({ update, result }) => {
+                try {
+                  await update();
+                } finally {
+                  resendReportPending = false;
+                }
+                const t = toastFromActionResult(result);
+                if (t) showToast(t.message, t.variant);
+                const d =
+                  result.type === "success" && result.data
+                    ? (result.data as { success?: boolean; message?: string })
+                    : null;
+                if (d?.success) {
+                  successMessage = d.message ?? "";
+                  errorMessage = "";
+                } else if (d && d.success === false) {
+                  errorMessage = d.message ?? "";
+                  successMessage = "";
+                }
               };
             }}
           >
@@ -370,8 +373,9 @@
     class="modal-overlay"
     role="button"
     tabindex="0"
-    onclick={closeGenerateModal}
-    onkeydown={(e) => e.key === "Escape" && closeGenerateModal()}
+    onclick={() => !generateReportPending && closeGenerateModal()}
+    onkeydown={(e) =>
+      e.key === "Escape" && !generateReportPending && closeGenerateModal()}
   >
     <div
       class="modal"
@@ -379,12 +383,16 @@
       aria-modal="true"
       tabindex="0"
       onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => e.key === "Escape" && closeGenerateModal()}
+      onkeydown={(e) =>
+        e.key === "Escape" && !generateReportPending && closeGenerateModal()}
     >
       <header>
         <h2>Generate Investor Report</h2>
-        <button class="icon" aria-label="Close" onclick={closeGenerateModal}
-          >✕</button
+        <button
+          class="icon"
+          aria-label="Close"
+          disabled={generateReportPending}
+          onclick={closeGenerateModal}>✕</button
         >
       </header>
 
@@ -395,9 +403,35 @@
         onsubmit={generateReport}
         use:enhance={() => {
           generateReportPending = true;
-          return async ({ update }) => {
-            await update();
-            generateReportPending = false;
+          return async ({ update, result }) => {
+            try {
+              await update();
+            } finally {
+              generateReportPending = false;
+            }
+            const t = toastFromActionResult(result);
+            if (t) showToast(t.message, t.variant);
+            if (
+              result.type === "success" &&
+              result.data &&
+              typeof result.data === "object"
+            ) {
+              const d = result.data as {
+                success?: boolean;
+                reportData?: ReportData;
+              };
+              if (d.success && d.reportData) {
+                generatedReportData = d.reportData;
+                showGenerateModal = false;
+                showPreviewModal = true;
+                selectedInvestor = null;
+                successMessage = "";
+                errorMessage = "";
+              } else if (d.success === false) {
+                errorMessage = "";
+                successMessage = "";
+              }
+            }
           };
         }}
       >
@@ -411,6 +445,7 @@
                   name="investor_id"
                   value={investor.id}
                   checked={selectedInvestor?.id === investor.id}
+                  disabled={generateReportPending}
                   onchange={() => selectInvestor(investor)}
                 />
                 <div class="investor-info">
@@ -459,8 +494,9 @@
     class="modal-overlay"
     role="button"
     tabindex="0"
-    onclick={closePreviewModal}
-    onkeydown={(e) => e.key === "Escape" && closePreviewModal()}
+    onclick={() => !sendReportPending && closePreviewModal()}
+    onkeydown={(e) =>
+      e.key === "Escape" && !sendReportPending && closePreviewModal()}
   >
     <div
       class="modal large"
@@ -468,12 +504,16 @@
       aria-modal="true"
       tabindex="0"
       onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => e.key === "Escape" && closePreviewModal()}
+      onkeydown={(e) =>
+        e.key === "Escape" && !sendReportPending && closePreviewModal()}
     >
       <header>
         <h2>Investor Report Preview</h2>
-        <button class="icon" aria-label="Close" onclick={closePreviewModal}
-          >✕</button
+        <button
+          class="icon"
+          aria-label="Close"
+          disabled={sendReportPending}
+          onclick={closePreviewModal}>✕</button
         >
       </header>
 
@@ -627,11 +667,28 @@
           style="display: contents;"
           use:enhance={() => {
             sendReportPending = true;
-            return async ({ update }) => {
-              await update();
-              sendReportPending = false;
-              closePreviewModal();
-              setTimeout(() => window.location.reload(), 250);
+            return async ({ update, result }) => {
+              try {
+                await update();
+              } finally {
+                sendReportPending = false;
+              }
+              const t = toastFromActionResult(result);
+              if (t) showToast(t.message, t.variant);
+              const ok =
+                result.type === "success" &&
+                result.data &&
+                typeof result.data === "object" &&
+                "success" in result.data &&
+                (result.data as { success?: boolean }).success === true;
+              if (ok) {
+                successMessage = "";
+                errorMessage = "";
+                afterToast(TOAST_MS, () => {
+                  closePreviewModal();
+                  window.location.reload();
+                });
+              }
             };
           }}
         >
@@ -780,6 +837,7 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    color: #e5e7eb;
   }
 
   .modal header {

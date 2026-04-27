@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { enhance } from "$app/forms";
+  import { deserialize, enhance } from "$app/forms";
   import { goto } from "$app/navigation";
+  import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
   import { onMount } from "svelte";
   import { formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
   import type { PageData } from "./$types";
@@ -38,7 +39,7 @@
     unit?: string | null;
   };
 
-  let { data, form }: { data: PageData; form?: any } = $props();
+  let { data }: { data: PageData } = $props();
   let showCreateModal = $state(false);
   let editingStockId = $state<string | null>(null);
   let showDeleteModal = $state(false);
@@ -293,25 +294,6 @@
     editingStockId = null;
   }
 
-  // Handle form response
-  $effect(() => {
-    if (form) {
-      if (form.success) {
-        successMessage = form.message;
-        errorMessage = "";
-        showCreateModal = false;
-        resetForm();
-        // Refresh the page to show new stock
-        setTimeout(() => {
-          window.location.reload();
-        }, 1000);
-      } else {
-        errorMessage = form.message;
-        successMessage = "";
-      }
-    }
-  });
-
   function openCreateModal() {
     resetForm();
     if (merchantBranchId) selectedBranchId = merchantBranchId;
@@ -346,6 +328,7 @@
   }
 
   function closeCreateModal() {
+    if (stockFormPending) return;
     showCreateModal = false;
     resetForm();
   }
@@ -573,6 +556,7 @@
   }
 
   function closeDeleteModal() {
+    if (deleteSubmitting) return;
     showDeleteModal = false;
     stockToDelete = null;
   }
@@ -590,25 +574,27 @@
         body: formData,
       });
 
-      const result = await response.json();
+      const result = deserialize(await response.text());
+      const t = toastFromActionResult(result);
+      if (t) showToast(t.message, t.variant);
 
-      if (result.type === "success") {
-        // Remove the stock from the local state
+      const payload =
+        result.type === "success" && "data" in result
+          ? (result.data as { success?: boolean; message?: string } | undefined)
+          : undefined;
+
+      if (result.type === "success" && payload?.success) {
         stocks = stocks.filter((s: Stock) => s.id !== stockToDelete!.id);
-        successMessage = result.message;
         errorMessage = "";
+        successMessage = "";
         closeDeleteModal();
-
-        // Clear success message after 3 seconds
-        setTimeout(() => {
-          successMessage = "";
-        }, 3000);
-      } else {
-        errorMessage = result.message;
+      } else if (result.type === "success" && payload && !payload.success) {
+        errorMessage = "";
         successMessage = "";
       }
     } catch (error) {
-      errorMessage = "Failed to delete stock. Please try again.";
+      showToast("Failed to delete stock. Please try again.", "error");
+      errorMessage = "";
       successMessage = "";
     } finally {
       deleteSubmitting = false;
@@ -656,17 +642,27 @@
     class="modal-overlay"
     role="button"
     tabindex="0"
-    onclick={closeCreateModal}
+    onclick={() => !stockFormPending && closeCreateModal()}
     onkeydown={(e) =>
-      (e.key === "Enter" || e.key === " ") && closeCreateModal()}
+      !stockFormPending &&
+      (e.key === "Enter" || e.key === " ") &&
+      closeCreateModal()}
   ></div>
-  <dialog open class="modal" onclick={(e) => e.stopPropagation()}>
+  <dialog
+    open
+    class="modal"
+    onclick={(e) => e.stopPropagation()}
+    oncancel={(e) => stockFormPending && e.preventDefault()}
+  >
     <header>
       <h2 style="color: white;">
         {editingStockId ? "Edit Stock" : "Create New Stock"}
       </h2>
-      <button class="icon" aria-label="Close" onclick={closeCreateModal}
-        >✕</button
+      <button
+        class="icon"
+        aria-label="Close"
+        disabled={stockFormPending}
+        onclick={closeCreateModal}>✕</button
       >
     </header>
     <form
@@ -676,9 +672,27 @@
       onsubmit={onSubmitStock}
       use:enhance={() => {
         stockFormPending = true;
-        return async ({ update }) => {
-          await update();
-          stockFormPending = false;
+        return async ({ update, result }) => {
+          try {
+            await update();
+          } finally {
+            stockFormPending = false;
+          }
+          const t = toastFromActionResult(result);
+          if (t) showToast(t.message, t.variant);
+          const ok =
+            result.type === "success" &&
+            result.data &&
+            typeof result.data === "object" &&
+            "success" in result.data &&
+            (result.data as { success?: boolean }).success === true;
+          if (ok) {
+            errorMessage = "";
+            successMessage = "";
+            showCreateModal = false;
+            resetForm();
+            afterToast(TOAST_MS, () => window.location.reload());
+          }
         };
       }}
     >
@@ -695,6 +709,7 @@
         name="attributes"
         value={JSON.stringify(attributes)}
       />
+      <fieldset class="stock-form-fields" disabled={stockFormPending}>
       <div class="grid">
         <label>
           <span>Product type</span>
@@ -841,6 +856,7 @@
           </div>
         {/if}
       </div>
+      </fieldset>
       <footer>
         <button
           type="button"
@@ -900,15 +916,25 @@
     class="modal-overlay"
     role="button"
     tabindex="0"
-    onclick={closeDeleteModal}
+    onclick={() => !deleteSubmitting && closeDeleteModal()}
     onkeydown={(e) =>
-      (e.key === "Enter" || e.key === " ") && closeDeleteModal()}
+      !deleteSubmitting &&
+      (e.key === "Enter" || e.key === " ") &&
+      closeDeleteModal()}
   ></div>
-  <dialog open class="modal" onclick={(e) => e.stopPropagation()}>
+  <dialog
+    open
+    class="modal"
+    onclick={(e) => e.stopPropagation()}
+    oncancel={(e) => deleteSubmitting && e.preventDefault()}
+  >
     <header>
       <h2 style="color: white;">Delete Stock</h2>
-      <button class="icon" aria-label="Close" onclick={closeDeleteModal}
-        >✕</button
+      <button
+        class="icon"
+        aria-label="Close"
+        disabled={deleteSubmitting}
+        onclick={closeDeleteModal}>✕</button
       >
     </header>
     <div class="modal-content">
@@ -1178,6 +1204,12 @@
   h1 {
     margin: 0 0 0.25rem;
   }
+  fieldset.stock-form-fields {
+    border: none;
+    padding: 0;
+    margin: 0;
+    min-width: 0;
+  }
   .muted {
     color: #94a3b8;
     margin: 0;
@@ -1386,6 +1418,7 @@
     padding: 0;
     z-index: 40;
     overflow: hidden;
+    color: #e5e7eb;
   }
   .modal .form {
     flex: 1;
@@ -1406,6 +1439,9 @@
   }
   .modal h2 {
     margin: 0;
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: #f8fafc;
   }
   .modal .icon {
     background: transparent;

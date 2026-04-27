@@ -1,5 +1,5 @@
 import type { PageServerLoad, Actions } from './$types';
-import { error, redirect } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import { getUserIdFromRequest } from '$lib/auth';
 import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
 import {
@@ -750,6 +750,9 @@ export const actions: Actions = {
       };
     }
 
-    throw redirect(303, `/stocks/${stock_id}`);
+    return {
+      success: true,
+      message: `Transferred ${quantity} to the destination branch. Quantities were updated.`,
+    };
   },
 };

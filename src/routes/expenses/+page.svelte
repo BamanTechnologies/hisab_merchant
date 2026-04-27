@@ -1,6 +1,7 @@
 <script lang="ts">
   import { deserialize } from "$app/forms";
   import { onMount } from "svelte";
+  import { afterToast, showToast, TOAST_MS } from "$lib/toast";
   import type { PageData } from "./$types";
 
   type ExpenseRow = PageData["expenses"][number];
@@ -194,6 +195,7 @@
   }
 
   function closeModal() {
+    if (submitting) return;
     showModal = false;
   }
 
@@ -203,6 +205,7 @@
     formError = "";
     if (!data.merchantBranchId) {
       formError = "No branch assigned; cannot save.";
+      showToast("No branch assigned; cannot save.", "error");
       return;
     }
     submitting = true;
@@ -227,17 +230,21 @@
       const result = deserialize(await response.text());
       if (result.type !== "success" || !("data" in result) || !result.data) {
         formError = "Request failed";
+        showToast("Request failed", "error");
         return;
       }
       const payload = result.data as { success?: boolean; message?: string };
       if (!payload.success) {
         formError = payload.message ?? "Could not save";
+        showToast(payload.message ?? "Could not save", "error");
         return;
       }
+      showToast(payload.message ?? "Expense saved", "success");
       closeModal();
-      window.location.reload();
+      afterToast(TOAST_MS, () => window.location.reload());
     } catch {
       formError = "Request failed";
+      showToast("Request failed", "error");
     } finally {
       submitting = false;
     }
@@ -440,15 +447,24 @@
     class="modal-overlay"
     role="button"
     tabindex="0"
-    onclick={closeModal}
+    onclick={() => !submitting && closeModal()}
     onkeydown={(e) =>
-      (e.key === "Enter" || e.key === " ") && closeModal()}
+      !submitting && (e.key === "Enter" || e.key === " ") && closeModal()}
   ></div>
-  <dialog open class="modal" onclick={(e) => e.stopPropagation()}>
+  <dialog
+    open
+    class="modal"
+    onclick={(e) => e.stopPropagation()}
+    oncancel={(e) => submitting && e.preventDefault()}
+  >
     <header class="modal-head">
       <h2>Create expense</h2>
-      <button type="button" class="icon-close" onclick={closeModal} aria-label="Close"
-        >✕</button
+      <button
+        type="button"
+        class="icon-close"
+        disabled={submitting}
+        onclick={closeModal}
+        aria-label="Close">✕</button
       >
     </header>
     <form class="modal-body" onsubmit={submitExpense}>
@@ -456,6 +472,7 @@
         <p class="inline-error">{formError}</p>
       {/if}
 
+      <fieldset class="expense-form-fields" disabled={submitting}>
       <label class="field">
         <span>Expense type</span>
         <select bind:value={expenseType} required class="native-select">
@@ -563,6 +580,7 @@
           placeholder="Reference, URL, or short description"
         ></textarea>
       </label>
+      </fieldset>
 
       <footer class="modal-foot">
         <button
@@ -582,6 +600,12 @@
 <style>
   h1 {
     margin: 0 0 0.25rem;
+  }
+  fieldset.expense-form-fields {
+    border: none;
+    padding: 0;
+    margin: 0;
+    min-width: 0;
   }
   h2 {
     margin: 0;
@@ -822,6 +846,10 @@
     justify-content: space-between;
     padding: 0.85rem 1rem;
     border-bottom: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
+  }
+  .modal-head h2 {
+    color: #f8fafc;
+    font-weight: 600;
   }
   .icon-close {
     appearance: none;

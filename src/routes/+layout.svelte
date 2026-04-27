@@ -1,5 +1,6 @@
 <script lang="ts">
   import favicon from "$lib/assets/favicon.svg";
+  import ToastHost from "$lib/ToastHost.svelte";
   import { browser } from "$app/environment";
   import { navigating, page } from "$app/stores";
   import { goto } from "$app/navigation";
@@ -70,11 +71,19 @@
 
 <svelte:head>
   <link rel="icon" href={favicon} />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700;800&display=swap"
+    rel="stylesheet"
+  />
 </svelte:head>
+
+<ToastHost />
 
 {#if isAuthenticated}
   <nav class="topbar">
-    <div class="brand">Hisab</div>
+    <div class="brand brand-wordmark">Bamanstock</div>
     <button
       class="logout-btn"
       type="button"
@@ -144,6 +153,17 @@
     color: #e5e7eb;
   }
 
+  /*
+    Native <dialog> is not transparent to body color — UA styles often force
+    dark text. Keep modal copy and headings readable on our dark surfaces.
+  */
+  :global(dialog) {
+    color: #e5e7eb;
+  }
+  :global(dialog :is(h1, h2, h3, h4)) {
+    color: #f8fafc;
+  }
+
   :root {
     --surface: #0b1220;
     --surface-2: #0f172a;
@@ -167,10 +187,61 @@
   }
 
   .brand {
+    line-height: 1;
+  }
+
+  /* Wordmark: shared with sign-in via class */
+  :global(.brand-wordmark) {
+    font-family: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
     font-weight: 800;
-    font-size: 1.25rem;
-    letter-spacing: 0.02em;
-    color: #f8fafc;
+    font-size: 1.38rem;
+    letter-spacing: -0.04em;
+    line-height: 1.05;
+    background: linear-gradient(
+      118deg,
+      #5eead4 0%,
+      #22d3ee 26%,
+      #38bdf8 52%,
+      #6366f1 78%,
+      #c4b5fd 100%
+    );
+    background-size: 200% 100%;
+    background-position: 0% 50%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    filter: drop-shadow(0 1px 18px rgba(56, 189, 248, 0.32));
+    transition:
+      filter 0.28s ease,
+      background-position 0.45s ease;
+  }
+
+  :global(.brand-wordmark:hover) {
+    background-position: 100% 50%;
+    filter: drop-shadow(0 2px 22px rgba(129, 140, 248, 0.45));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :global(.brand-wordmark) {
+      background-size: 100% 100%;
+      transition: none;
+    }
+    :global(.brand-wordmark:hover) {
+      background-position: 0% 50%;
+    }
+  }
+
+  :global(.brand-wordmark.brand-wordmark--hero) {
+    font-size: clamp(2.1rem, 6vw, 2.85rem);
+    letter-spacing: -0.045em;
+    filter: drop-shadow(0 2px 28px rgba(45, 212, 191, 0.38));
+  }
+
+  :global(.brand-wordmark.brand-wordmark--inline) {
+    display: inline;
+    font-size: clamp(1.45rem, 3.5vw, 1.85rem);
+    margin-left: 0.35rem;
+    vertical-align: baseline;
   }
 
   .logout-btn {

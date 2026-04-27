@@ -1,5 +1,8 @@
 <section>
-  <h1>Welcome to Hisab</h1>
+  <h1>
+    Welcome to
+    <span class="brand-wordmark brand-wordmark--inline">Bamanstock</span>
+  </h1>
   <p>Select a section from the sidebar to get started.</p>
 </section>
 

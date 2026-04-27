@@ -1,6 +1,7 @@
 <script lang="ts">
   import { deserialize } from "$app/forms";
   import { goto } from "$app/navigation";
+  import { afterToast, showToast, TOAST_MS } from "$lib/toast";
   import { tick } from "svelte";
   import { buildStockLabel, formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
   import type { PageData } from "./$types";
@@ -537,6 +538,7 @@
   }
 
   function closeCreateModal() {
+    if (createSubmitting) return;
     showCreateModal = false;
     resetCreateModal();
   }
@@ -568,6 +570,7 @@
   }
 
   function closeAddCustomerModal() {
+    if (addCustomerSubmitting) return;
     showAddCustomerModal = false;
   }
 
@@ -590,6 +593,7 @@
       const result = deserialize(await response.text());
       if (result.type !== "success" || !("data" in result) || !result.data) {
         addCustomerError = "Could not add customer";
+        showToast("Could not add customer", "error");
         return;
       }
       const payload = result.data as {
@@ -599,19 +603,20 @@
       };
       if (!payload.success) {
         addCustomerError = payload.message ?? "Could not add customer";
+        showToast(payload.message ?? "Could not add customer", "error");
         return;
       }
       if (payload.customer) {
         customers = [...customers, payload.customer];
         selectedCustomerId = payload.customer.id;
       }
+      showToast(payload.message ?? "Customer added", "success");
       closeAddCustomerModal();
-      successMessage = payload.message ?? "Customer added";
-      setTimeout(() => {
-        successMessage = "";
-      }, 3000);
+      successMessage = "";
+      errorMessage = "";
     } catch {
       addCustomerError = "Request failed";
+      showToast("Request failed", "error");
     } finally {
       addCustomerSubmitting = false;
     }
@@ -655,6 +660,7 @@
       });
     }
 
+    stockPickerRowId = null;
     createSubmitting = true;
     try {
       const fd = new FormData();
@@ -669,19 +675,23 @@
       const result = deserialize(await response.text());
       if (result.type !== "success" || !("data" in result) || !result.data) {
         createError = "Could not create orders";
+        showToast("Could not create orders", "error");
         return;
       }
       const payload = result.data as { success?: boolean; message?: string };
       if (!payload.success) {
         createError = payload.message ?? "Could not create orders";
+        showToast(payload.message ?? "Could not create orders", "error");
         return;
       }
-      successMessage = payload.message ?? "Orders created";
+      showToast(payload.message ?? "Orders created", "success");
+      successMessage = "";
       errorMessage = "";
       closeCreateModal();
-      setTimeout(() => window.location.reload(), 800);
+      afterToast(TOAST_MS, () => window.location.reload());
     } catch {
       createError = "Request failed";
+      showToast("Request failed", "error");
     } finally {
       createSubmitting = false;
     }
@@ -797,6 +807,7 @@
   }
 
   function closeCancelModal() {
+    if (cancelSubmitting) return;
     showCancelModal = false;
     orderToCancel = null;
   }
@@ -825,20 +836,20 @@
         orders = orders.map((o: OrderSummary) =>
           o.id === id ? { ...o, status: "cancelled" } : o,
         );
-        successMessage = payload.message ?? "Order cancelled successfully";
+        showToast(payload.message ?? "Order cancelled successfully", "success");
+        successMessage = "";
         errorMessage = "";
         closeCancelModal();
-
-        setTimeout(() => {
-          successMessage = "";
-        }, 3000);
       } else {
-        errorMessage = payload?.message ?? "Could not cancel order";
+        const msg = payload?.message ?? "Could not cancel order";
+        errorMessage = msg;
         successMessage = "";
+        showToast(msg, "error");
       }
     } catch {
       errorMessage = "Failed to cancel order. Please try again.";
       successMessage = "";
+      showToast("Failed to cancel order. Please try again.", "error");
     } finally {
       cancelSubmitting = false;
     }
@@ -956,7 +967,12 @@
     open
     class="modal modal-wide"
     onclick={(e) => e.stopPropagation()}
+    oncancel={(e) => createSubmitting && e.preventDefault()}
     onkeydown={(e) => {
+      if (e.key === "Escape" && createSubmitting) {
+        e.preventDefault();
+        return;
+      }
       if (e.key === "Escape" && stockPickerRowId) {
         e.preventDefault();
         stockPickerRowId = null;
@@ -1134,6 +1150,7 @@
                 class="stock-combobox-option"
                 role="option"
                 aria-selected={pickerRow?.stockId === s.id}
+                disabled={createSubmitting}
                 onclick={() => selectStockForRow(pickerRowId, s.id)}
               >
                 {stockOptionLabel(s)}
@@ -1169,19 +1186,25 @@
     class="modal-overlay overlay-nested"
     role="button"
     tabindex="0"
-    onclick={closeAddCustomerModal}
+    onclick={() => !addCustomerSubmitting && closeAddCustomerModal()}
     onkeydown={(e) =>
-      (e.key === "Enter" || e.key === " ") && closeAddCustomerModal()}
+      !addCustomerSubmitting &&
+      (e.key === "Enter" || e.key === " ") &&
+      closeAddCustomerModal()}
   ></div>
   <dialog
     open
     class="modal modal-nested"
     onclick={(e) => e.stopPropagation()}
+    oncancel={(e) => addCustomerSubmitting && e.preventDefault()}
   >
     <header>
       <h2 style="color: white;">New Customer</h2>
-      <button class="icon" aria-label="Close" onclick={closeAddCustomerModal}
-        >✕</button
+      <button
+        class="icon"
+        aria-label="Close"
+        disabled={addCustomerSubmitting}
+        onclick={closeAddCustomerModal}>✕</button
       >
     </header>
     <div class="modal-body">
@@ -1191,25 +1214,47 @@
       <div class="grid-compact">
         <label>
           <span>First name</span>
-          <input type="text" bind:value={newFirstName} required />
+          <input
+            type="text"
+            bind:value={newFirstName}
+            required
+            disabled={addCustomerSubmitting}
+          />
         </label>
         <label>
           <span>Last name</span>
-          <input type="text" bind:value={newLastName} required />
+          <input
+            type="text"
+            bind:value={newLastName}
+            required
+            disabled={addCustomerSubmitting}
+          />
         </label>
         <label class="full-row">
           <span>Address</span>
-          <input type="text" bind:value={newAddress} />
+          <input
+            type="text"
+            bind:value={newAddress}
+            disabled={addCustomerSubmitting}
+          />
         </label>
         <label class="full-row">
           <span>Phone</span>
-          <input type="tel" bind:value={newPhone} required />
+          <input
+            type="tel"
+            bind:value={newPhone}
+            required
+            disabled={addCustomerSubmitting}
+          />
         </label>
       </div>
     </div>
     <footer>
-      <button type="button" class="ghost" onclick={closeAddCustomerModal}
-        >Cancel</button
+      <button
+        type="button"
+        class="ghost"
+        onclick={closeAddCustomerModal}
+        disabled={addCustomerSubmitting}>Cancel</button
       >
       <button
         type="button"
@@ -1231,15 +1276,25 @@
     class="modal-overlay"
     role="button"
     tabindex="0"
-    onclick={closeCancelModal}
+    onclick={() => !cancelSubmitting && closeCancelModal()}
     onkeydown={(e) =>
-      (e.key === "Enter" || e.key === " ") && closeCancelModal()}
+      !cancelSubmitting &&
+      (e.key === "Enter" || e.key === " ") &&
+      closeCancelModal()}
   ></div>
-  <dialog open class="modal" onclick={(e) => e.stopPropagation()}>
+  <dialog
+    open
+    class="modal"
+    onclick={(e) => e.stopPropagation()}
+    oncancel={(e) => cancelSubmitting && e.preventDefault()}
+  >
     <header>
       <h2 style="color: white;">Cancel order</h2>
-      <button class="icon" aria-label="Close" onclick={closeCancelModal}
-        >✕</button
+      <button
+        class="icon"
+        aria-label="Close"
+        disabled={cancelSubmitting}
+        onclick={closeCancelModal}>✕</button
       >
     </header>
     <div class="modal-content">
@@ -1629,6 +1684,7 @@
     z-index: 40;
     display: flex;
     flex-direction: column;
+    color: #e5e7eb;
   }
   .modal-wide {
     max-width: min(920px, 100vw - 2rem);
@@ -1648,6 +1704,9 @@
   }
   .modal h2 {
     margin: 0;
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: #f8fafc;
   }
   .modal .icon {
     background: transparent;

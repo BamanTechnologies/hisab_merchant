@@ -1,6 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import { formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
+  import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
   import type { PageData } from "./$types";
 
   type OrderStock = {
@@ -128,7 +129,7 @@
     return `ETB ${safe.toLocaleString()}`;
   }
 
-  let { data, form }: { data: PageData; form?: any } = $props();
+  let { data }: { data: PageData } = $props();
   const order = data.order as Order | undefined;
   const investors = (data.investors ?? []) as InvestorRow[];
   const merchantId = data.merchantId as string | undefined;
@@ -208,25 +209,6 @@
     // No preventDefault needed
   }
 
-  // Handle form responses
-  $effect(() => {
-    if (form) {
-      if (form.success) {
-        successMessage = form.message;
-        errorMessage = "";
-        showPay = false;
-        payAmount = undefined;
-        payMethod = "";
-        // Reload the page to show updated order data
-        setTimeout(() => {
-          window.location.reload();
-        }, 1000);
-      } else {
-        errorMessage = form.message;
-        successMessage = "";
-      }
-    }
-  });
 </script>
 
 <section>
@@ -361,16 +343,24 @@
       class="modal-overlay"
       role="button"
       tabindex="0"
-      onclick={() => (showPay = false)}
+      onclick={() => !paymentFormPending && (showPay = false)}
       onkeydown={(e) =>
-        (e.key === "Enter" || e.key === " ") && (showPay = false)}
+        !paymentFormPending &&
+        (e.key === "Enter" || e.key === " ") &&
+        (showPay = false)}
     ></div>
-    <dialog open class="modal" onclick={(e) => e.stopPropagation()}>
+    <dialog
+      open
+      class="modal"
+      onclick={(e) => e.stopPropagation()}
+      oncancel={(e) => paymentFormPending && e.preventDefault()}
+    >
       <header>
         <h2>Create Payment</h2>
         <button
           class="icon"
           aria-label="Close"
+          disabled={paymentFormPending}
           onclick={() => (showPay = false)}>✕</button
         >
       </header>
@@ -381,12 +371,32 @@
         onsubmit={submitPayment}
         use:enhance={() => {
           paymentFormPending = true;
-          return async ({ update }) => {
-            await update();
-            paymentFormPending = false;
+          return async ({ update, result }) => {
+            try {
+              await update();
+            } finally {
+              paymentFormPending = false;
+            }
+            const t = toastFromActionResult(result);
+            if (t) showToast(t.message, t.variant);
+            const ok =
+              result.type === "success" &&
+              result.data &&
+              typeof result.data === "object" &&
+              "success" in result.data &&
+              (result.data as { success?: boolean }).success === true;
+            if (ok) {
+              successMessage = "";
+              errorMessage = "";
+              showPay = false;
+              payAmount = undefined;
+              payMethod = "";
+              afterToast(TOAST_MS, () => window.location.reload());
+            }
           };
         }}
       >
+        <fieldset class="pay-form-fields" disabled={paymentFormPending}>
         <div class="grid">
           <label>
             <span class="label_text">Amount</span>
@@ -414,6 +424,7 @@
             </select>
           </label>
         </div>
+        </fieldset>
         <footer>
           <button
             type="button"
@@ -425,7 +436,7 @@
             type="submit"
             class="primary"
             disabled={!payAmount || !payMethod || paymentFormPending}
-            >{paymentFormPending ? "Processing…" : "Create"}</button
+            >{paymentFormPending ? "Creating…" : "Create"}</button
           >
         </footer>
       </form>
@@ -602,6 +613,7 @@
     border-radius: 0.9rem;
     padding: 0;
     z-index: 40;
+    color: #e5e7eb;
   }
   .modal header {
     display: flex;
@@ -612,6 +624,9 @@
   }
   .modal h2 {
     margin: 0;
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: #f8fafc;
   }
   .modal .icon {
     background: transparent;
@@ -619,6 +634,12 @@
     color: #94a3b8;
     font-size: 1.1rem;
     cursor: pointer;
+  }
+  fieldset.pay-form-fields {
+    border: none;
+    padding: 0;
+    margin: 0;
+    min-width: 0;
   }
   .form {
     padding: 1rem;

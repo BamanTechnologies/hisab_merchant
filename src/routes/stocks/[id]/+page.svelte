@@ -1,6 +1,8 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import { invalidateAll } from "$app/navigation";
   import { formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
+  import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
   import type { PageData } from "./$types";
 
   type Investor = {
@@ -40,7 +42,7 @@
     branch: string;
   };
 
-  let { data, form }: { data: PageData; form?: any } = $props();
+  let { data }: { data: PageData } = $props();
   const stock = data.stock as Stock | null;
   const originBranchName = data.originBranchName ?? null;
   const investors = data.investors;
@@ -182,20 +184,6 @@
     return u ? `${stock.quantity} ${u}` : String(stock.quantity);
   });
 
-  // Handle transfer form response
-  $effect(() => {
-    if (!form) return;
-    if (form.success) {
-      successMessage = form.message;
-      errorMessage = "";
-      showTransferModal = false;
-      setTimeout(() => window.location.reload(), 1000);
-    } else {
-      errorMessage = form.message;
-      successMessage = "";
-    }
-  });
-
   function openTransferModal() {
     errorMessage = "";
     successMessage = "";
@@ -206,6 +194,7 @@
   }
 
   function closeTransferModal() {
+    if (transferFormPending) return;
     showTransferModal = false;
     transferToBranchId = "";
     transferNewMerchantId = "";
@@ -308,15 +297,25 @@
       class="modal-overlay"
       role="button"
       tabindex="0"
-      onclick={closeTransferModal}
+      onclick={() => !transferFormPending && closeTransferModal()}
       onkeydown={(e) =>
-        (e.key === "Enter" || e.key === " ") && closeTransferModal()}
+        !transferFormPending &&
+        (e.key === "Enter" || e.key === " ") &&
+        closeTransferModal()}
     ></div>
-    <dialog open class="modal modal-compact" onclick={(e) => e.stopPropagation()}>
+    <dialog
+      open
+      class="modal modal-compact"
+      onclick={(e) => e.stopPropagation()}
+      oncancel={(e) => transferFormPending && e.preventDefault()}
+    >
       <header>
         <h2>Transfer stock</h2>
-        <button class="icon" aria-label="Close" onclick={closeTransferModal}
-          >✕</button
+        <button
+          class="icon"
+          aria-label="Close"
+          disabled={transferFormPending}
+          onclick={closeTransferModal}>✕</button
         >
       </header>
       <form
@@ -326,12 +325,34 @@
         onsubmit={submitTransfer}
         use:enhance={() => {
           transferFormPending = true;
-          return async ({ update }) => {
-            await update();
-            transferFormPending = false;
+          return async ({ update, result }) => {
+            try {
+              await update();
+            } finally {
+              transferFormPending = false;
+            }
+            const t = toastFromActionResult(result);
+            if (t) showToast(t.message, t.variant);
+            const ok =
+              result.type === "success" &&
+              result.data &&
+              typeof result.data === "object" &&
+              "success" in result.data &&
+              (result.data as { success?: boolean }).success === true;
+            if (ok) {
+              successMessage = "";
+              errorMessage = "";
+              showTransferModal = false;
+              transferToBranchId = "";
+              transferNewMerchantId = "";
+              afterToast(TOAST_MS, () => void invalidateAll());
+            } else if (t?.variant === "error") {
+              errorMessage = "";
+            }
           };
         }}
       >
+        <fieldset class="transfer-form-fields" disabled={transferFormPending}>
         <div class="grid grid-single">
           <label>
             <span>Quantity to transfer</span>
@@ -384,6 +405,7 @@
             </select>
           </label>
         </div>
+        </fieldset>
         <p class="transfer-note">
           A <strong>new stock line</strong> is created at the destination branch with
           the quantity you enter (same product details). This line’s
@@ -464,6 +486,12 @@
     font-size: 0.8rem;
     color: #94a3b8;
     line-height: 1.4;
+  }
+  fieldset.transfer-form-fields {
+    border: none;
+    padding: 0;
+    margin: 0;
+    min-width: 0;
   }
   .detail {
     display: grid;
@@ -556,6 +584,7 @@
     border-radius: 0.9rem;
     padding: 0;
     z-index: 40;
+    color: #e5e7eb;
   }
   .modal header {
     display: flex;
@@ -566,6 +595,9 @@
   }
   .modal h2 {
     margin: 0;
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: #f8fafc;
   }
   .modal .icon {
     background: transparent;

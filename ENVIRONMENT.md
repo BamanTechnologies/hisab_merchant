@@ -1,4 +1,4 @@
-# Hisab Merchant - Environment Configuration
+# Bamanstock Merchant - Environment Configuration
 
 This application requires several environment variables to be configured for proper operation.
 
