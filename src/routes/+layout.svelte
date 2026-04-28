@@ -18,6 +18,20 @@
   }
 
   let isAuthenticated = $state(shellVisible());
+  const APP_PREFIXES = [
+    "/stocks",
+    "/transfers",
+    "/orders",
+    "/customers",
+    "/payments",
+    "/expenses",
+    "/reports",
+  ] as const;
+
+  const isAppShellRoute = $derived.by(() => {
+    const path = $page.url.pathname;
+    return APP_PREFIXES.some((prefix) => path.startsWith(prefix));
+  });
 
   $effect(() => {
     const serverOk = data.merchantContext != null;
@@ -38,11 +52,9 @@
       }
     }
 
-    if (
-      !token &&
-      data.merchantContext == null &&
-      $page.url.pathname !== "/sign-in"
-    ) {
+    const path = $page.url.pathname;
+    const needsAuth = APP_PREFIXES.some((prefix) => path.startsWith(prefix));
+    if (!token && data.merchantContext == null && needsAuth) {
       goto("/sign-in");
     }
   });
@@ -74,28 +86,35 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
   <link
-    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700;800&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Raleway:wght@400;500;600;700&display=swap"
     rel="stylesheet"
   />
 </svelte:head>
 
 <ToastHost />
 
-{#if isAuthenticated}
+{#if isAuthenticated && isAppShellRoute}
   <nav class="topbar">
-    <div class="brand brand-wordmark">Bamanstock</div>
-    <button
-      class="logout-btn"
-      type="button"
-      onclick={handleLogout}
-      aria-label="Log out">Logout</button
-    >
+    <a class="brand" href="/" aria-label="Go to landing page">
+      <img src="/bamanstock-logo.png" alt="Bamanstock" class="brand-logo" />
+    </a>
+    <div class="topbar-actions">
+      <button
+        class="logout-btn"
+        type="button"
+        onclick={handleLogout}
+        aria-label="Log out">Logout</button
+      >
+    </div>
   </nav>
 
   <div class="shell">
     <aside class="sidebar">
       <a href="/stocks" class:active={$page.url.pathname.startsWith("/stocks")}
         >Stocks</a
+      >
+      <a href="/transfers" class:active={$page.url.pathname.startsWith("/transfers")}
+        >Transfers</a
       >
       <a href="/orders" class:active={$page.url.pathname.startsWith("/orders")}
         >Orders</a
@@ -188,60 +207,24 @@
 
   .brand {
     line-height: 1;
+    display: flex;
+    align-items: center;
+    text-decoration: none;
   }
 
-  /* Wordmark: shared with sign-in via class */
-  :global(.brand-wordmark) {
-    font-family: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
-    font-weight: 800;
-    font-size: 1.38rem;
-    letter-spacing: -0.04em;
-    line-height: 1.05;
-    background: linear-gradient(
-      118deg,
-      #5eead4 0%,
-      #22d3ee 26%,
-      #38bdf8 52%,
-      #6366f1 78%,
-      #c4b5fd 100%
-    );
-    background-size: 200% 100%;
-    background-position: 0% 50%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    filter: drop-shadow(0 1px 18px rgba(56, 189, 248, 0.32));
-    transition:
-      filter 0.28s ease,
-      background-position 0.45s ease;
+  .brand-logo {
+    display: block;
+    height: 35px;
+    width: 180px;
+    max-width: 42vw;
+    object-fit: cover;
+    object-position: left center;
   }
 
-  :global(.brand-wordmark:hover) {
-    background-position: 100% 50%;
-    filter: drop-shadow(0 2px 22px rgba(129, 140, 248, 0.45));
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    :global(.brand-wordmark) {
-      background-size: 100% 100%;
-      transition: none;
-    }
-    :global(.brand-wordmark:hover) {
-      background-position: 0% 50%;
-    }
-  }
-
-  :global(.brand-wordmark.brand-wordmark--hero) {
-    font-size: clamp(2.1rem, 6vw, 2.85rem);
-    letter-spacing: -0.045em;
-    filter: drop-shadow(0 2px 28px rgba(45, 212, 191, 0.38));
-  }
-
-  :global(.brand-wordmark.brand-wordmark--inline) {
-    display: inline;
-    font-size: clamp(1.45rem, 3.5vw, 1.85rem);
-    margin-left: 0.35rem;
-    vertical-align: baseline;
+  .topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
   }
 
   .logout-btn {

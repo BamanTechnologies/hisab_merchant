@@ -85,7 +85,11 @@
 <div class="signin-container">
   <div class="signin-card">
     <div class="signin-header">
-      <h1 class="brand-wordmark brand-wordmark--hero">Bamanstock</h1>
+      <img
+        src="/bamanstock-logo.png"
+        alt="Bamanstock"
+        class="signin-logo"
+      />
       <p>Sign in to your account</p>
     </div>
 
@@ -174,8 +178,12 @@
     margin-bottom: 2rem;
   }
 
-  .signin-header h1 {
-    margin: 0 0 0.5rem 0;
+  .signin-logo {
+    display: block;
+    width: min(15rem, 85%);
+    max-width: 100%;
+    height: auto;
+    margin: 0 auto 0.85rem;
   }
 
   .signin-header p {
@@ -291,10 +299,6 @@
   @media (max-width: 480px) {
     .signin-card {
       padding: 1.5rem;
-    }
-
-    .signin-header h1 {
-      font-size: 2rem;
     }
   }
 </style>
