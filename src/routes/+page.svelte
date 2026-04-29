@@ -43,7 +43,7 @@
         <a href="#contact">Contact</a>
       </div>
       <div class="actions">
-        <a class="primary" href="/stocks">Open Dashboard</a>
+        <a class="primary" href="/stocks" data-sveltekit-reload>Open Dashboard</a>
         {#if isAuthenticated}
           <button class="ghost" type="button" onclick={handleLogout}
             >Logout</button
@@ -68,7 +68,9 @@
           dashboard.
         </p>
         <div class="cta-row">
-          <a class="primary" href="/stocks">Get Started Now -></a>
+          <a class="primary" href="/stocks" data-sveltekit-reload
+            >Get Started Now -></a
+          >
           <a class="ghost" href="#features">Learn More</a>
         </div>
       </div>
@@ -213,7 +215,9 @@
           Simplify stock tracking, empower your merchants, and gain real-time insights
           across all locations, all in one clean interface.
         </p>
-        <a href="/stocks" class="primary">Get Started Now -></a>
+        <a href="/stocks" class="primary" data-sveltekit-reload
+          >Get Started Now -></a
+        >
       </div>
     </section>
 

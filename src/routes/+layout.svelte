@@ -93,7 +93,7 @@
 
 <ToastHost />
 
-{#if isAuthenticated && isAppShellRoute}
+{#if isAppShellRoute}
   <nav class="topbar">
     <a class="brand" href="/" aria-label="Go to landing page">
       <img src="/bamanstock-logo.png" alt="Bamanstock" class="brand-logo" />
