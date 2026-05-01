@@ -43,7 +43,7 @@ async function loginUser(phone: string, password: string) {
 }
 
 export const actions: Actions = {
-  login: async ({ request }) => {
+  login: async ({ request, cookies }) => {
     const formData = await request.formData();
     
     // Extract form data
@@ -56,11 +56,31 @@ export const actions: Actions = {
       const userId = loginResult.token ? getUserIdFromToken(loginResult.token) : null;
       const merchantBranchId = userId ? await fetchMerchantBranchId(userId) : null;
 
+      if (loginResult.token) {
+        cookies.set('authToken', loginResult.token, {
+          path: '/',
+          sameSite: 'strict',
+          httpOnly: false,
+        });
+      }
+
+      if (merchantBranchId) {
+        cookies.set('merchantBranchId', merchantBranchId, {
+          path: '/',
+          sameSite: 'strict',
+          httpOnly: false,
+        });
+      } else {
+        cookies.delete('merchantBranchId', { path: '/' });
+      }
+
       return {
         token: loginResult.token,
         merchantBranchId,
       };
     } catch {
+      cookies.delete('authToken', { path: '/' });
+      cookies.delete('merchantBranchId', { path: '/' });
       return {
         token: null,
         merchantBranchId: null,
