@@ -42,9 +42,9 @@ ${STOCK_FIELDS}
   }
 `;
 
-const FETCH_BRANCHES_QUERY = `
-  query GetBranches {
-    branches {
+const FETCH_BRANCHES_FOR_COMPANY_QUERY = `
+  query StocksBranchesForCompany($companyId: uuid!) {
+    branches(where: { company: { _eq: $companyId } }, order_by: [{ name: asc }]) {
       id
       name
     }
@@ -95,13 +95,15 @@ async function fetchStocks(merchantBranchId: string | null) {
   }
 }
 
-async function fetchBranches() {
+async function fetchBranchesForCompany(companyId: string | null) {
+  if (!companyId) return [];
   try {
     const response = await fetch(config.graphql.endpoint, {
       method: 'POST',
       headers: getGraphQLHeaders(),
       body: JSON.stringify({
-        query: FETCH_BRANCHES_QUERY,
+        query: FETCH_BRANCHES_FOR_COMPANY_QUERY,
+        variables: { companyId },
       }),
     });
 
@@ -158,7 +160,7 @@ export const load: PageServerLoad = async ({ request, parent }) => {
   const [stocksRaw, investors, branches, productTypes] = await Promise.all([
     fetchStocks(merchantBranchId),
     fetchInvestorsForCompany(companyId),
-    fetchBranches(),
+    fetchBranchesForCompany(companyId),
     fetchProductTypes(merchantId),
   ]);
 
@@ -467,10 +469,19 @@ export const actions: Actions = {
 
     let investors: string[] = [];
     try {
-      investors = JSON.parse(formData.get('investors') as string) as string[];
-      if (!Array.isArray(investors)) investors = [];
+      const parsed = JSON.parse(formData.get('investors') as string) as unknown;
+      investors = Array.isArray(parsed)
+        ? parsed.filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+        : [];
     } catch {
       investors = [];
+    }
+
+    if (investors.length === 0) {
+      return {
+        success: false,
+        message: 'Please select at least one investor — this field is required.',
+      };
     }
 
     if (!productTypeId) {

@@ -43,7 +43,9 @@
         <a href="#contact">Contact</a>
       </div>
       <div class="actions">
-        <a class="primary" href="/stocks" data-sveltekit-reload>Open Dashboard</a>
+        <a class="primary" href="/stocks" data-sveltekit-reload
+          >Open Dashboard</a
+        >
         {#if isAuthenticated}
           <button class="ghost" type="button" onclick={handleLogout}
             >Logout</button
@@ -56,10 +58,7 @@
   </section>
 
   <section class="landing-main-section">
-    <section
-      class="hero"
-      style={`background-image: url(${heroBackground});`}
-    >
+    <section class="hero" style={`background-image: url(${heroBackground});`}>
       <div class="hero-inner">
         <h1>Manage Your Stock. Know Your Business.</h1>
         <p>
@@ -90,10 +89,13 @@
       <h2 class="trusted-title">Trusted by Leading Businesses</h2>
       <div class="trusted-row">
         <span class="trusted-item"><span class="mark">◎</span> Ephemeral</span>
-        <span class="trusted-item"><span class="mark">◣</span> Wildcrafted</span>
+        <span class="trusted-item"><span class="mark">◣</span> Wildcrafted</span
+        >
         <span class="trusted-item"><span class="mark">▦</span> Codecraft_</span>
-        <span class="trusted-item"><span class="mark">✶</span> Convergence</span>
-        <span class="trusted-item"><span class="mark">✦</span> ImgCompress</span>
+        <span class="trusted-item"><span class="mark">✶</span> Convergence</span
+        >
+        <span class="trusted-item"><span class="mark">✦</span> ImgCompress</span
+        >
       </div>
     </section>
 
@@ -102,8 +104,8 @@
         <span class="chip">Features</span>
         <h2>The Clear Way to Manage Your Stock.</h2>
         <p>
-          Simplify operations and gain total visibility with features designed to
-          give investors confidence and merchants efficiency.
+          Simplify operations and gain total visibility with features designed
+          to give investors confidence and merchants efficiency.
         </p>
       </div>
       <div class="feature-grid">
@@ -111,16 +113,16 @@
           <div class="icon-box">[]</div>
           <h3>Smart Inventory Control</h3>
           <p>
-            From stock levels to item movement, you'll always know what's available,
-            and where.
+            From stock levels to item movement, you'll always know what's
+            available, and where.
           </p>
         </article>
         <article class="card">
           <div class="icon-box">[#]</div>
           <h3>Branch & Merchant Management</h3>
           <p>
-            Assign merchants and products to specific branches with complete clarity
-            and flexibility.
+            Assign merchants and products to specific branches with complete
+            clarity and flexibility.
           </p>
         </article>
         <article class="card">
@@ -137,7 +139,9 @@
     <section id="how-it-works" class="panel panel-soft">
       <div class="how-grid">
         <div class="how-left">
-          <p class="small-note"><span class="small-dot">◉</span> Trusted by Growing Businesses</p>
+          <p class="small-note">
+            <span class="small-dot">◉</span> Trusted by Growing Businesses
+          </p>
           <h2>Three Steps to Your Most Organized Workflow</h2>
           <a href="#features" class="primary">Learn more -></a>
         </div>
@@ -174,8 +178,8 @@
           <div class="quote">“</div>
           <p>
             Before switching, we were juggling spreadsheets, WhatsApp chats, and
-            scattered files. Now everything locations, merchants, and deal statuses
-            is in one place.
+            scattered files. Now everything locations, merchants, and deal
+            statuses is in one place.
           </p>
           <div class="person">
             <span class="avatar">SM</span>
@@ -185,9 +189,9 @@
         <article class="testimonial">
           <div class="quote">“</div>
           <p>
-            As an investor managing multiple locations, keeping track of merchants
-            and stock movements was always chaotic. This dashboard gives me real-time
-            insights on everything.
+            As an investor managing multiple locations, keeping track of
+            merchants and stock movements was always chaotic. This dashboard
+            gives me real-time insights on everything.
           </p>
           <div class="person">
             <span class="avatar">NA</span>
@@ -208,12 +212,14 @@
             <span class="dot dot-orange"></span>
             <span class="dot dot-badge">100K+</span>
           </div>
-          <p class="cta-caption">Over 100K+ Entrepreneurs, and business choose us</p>
+          <p class="cta-caption">
+            Over 100K+ Entrepreneurs, and business choose us
+          </p>
         </div>
         <h2>Start Managing Your Stock With Confidence Today.</h2>
         <p>
-          Simplify stock tracking, empower your merchants, and gain real-time insights
-          across all locations, all in one clean interface.
+          Simplify stock tracking, empower your merchants, and gain real-time
+          insights across all locations, all in one clean interface.
         </p>
         <a href="/stocks" class="primary" data-sveltekit-reload
           >Get Started Now -></a
@@ -231,14 +237,16 @@
         <div class="faq-item">
           <button type="button" onclick={() => toggleFaq(0)}>
             <span class="q">How does BamanStock work?</span>
-            <span class={`icon ${faqOpen[0] ? "open" : ""}`}>{faqOpen[0] ? "−" : "+"}</span>
+            <span class={`icon ${faqOpen[0] ? "open" : ""}`}
+              >{faqOpen[0] ? "−" : "+"}</span
+            >
           </button>
           {#if faqOpen[0]}
             <p>
-              BamanStock is designed to help investors manage multiple merchants and
-              locations from one centralized dashboard. Investors create locations
-              (branches), assign merchants to those locations, and link specific stock
-              items to each location.
+              BamanStock is designed to help investors manage multiple merchants
+              and locations from one centralized dashboard. Investors create
+              locations (branches), assign merchants to those locations, and
+              link specific stock items to each location.
             </p>
           {/if}
         </div>
@@ -246,25 +254,31 @@
         <div class="faq-item">
           <button type="button" onclick={() => toggleFaq(1)}>
             <span class="q">Can merchants manage stock on their own?</span>
-            <span class={`icon ${faqOpen[1] ? "open" : ""}`}>{faqOpen[1] ? "−" : "+"}</span>
+            <span class={`icon ${faqOpen[1] ? "open" : ""}`}
+              >{faqOpen[1] ? "−" : "+"}</span
+            >
           </button>
           {#if faqOpen[1]}
             <p>
-              Yes, merchants can manage assigned location stock and view reports for
-              their branches.
+              Yes, merchants can manage assigned location stock and view reports
+              for their branches.
             </p>
           {/if}
         </div>
 
         <div class="faq-item">
           <button type="button" onclick={() => toggleFaq(2)}>
-            <span class="q">What is the purpose of locations in the system?</span>
-            <span class={`icon ${faqOpen[2] ? "open" : ""}`}>{faqOpen[2] ? "−" : "+"}</span>
+            <span class="q"
+              >What is the purpose of locations in the system?</span
+            >
+            <span class={`icon ${faqOpen[2] ? "open" : ""}`}
+              >{faqOpen[2] ? "−" : "+"}</span
+            >
           </button>
           {#if faqOpen[2]}
             <p>
-              Locations represent branches and let you track inventory and merchant
-              activity separately.
+              Locations represent branches and let you track inventory and
+              merchant activity separately.
             </p>
           {/if}
         </div>
@@ -272,25 +286,32 @@
         <div class="faq-item">
           <button type="button" onclick={() => toggleFaq(3)}>
             <span class="q">How secure is my data on BamanStock?</span>
-            <span class={`icon ${faqOpen[3] ? "open" : ""}`}>{faqOpen[3] ? "−" : "+"}</span>
+            <span class={`icon ${faqOpen[3] ? "open" : ""}`}
+              >{faqOpen[3] ? "−" : "+"}</span
+            >
           </button>
           {#if faqOpen[3]}
             <p>
-              Data is protected with secure authentication and role-based access, so
-              each user only sees and manages what they are allowed to access.
+              Data is protected with secure authentication and role-based
+              access, so each user only sees and manages what they are allowed
+              to access.
             </p>
           {/if}
         </div>
 
         <div class="faq-item">
           <button type="button" onclick={() => toggleFaq(4)}>
-            <span class="q">Can I make changes later to different locations?</span>
-            <span class={`icon ${faqOpen[4] ? "open" : ""}`}>{faqOpen[4] ? "−" : "+"}</span>
+            <span class="q"
+              >Can I make changes later to different locations?</span
+            >
+            <span class={`icon ${faqOpen[4] ? "open" : ""}`}
+              >{faqOpen[4] ? "−" : "+"}</span
+            >
           </button>
           {#if faqOpen[4]}
             <p>
-              Yes. You can update assignments, stock links, and operational details
-              anytime as your business grows and processes evolve.
+              Yes. You can update assignments, stock links, and operational
+              details anytime as your business grows and processes evolve.
             </p>
           {/if}
         </div>
@@ -335,7 +356,8 @@
         <label class="message-field">
           <span class="label-title">Your message</span>
           <div class="field-line">
-            <textarea rows="3" placeholder="Describe about your project"></textarea>
+            <textarea rows="3" placeholder="Describe about your project"
+            ></textarea>
             <span class="field-icon">☷</span>
           </div>
         </label>
@@ -718,7 +740,12 @@
   .cta-panel {
     position: relative;
     overflow: hidden;
-    background: radial-gradient(circle at 10% 95%, #1d3f76 0%, #0e346f 40%, #082c67 100%);
+    background: radial-gradient(
+      circle at 10% 95%,
+      #1d3f76 0%,
+      #0e346f 40%,
+      #082c67 100%
+    );
     border-radius: 1.8rem;
     margin: 1.2rem auto 2.2rem;
     max-width: 76rem;
@@ -732,8 +759,11 @@
     inset: 0;
     pointer-events: none;
     opacity: 0.22;
-    background-image:
-      linear-gradient(to right, rgba(255, 255, 255, 0.13) 1px, transparent 1px),
+    background-image: linear-gradient(
+        to right,
+        rgba(255, 255, 255, 0.13) 1px,
+        transparent 1px
+      ),
       linear-gradient(to bottom, rgba(255, 255, 255, 0.13) 1px, transparent 1px);
     background-size: 80px 80px;
   }

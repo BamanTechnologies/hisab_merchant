@@ -1,7 +1,12 @@
 <script lang="ts">
   import { deserialize, enhance } from "$app/forms";
   import { goto } from "$app/navigation";
-  import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
+  import {
+    afterToast,
+    showToast,
+    toastFromActionResult,
+    TOAST_MS,
+  } from "$lib/toast";
   import { onMount, tick } from "svelte";
   import { formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
   import type { PageData } from "./$types";
@@ -43,7 +48,6 @@
   let showCreateModal = $state(false);
   let editingStockId = $state<string | null>(null);
   let showDeleteModal = $state(false);
-  let showInvestorConfirmModal = $state(false);
   let stockToDelete = $state<Stock | null>(null);
   let stocks = $state(data.stocks);
   let errorMessage = $state("");
@@ -255,7 +259,10 @@
         if (byType !== 0) return byType;
         const ma = modelNumberSortKey(a);
         const mb = modelNumberSortKey(b);
-        return ma.localeCompare(mb, undefined, { numeric: true, sensitivity: "base" });
+        return ma.localeCompare(mb, undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
       });
     }
     return list;
@@ -278,6 +285,9 @@
   let investorMenuPortalEl = $state<HTMLDivElement | null>(null);
   let investorMenuPosStyle = $state("");
   let branchDropdownOpen = $state(false);
+  let branchMultiselectEl = $state<HTMLDivElement | null>(null);
+  /** Not submitted — participates in HTML constraint validation (hidden inputs do not). */
+  let investorsValidityProxyEl = $state<HTMLInputElement | null>(null);
 
   function parseMoneyValue(
     value: number | string | null | undefined,
@@ -318,6 +328,8 @@
   }
 
   function openCreateModal() {
+    errorMessage = "";
+    successMessage = "";
     resetForm();
     if (merchantBranchId) selectedBranchId = merchantBranchId;
     showCreateModal = true;
@@ -325,6 +337,8 @@
 
   function openEditModal(stock: Stock, event: Event) {
     event.stopPropagation();
+    errorMessage = "";
+    successMessage = "";
     editingStockId = stock.id;
     purchasedPrice = parseMoneyValue(stock.purchased_price);
     sellingPrice = parseMoneyValue(stock.selling_price);
@@ -356,70 +370,29 @@
     resetForm();
   }
 
-  function onSubmitStock(e: Event) {
-    if (!selectedProductTypeId || !selectedProductTypeName) {
-      e.preventDefault();
-      errorMessage = "Please select a product type";
-      return;
-    }
-
-    // Clear previous messages
-    errorMessage = "";
-    successMessage = "";
-
-    if (!selectedBranchId) {
-      e.preventDefault();
-      errorMessage = "Please select a branch";
-      return;
-    }
-
-    if (!stockUnit.trim()) {
-      e.preventDefault();
-      errorMessage = "Please enter a unit (e.g. Pieces, Set, Carton)";
-      return;
-    }
-
-    // Check if no investors are selected
-    if (!editingStockId && selectedInvestorIds.length === 0) {
-      e.preventDefault(); // Prevent form submission
-      showInvestorConfirmModal = true; // Show confirmation dialog
-      return;
-    }
-
-    // The form will be submitted to the server action naturally
-  }
-
-  function confirmAsOwnInvestor() {
-    // Set merchant as investor
-    selectedInvestorIds = [(data as any).merchantId]; // Use merchant ID as investor
-    showInvestorConfirmModal = false;
-
-    // Update the hidden input with the new investor data
-    const hiddenInput = document.querySelector(
-      'input[name="investors"]',
-    ) as HTMLInputElement;
-    if (hiddenInput) {
-      hiddenInput.value = JSON.stringify(selectedInvestorIds);
-    }
-
-    // Submit the form programmatically
-    const form = document.querySelector("form.stock-form") as HTMLFormElement;
-    if (form) {
-      form.requestSubmit();
-    }
-  }
-
-  function cancelInvestorConfirm() {
-    showInvestorConfirmModal = false;
-  }
-
   function toggleInvestor(id: string) {
     if (selectedInvestorIds.includes(id)) {
       selectedInvestorIds = selectedInvestorIds.filter((x) => x !== id);
     } else {
       selectedInvestorIds = [...selectedInvestorIds, id];
     }
+    investorDropdownOpen = false;
   }
+
+  $effect(() => {
+    if (!showCreateModal || editingStockId || !investorsValidityProxyEl) return;
+    const el = investorsValidityProxyEl;
+    const n = selectedInvestorIds.length;
+    if (investors.length === 0) {
+      el.setCustomValidity(
+        "Add at least one investor to your company before creating stock.",
+      );
+    } else if (n === 0) {
+      el.setCustomValidity("Please select at least one investor.");
+    } else {
+      el.setCustomValidity("");
+    }
+  });
   function investorLabel(ids: string[]) {
     if (ids.length === 0) return "Select investors";
     const names = investors
@@ -439,7 +412,10 @@
     const gap = 6;
     const pad = 10;
     const width = rect.width;
-    let left = Math.max(pad, Math.min(rect.left, window.innerWidth - width - pad));
+    let left = Math.max(
+      pad,
+      Math.min(rect.left, window.innerWidth - width - pad),
+    );
     const spaceBelow = window.innerHeight - rect.bottom - gap - pad;
     const spaceAbove = rect.top - gap - pad;
     let top = rect.bottom + gap;
@@ -463,23 +439,44 @@
 
     void tick().then(schedulePosition);
 
-    const onPointerDown = (e: PointerEvent) => {
-      const node = e.target as Node;
-      if (investorMultiselectEl?.contains(node)) return;
-      if (investorMenuPortalEl?.contains(node)) return;
-      investorDropdownOpen = false;
-    };
-
-    document.addEventListener("pointerdown", onPointerDown, true);
     window.addEventListener("resize", schedulePosition);
     window.addEventListener("scroll", schedulePosition, true);
 
     return () => {
       cancelAnimationFrame(raf);
-      document.removeEventListener("pointerdown", onPointerDown, true);
       window.removeEventListener("resize", schedulePosition);
       window.removeEventListener("scroll", schedulePosition, true);
     };
+  });
+
+  /** Close branch / investor menus on outside tap (capture phase so it runs before dialog buttons). */
+  $effect(() => {
+    const investorOpen = investorDropdownOpen && !editingStockId;
+    if (
+      !showCreateModal ||
+      stockFormPending ||
+      (!branchDropdownOpen && !investorOpen)
+    ) {
+      return;
+    }
+
+    const onPointerDown = (e: PointerEvent) => {
+      const node = e.target as Node;
+      if (branchDropdownOpen && !branchMultiselectEl?.contains(node)) {
+        branchDropdownOpen = false;
+      }
+      if (
+        investorOpen &&
+        !investorMultiselectEl?.contains(node) &&
+        !investorMenuPortalEl?.contains(node)
+      ) {
+        investorDropdownOpen = false;
+      }
+    };
+
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () =>
+      document.removeEventListener("pointerdown", onPointerDown, true);
   });
 
   function branchLabel(branchId: string | null | undefined) {
@@ -702,7 +699,7 @@
   </div>
 </section>
 
-{#if errorMessage}
+{#if errorMessage && !showCreateModal}
   <div class="alert error">
     <p>{errorMessage}</p>
   </div>
@@ -746,8 +743,11 @@
       class="form stock-form"
       method="POST"
       action={editingStockId ? "?/updateStock" : "?/createStock"}
-      onsubmit={onSubmitStock}
-      use:enhance={() => {
+      use:enhance={({ formElement, cancel }) => {
+        if (!formElement.reportValidity()) {
+          cancel();
+          return;
+        }
         stockFormPending = true;
         return async ({ update, result }) => {
           try {
@@ -769,10 +769,17 @@
             showCreateModal = false;
             resetForm();
             afterToast(TOAST_MS, () => window.location.reload());
+          } else if (t?.variant === "error") {
+            errorMessage = t.message;
           }
         };
       }}
     >
+      {#if errorMessage}
+        <div class="modal-form-alert error" role="alert">
+          <p>{errorMessage}</p>
+        </div>
+      {/if}
       {#if editingStockId}
         <input type="hidden" name="id" value={editingStockId} />
       {/if}
@@ -787,138 +794,165 @@
         value={JSON.stringify(attributes)}
       />
       <fieldset class="stock-form-fields" disabled={stockFormPending}>
-      <div class="grid">
-        <label>
-          <span>Product type</span>
-          <select
-            name="product_type"
-            bind:value={selectedProductTypeId}
-            required
-            class="native-select"
-            onchange={() => {
-              const found = productTypes.find(
-                (p) => p.id === selectedProductTypeId,
-              );
-              selectedProductTypeName = String(found?.name ?? "")
-                .trim()
-                .toLowerCase();
-              if (!editingStockId) {
-                attributes = {};
-              } else {
-                const keys = PRODUCT_TYPE_FIELDS[selectedProductTypeName] ?? [];
-                const next: Record<string, string> = {};
-                for (const k of keys) {
-                  next[k] = attributes[k] ?? "";
-                }
-                attributes = next;
-              }
-            }}
-          >
-            <option value="">Select product type</option>
-            {#each productTypes as pt}
-              <option value={pt.id}>{typeDisplay(pt.name ?? "")}</option>
-            {/each}
-          </select>
-        </label>
-        <label class="unit-field">
-          <span>Unit of measure</span>
-          <input
-            type="text"
-            name="unit"
-            bind:value={stockUnit}
-            required
-            maxlength="64"
-            autocomplete="off"
-            placeholder="Pieces, Set, kg, Carton…"
-          />
-        </label>
-        <div class="field">
-          <span style="color: white;">Branch</span>
-          <input type="hidden" name="branch" bind:value={selectedBranchId} />
-          <div class="multiselect">
-            <button
-              type="button"
-              class="select-trigger"
-              onclick={() => (branchDropdownOpen = !branchDropdownOpen)}
-            >
-              {branchPickerLabel(selectedBranchId)}
-            </button>
-            {#if branchDropdownOpen}
-              <div class="select-menu">
-                {#each branches as br}
-                  <button
-                    type="button"
-                    class="option option-btn"
-                    style="color: white;"
-                    class:option-active={selectedBranchId === br.id}
-                    onclick={() => selectBranch(br.id)}
-                  >
-                    {br.name ?? br.id}
-                  </button>
-                {/each}
-              </div>
-            {/if}
-          </div>
-        </div>
-        {#each currentTypeFields() as fieldName}
+        <div class="grid">
           <label>
-            <span>{attributeLabel(fieldName)}</span>
-            <input type="text" bind:value={attributes[fieldName]} />
+            <span>Product type</span>
+            <select
+              name="product_type"
+              bind:value={selectedProductTypeId}
+              required
+              class="native-select"
+              onchange={() => {
+                const found = productTypes.find(
+                  (p) => p.id === selectedProductTypeId,
+                );
+                selectedProductTypeName = String(found?.name ?? "")
+                  .trim()
+                  .toLowerCase();
+                if (!editingStockId) {
+                  attributes = {};
+                } else {
+                  const keys =
+                    PRODUCT_TYPE_FIELDS[selectedProductTypeName] ?? [];
+                  const next: Record<string, string> = {};
+                  for (const k of keys) {
+                    next[k] = attributes[k] ?? "";
+                  }
+                  attributes = next;
+                }
+              }}
+            >
+              <option value="">Select product type</option>
+              {#each productTypes as pt}
+                <option value={pt.id}>{typeDisplay(pt.name ?? "")}</option>
+              {/each}
+            </select>
           </label>
-        {/each}
-        <label>
-          <span>Purchased price</span>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            name="purchased_price"
-            bind:value={purchasedPrice}
-            required
-          />
-        </label>
-        <label>
-          <span>Selling price</span>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            name="selling_price"
-            bind:value={sellingPrice}
-            required
-          />
-        </label>
-        <label>
-          <span>Quantity</span>
-          <input
-            type="number"
-            min="0"
-            step="1"
-            name="quantity"
-            bind:value={quantity}
-            required
-          />
-        </label>
-        {#if !editingStockId}
-          <div class="field">
-            <span>Investors</span>
+          <label class="unit-field">
+            <span>Unit of measure</span>
             <input
-              type="hidden"
-              name="investors"
-              value={JSON.stringify(selectedInvestorIds)}
+              type="text"
+              name="unit"
+              bind:value={stockUnit}
+              required
+              maxlength="64"
+              autocomplete="off"
+              placeholder="Pieces, Set, kg, Carton…"
             />
-            <div class="multiselect" bind:this={investorMultiselectEl}>
+          </label>
+          <div class="field">
+            <span style="color: white;">Branch</span>
+            <input type="hidden" name="branch" bind:value={selectedBranchId} />
+            <div class="multiselect" bind:this={branchMultiselectEl}>
               <button
                 type="button"
                 class="select-trigger"
-                onclick={() => (investorDropdownOpen = !investorDropdownOpen)}
+                onclick={() => (branchDropdownOpen = !branchDropdownOpen)}
               >
-                {investorLabel(selectedInvestorIds)}
+                {branchPickerLabel(selectedBranchId)}
               </button>
+              {#if branchDropdownOpen}
+                <div class="select-menu">
+                  {#each branches as br}
+                    <button
+                      type="button"
+                      class="option option-btn"
+                      style="color: white;"
+                      class:option-active={selectedBranchId === br.id}
+                      onclick={() => selectBranch(br.id)}
+                    >
+                      {br.name ?? br.id}
+                    </button>
+                  {/each}
+                </div>
+              {/if}
             </div>
+            <!-- `name="branch"` is type=hidden (not validated); proxy drives native constraint validation. -->
+            <input
+              type="text"
+              class="validity-proxy"
+              tabindex="-1"
+              autocomplete="off"
+              aria-hidden="true"
+              value={selectedBranchId ? "x" : ""}
+              required
+            />
           </div>
-        {/if}
-      </div>
+          {#each currentTypeFields() as fieldName}
+            <label>
+              <span>{attributeLabel(fieldName)}</span>
+              <input type="text" bind:value={attributes[fieldName]} />
+            </label>
+          {/each}
+          <label>
+            <span>Purchased price</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              name="purchased_price"
+              bind:value={purchasedPrice}
+              required
+            />
+          </label>
+          <label>
+            <span>Selling price</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              name="selling_price"
+              bind:value={sellingPrice}
+              required
+            />
+          </label>
+          <label>
+            <span>Quantity</span>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              name="quantity"
+              bind:value={quantity}
+              required
+            />
+          </label>
+          {#if !editingStockId}
+            <div class="field">
+              <span
+                >Investors <span class="req-mark" aria-hidden="true">*</span
+                ></span
+              >
+              <input
+                bind:this={investorsValidityProxyEl}
+                type="text"
+                class="validity-proxy"
+                tabindex="-1"
+                autocomplete="off"
+                aria-hidden="true"
+                value={selectedInvestorIds.length > 0 ? "x" : ""}
+                required
+              />
+              <input
+                type="hidden"
+                name="investors"
+                value={JSON.stringify(selectedInvestorIds)}
+              />
+              {#if investors.length > 0}
+                <div class="multiselect" bind:this={investorMultiselectEl}>
+                  <button
+                    type="button"
+                    class="select-trigger"
+                    onclick={() =>
+                      (investorDropdownOpen = !investorDropdownOpen)}
+                  >
+                    {investorLabel(selectedInvestorIds)}
+                  </button>
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </div>
       </fieldset>
       <footer>
         <button
@@ -939,7 +973,7 @@
       </footer>
     </form>
   </dialog>
-  {#if investorDropdownOpen && !editingStockId && investorMenuPosStyle !== ""}
+  {#if investorDropdownOpen && !editingStockId && investors.length > 0 && investorMenuPosStyle !== ""}
     <div
       bind:this={investorMenuPortalEl}
       class="select-menu investor-menu-portal"
@@ -957,39 +991,6 @@
       {/each}
     </div>
   {/if}
-{/if}
-
-{#if showInvestorConfirmModal}
-  <div
-    class="modal-overlay"
-    role="button"
-    tabindex="0"
-    onclick={cancelInvestorConfirm}
-    onkeydown={(e) =>
-      (e.key === "Enter" || e.key === " ") && cancelInvestorConfirm()}
-  ></div>
-  <dialog open class="modal" onclick={(e) => e.stopPropagation()}>
-    <header>
-      <h2 style="color: white;">Confirm Investor</h2>
-      <button class="icon" aria-label="Close" onclick={cancelInvestorConfirm}
-        >✕</button
-      >
-    </header>
-    <div class="modal-content">
-      <p>You haven't selected any investors. Are you your own investor?</p>
-      <p class="info">
-        This means you will be the sole investor for this stock item.
-      </p>
-    </div>
-    <footer>
-      <button type="button" class="ghost" onclick={cancelInvestorConfirm}
-        >Cancel</button
-      >
-      <button type="button" class="primary" onclick={confirmAsOwnInvestor}
-        >Yes, I'm my own investor</button
-      >
-    </footer>
-  </dialog>
 {/if}
 
 {#if showDeleteModal && stockToDelete}
@@ -1108,8 +1109,14 @@
           >
             <span class="sort-header-label">Branch</span>
             <span class="sort-arrows" aria-hidden="true">
-              <span class="sort-arrow" class:sort-arrow-on={isSortActive("branch", "asc")}>▲</span>
-              <span class="sort-arrow" class:sort-arrow-on={isSortActive("branch", "desc")}>▼</span>
+              <span
+                class="sort-arrow"
+                class:sort-arrow-on={isSortActive("branch", "asc")}>▲</span
+              >
+              <span
+                class="sort-arrow"
+                class:sort-arrow-on={isSortActive("branch", "desc")}>▼</span
+              >
             </span>
           </button>
         </th>
@@ -1129,8 +1136,14 @@
           >
             <span class="sort-header-label">Origin</span>
             <span class="sort-arrows" aria-hidden="true">
-              <span class="sort-arrow" class:sort-arrow-on={isSortActive("origin", "asc")}>▲</span>
-              <span class="sort-arrow" class:sort-arrow-on={isSortActive("origin", "desc")}>▼</span>
+              <span
+                class="sort-arrow"
+                class:sort-arrow-on={isSortActive("origin", "asc")}>▲</span
+              >
+              <span
+                class="sort-arrow"
+                class:sort-arrow-on={isSortActive("origin", "desc")}>▼</span
+              >
             </span>
           </button>
         </th>
@@ -1152,8 +1165,14 @@
               >
                 <span class="sort-header-label">{attributeLabel(field)}</span>
                 <span class="sort-arrows" aria-hidden="true">
-                  <span class="sort-arrow" class:sort-arrow-on={isSortActive(field, "asc")}>▲</span>
-                  <span class="sort-arrow" class:sort-arrow-on={isSortActive(field, "desc")}>▼</span>
+                  <span
+                    class="sort-arrow"
+                    class:sort-arrow-on={isSortActive(field, "asc")}>▲</span
+                  >
+                  <span
+                    class="sort-arrow"
+                    class:sort-arrow-on={isSortActive(field, "desc")}>▼</span
+                  >
                 </span>
               </button>
             </th>
@@ -1177,8 +1196,14 @@
           >
             <span class="sort-header-label">Price</span>
             <span class="sort-arrows" aria-hidden="true">
-              <span class="sort-arrow" class:sort-arrow-on={isSortActive("price", "asc")}>▲</span>
-              <span class="sort-arrow" class:sort-arrow-on={isSortActive("price", "desc")}>▼</span>
+              <span
+                class="sort-arrow"
+                class:sort-arrow-on={isSortActive("price", "asc")}>▲</span
+              >
+              <span
+                class="sort-arrow"
+                class:sort-arrow-on={isSortActive("price", "desc")}>▼</span
+              >
             </span>
           </button>
         </th>
@@ -1198,8 +1223,14 @@
           >
             <span class="sort-header-label">Quantity</span>
             <span class="sort-arrows" aria-hidden="true">
-              <span class="sort-arrow" class:sort-arrow-on={isSortActive("quantity", "asc")}>▲</span>
-              <span class="sort-arrow" class:sort-arrow-on={isSortActive("quantity", "desc")}>▼</span>
+              <span
+                class="sort-arrow"
+                class:sort-arrow-on={isSortActive("quantity", "asc")}>▲</span
+              >
+              <span
+                class="sort-arrow"
+                class:sort-arrow-on={isSortActive("quantity", "desc")}>▼</span
+              >
             </span>
           </button>
         </th>
@@ -1290,6 +1321,25 @@
     padding: 0;
     margin: 0;
     min-width: 0;
+  }
+
+  /* Synthetic controls for native validation (see comments next to each proxy in markup). */
+  input.validity-proxy {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+    border-radius: 0;
+    opacity: 0;
+    pointer-events: none;
+    background: transparent;
+    box-shadow: none;
   }
   .muted {
     color: #94a3b8;
@@ -1507,6 +1557,25 @@
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }
+
+  .modal-form-alert {
+    margin: 0 1rem 0.75rem;
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    border: 1px solid;
+  }
+  .modal-form-alert.error {
+    background: color-mix(in oklab, #ef4444, transparent 78%);
+    border-color: color-mix(in oklab, #f87171, transparent 35%);
+    color: #fecaca;
+  }
+  .modal-form-alert.error p {
+    margin: 0;
+    font-size: 0.9rem;
+    line-height: 1.45;
+    font-weight: 600;
+  }
+
   .unit-field input {
     border-color: color-mix(in oklab, var(--brand), white 35%);
     box-shadow: 0 0 0 1px color-mix(in oklab, var(--brand), transparent 70%);
@@ -1561,6 +1630,7 @@
     cursor: pointer;
   }
   .field {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
@@ -1677,12 +1747,6 @@
     padding: 1rem;
     color: white;
   }
-  .info {
-    color: #94a3b8;
-    font-size: 0.9rem;
-    margin: 0.5rem 0 0;
-    font-style: italic;
-  }
 
   .stock-details {
     background: color-mix(in oklab, var(--surface-2), white 2%);
@@ -1724,6 +1788,11 @@
     font-weight: 600;
     font-size: 0.9rem;
     margin: 0.75rem 0 0;
+  }
+
+  .req-mark {
+    color: #f97373;
+    font-weight: 700;
   }
 
   @media (max-width: 720px) {
