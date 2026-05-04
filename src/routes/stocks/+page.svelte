@@ -2,7 +2,7 @@
   import { deserialize, enhance } from "$app/forms";
   import { goto } from "$app/navigation";
   import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
   import type { PageData } from "./$types";
 
@@ -175,6 +175,14 @@
     );
   });
 
+  /** Model number from JSONB attributes or legacy column — for default sort only. */
+  function modelNumberSortKey(s: Stock): string {
+    const attrs = s.attributes ?? {};
+    const v = attrs.model_number ?? s.model_number;
+    if (v == null || v === "") return "";
+    return String(v).trim();
+  }
+
   function stockSortValue(s: Stock, col: string): string | number {
     const attrs = s.attributes ?? {};
     switch (col) {
@@ -239,6 +247,16 @@
             : String(av).localeCompare(String(bv));
         return sortDirection === "asc" ? cmp : -cmp;
       });
+    } else {
+      list = [...list].sort((a, b) => {
+        const ta = typeFromStock(a);
+        const tb = typeFromStock(b);
+        const byType = ta.localeCompare(tb);
+        if (byType !== 0) return byType;
+        const ma = modelNumberSortKey(a);
+        const mb = modelNumberSortKey(b);
+        return ma.localeCompare(mb, undefined, { numeric: true, sensitivity: "base" });
+      });
     }
     return list;
   });
@@ -255,6 +273,10 @@
   let stockUnit = $state("");
   let selectedInvestorIds = $state<string[]>([]);
   let investorDropdownOpen = $state(false);
+  /** Anchor for investor menu position (portal renders outside scroll clipping). */
+  let investorMultiselectEl = $state<HTMLDivElement | null>(null);
+  let investorMenuPortalEl = $state<HTMLDivElement | null>(null);
+  let investorMenuPosStyle = $state("");
   let branchDropdownOpen = $state(false);
 
   function parseMoneyValue(
@@ -290,6 +312,7 @@
     stockUnit = "Pieces";
     selectedInvestorIds = [];
     investorDropdownOpen = false;
+    investorMenuPosStyle = "";
     branchDropdownOpen = false;
     editingStockId = null;
   }
@@ -404,6 +427,60 @@
       .map((i: Investor) => `${i.first_name} ${i.last_name}`);
     return names.join(", ");
   }
+
+  $effect(() => {
+    if (!investorDropdownOpen) investorMenuPosStyle = "";
+  });
+
+  function updateInvestorMenuPosition() {
+    const el = investorMultiselectEl;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const gap = 6;
+    const pad = 10;
+    const width = rect.width;
+    let left = Math.max(pad, Math.min(rect.left, window.innerWidth - width - pad));
+    const spaceBelow = window.innerHeight - rect.bottom - gap - pad;
+    const spaceAbove = rect.top - gap - pad;
+    let top = rect.bottom + gap;
+    let maxHeight = Math.min(280, Math.max(100, spaceBelow));
+    if (spaceBelow < 120 && spaceAbove > spaceBelow) {
+      maxHeight = Math.min(280, Math.max(100, spaceAbove));
+      top = rect.top - gap - maxHeight;
+      top = Math.max(pad, top);
+    }
+    investorMenuPosStyle = `top:${top}px;left:${left}px;width:${width}px;max-height:${maxHeight}px`;
+  }
+
+  $effect(() => {
+    if (!investorDropdownOpen || editingStockId || !showCreateModal) return;
+
+    let raf = 0;
+    const schedulePosition = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => updateInvestorMenuPosition());
+    };
+
+    void tick().then(schedulePosition);
+
+    const onPointerDown = (e: PointerEvent) => {
+      const node = e.target as Node;
+      if (investorMultiselectEl?.contains(node)) return;
+      if (investorMenuPortalEl?.contains(node)) return;
+      investorDropdownOpen = false;
+    };
+
+    document.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("resize", schedulePosition);
+    window.addEventListener("scroll", schedulePosition, true);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("resize", schedulePosition);
+      window.removeEventListener("scroll", schedulePosition, true);
+    };
+  });
 
   function branchLabel(branchId: string | null | undefined) {
     if (!branchId) return "—";
@@ -555,8 +632,8 @@
     showDeleteModal = true;
   }
 
-  function closeDeleteModal() {
-    if (deleteSubmitting) return;
+  function closeDeleteModal(force?: boolean) {
+    if (force !== true && deleteSubmitting) return;
     showDeleteModal = false;
     stockToDelete = null;
   }
@@ -587,7 +664,7 @@
         stocks = stocks.filter((s: Stock) => s.id !== stockToDelete!.id);
         errorMessage = "";
         successMessage = "";
-        closeDeleteModal();
+        closeDeleteModal(true);
       } else if (result.type === "success" && payload && !payload.success) {
         errorMessage = "";
         successMessage = "";
@@ -830,7 +907,7 @@
               name="investors"
               value={JSON.stringify(selectedInvestorIds)}
             />
-            <div class="multiselect">
+            <div class="multiselect" bind:this={investorMultiselectEl}>
               <button
                 type="button"
                 class="select-trigger"
@@ -838,20 +915,6 @@
               >
                 {investorLabel(selectedInvestorIds)}
               </button>
-              {#if investorDropdownOpen}
-                <div class="select-menu">
-                  {#each investors as inv}
-                    <label class="option">
-                      <input
-                        type="checkbox"
-                        checked={selectedInvestorIds.includes(inv.id)}
-                        onchange={() => toggleInvestor(inv.id)}
-                      />
-                      <span>{inv.first_name} {inv.last_name}</span>
-                    </label>
-                  {/each}
-                </div>
-              {/if}
             </div>
           </div>
         {/if}
@@ -876,6 +939,24 @@
       </footer>
     </form>
   </dialog>
+  {#if investorDropdownOpen && !editingStockId && investorMenuPosStyle !== ""}
+    <div
+      bind:this={investorMenuPortalEl}
+      class="select-menu investor-menu-portal"
+      style={investorMenuPosStyle}
+    >
+      {#each investors as inv}
+        <label class="option">
+          <input
+            type="checkbox"
+            checked={selectedInvestorIds.includes(inv.id)}
+            onchange={() => toggleInvestor(inv.id)}
+          />
+          <span>{inv.first_name} {inv.last_name}</span>
+        </label>
+      {/each}
+    </div>
+  {/if}
 {/if}
 
 {#if showInvestorConfirmModal}
@@ -934,7 +1015,7 @@
         class="icon"
         aria-label="Close"
         disabled={deleteSubmitting}
-        onclick={closeDeleteModal}>✕</button
+        onclick={() => closeDeleteModal()}>✕</button
       >
     </header>
     <div class="modal-content">
@@ -962,7 +1043,7 @@
       <button
         type="button"
         class="ghost"
-        onclick={closeDeleteModal}
+        onclick={() => closeDeleteModal()}
         disabled={deleteSubmitting}>Cancel</button
       >
       <button
@@ -1499,6 +1580,17 @@
     display: grid;
     gap: 0.35rem;
     z-index: 50;
+  }
+  /** Investor picker: escape modal overflow clipping + stack above dialog */
+  .select-menu.investor-menu-portal {
+    position: fixed;
+    right: auto;
+    z-index: 60;
+    overflow-y: auto;
+    box-shadow:
+      0 14px 40px rgba(0, 0, 0, 0.35),
+      0 0 0 1px color-mix(in oklab, var(--surface-2), white 10%);
+    -webkit-overflow-scrolling: touch;
   }
   .option {
     display: flex;

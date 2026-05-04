@@ -45,7 +45,9 @@
 
   const filteredExpenses = $derived.by(() => {
     if (typeFilter === "all") return expenses;
-    return expenses.filter((ex) => (ex.expense_type ?? "operation") === typeFilter);
+    return expenses.filter(
+      (ex) => (ex.expense_type ?? "operation") === typeFilter,
+    );
   });
   const isMajorOnly = $derived(typeFilter === "major");
   const isOperationOnly = $derived(typeFilter === "operation");
@@ -102,13 +104,17 @@
     return p.charAt(0).toUpperCase() + p.slice(1);
   }
   function expenseTypeLabel(t: string) {
-    const x = String(t ?? "").trim().toLowerCase();
+    const x = String(t ?? "")
+      .trim()
+      .toLowerCase();
     if (x === "major") return "Major";
     return "Operation";
   }
 
   function categoryLabel(c: string) {
-    const v = String(c ?? "").trim().toLowerCase();
+    const v = String(c ?? "")
+      .trim()
+      .toLowerCase();
     if (v === "lc") return "LC";
     return c.replace(/\b\w/g, (ch) => ch.toUpperCase());
   }
@@ -194,8 +200,8 @@
     showModal = true;
   }
 
-  function closeModal() {
-    if (submitting) return;
+  function closeModal(force?: boolean) {
+    if (force !== true && submitting) return;
     showModal = false;
   }
 
@@ -240,7 +246,7 @@
         return;
       }
       showToast(payload.message ?? "Expense saved", "success");
-      closeModal();
+      closeModal(true);
       afterToast(TOAST_MS, () => window.location.reload());
     } catch {
       formError = "Request failed";
@@ -251,8 +257,14 @@
   }
 
   function applyListStateFromParams(params: URLSearchParams) {
-    const nextType = String(params.get("type") ?? "").trim().toLowerCase();
-    if (nextType === "operation" || nextType === "major" || nextType === "all") {
+    const nextType = String(params.get("type") ?? "")
+      .trim()
+      .toLowerCase();
+    if (
+      nextType === "operation" ||
+      nextType === "major" ||
+      nextType === "all"
+    ) {
       typeFilter = nextType;
       return;
     }
@@ -270,7 +282,8 @@
         if (raw) {
           const parsed = JSON.parse(raw) as { type?: string };
           const fallback = new URLSearchParams();
-          if (typeof parsed.type === "string") fallback.set("type", parsed.type);
+          if (typeof parsed.type === "string")
+            fallback.set("type", parsed.type);
           applyListStateFromParams(fallback);
         }
       } catch {}
@@ -283,7 +296,9 @@
     const params = new URLSearchParams();
     if (typeFilter !== "all") params.set("type", typeFilter);
     const qs = params.toString();
-    const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+    const url = qs
+      ? `${window.location.pathname}?${qs}`
+      : window.location.pathname;
     window.history.replaceState(window.history.state, "", url);
     window.sessionStorage.setItem(
       EXPENSE_LIST_STATE_KEY,
@@ -335,7 +350,8 @@
 
 {#if !data.merchantBranchId}
   <p class="warn">
-    Your account has no branch assigned, so expenses cannot be loaded or created.
+    Your account has no branch assigned, so expenses cannot be loaded or
+    created.
   </p>
 {/if}
 
@@ -351,31 +367,223 @@
       {#if isMajorOnly}
         <tr>
           <th class="col-num">#</th>
-          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("date")}>Date <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("date","asc")}>▲</span><span class:sort-arrow-on={isSortActive("date","desc")}>▼</span></span></button></th>
-          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("amount")}>Amount <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("amount","asc")}>▲</span><span class:sort-arrow-on={isSortActive("amount","desc")}>▼</span></span></button></th>
-          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("paid_by")}>Paid by <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("paid_by","asc")}>▲</span><span class:sort-arrow-on={isSortActive("paid_by","desc")}>▼</span></span></button></th>
-          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("from_account")}>From account <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("from_account","asc")}>▲</span><span class:sort-arrow-on={isSortActive("from_account","desc")}>▼</span></span></button></th>
-          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("sent_to")}>Sent to <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("sent_to","asc")}>▲</span><span class:sort-arrow-on={isSortActive("sent_to","desc")}>▼</span></span></button></th>
-          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("to_account")}>To account <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("to_account","asc")}>▲</span><span class:sort-arrow-on={isSortActive("to_account","desc")}>▼</span></span></button></th>
+          <th class="th-sort"
+            ><button
+              type="button"
+              class="sort-header-btn"
+              onclick={() => cycleSort("date")}
+              >Date <span class="sort-arrows"
+                ><span class:sort-arrow-on={isSortActive("date", "asc")}>▲</span
+                ><span class:sort-arrow-on={isSortActive("date", "desc")}
+                  >▼</span
+                ></span
+              ></button
+            ></th
+          >
+          <th class="th-sort"
+            ><button
+              type="button"
+              class="sort-header-btn"
+              onclick={() => cycleSort("amount")}
+              >Amount <span class="sort-arrows"
+                ><span class:sort-arrow-on={isSortActive("amount", "asc")}
+                  >▲</span
+                ><span class:sort-arrow-on={isSortActive("amount", "desc")}
+                  >▼</span
+                ></span
+              ></button
+            ></th
+          >
+          <th class="th-sort"
+            ><button
+              type="button"
+              class="sort-header-btn"
+              onclick={() => cycleSort("paid_by")}
+              >Paid by <span class="sort-arrows"
+                ><span class:sort-arrow-on={isSortActive("paid_by", "asc")}
+                  >▲</span
+                ><span class:sort-arrow-on={isSortActive("paid_by", "desc")}
+                  >▼</span
+                ></span
+              ></button
+            ></th
+          >
+          <th class="th-sort"
+            ><button
+              type="button"
+              class="sort-header-btn"
+              onclick={() => cycleSort("from_account")}
+              >From account <span class="sort-arrows"
+                ><span class:sort-arrow-on={isSortActive("from_account", "asc")}
+                  >▲</span
+                ><span
+                  class:sort-arrow-on={isSortActive("from_account", "desc")}
+                  >▼</span
+                ></span
+              ></button
+            ></th
+          >
+          <th class="th-sort"
+            ><button
+              type="button"
+              class="sort-header-btn"
+              onclick={() => cycleSort("sent_to")}
+              >Sent to <span class="sort-arrows"
+                ><span class:sort-arrow-on={isSortActive("sent_to", "asc")}
+                  >▲</span
+                ><span class:sort-arrow-on={isSortActive("sent_to", "desc")}
+                  >▼</span
+                ></span
+              ></button
+            ></th
+          >
+          <th class="th-sort"
+            ><button
+              type="button"
+              class="sort-header-btn"
+              onclick={() => cycleSort("to_account")}
+              >To account <span class="sort-arrows"
+                ><span class:sort-arrow-on={isSortActive("to_account", "asc")}
+                  >▲</span
+                ><span class:sort-arrow-on={isSortActive("to_account", "desc")}
+                  >▼</span
+                ></span
+              ></button
+            ></th
+          >
         </tr>
       {:else if isOperationOnly}
         <tr>
           <th class="col-num">#</th>
-          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("date")}>Date <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("date","asc")}>▲</span><span class:sort-arrow-on={isSortActive("date","desc")}>▼</span></span></button></th>
-          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("amount")}>Amount <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("amount","asc")}>▲</span><span class:sort-arrow-on={isSortActive("amount","desc")}>▼</span></span></button></th>
-          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("paid_by")}>Paid by <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("paid_by","asc")}>▲</span><span class:sort-arrow-on={isSortActive("paid_by","desc")}>▼</span></span></button></th>
-          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("sent_to")}>Sent to <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("sent_to","asc")}>▲</span><span class:sort-arrow-on={isSortActive("sent_to","desc")}>▼</span></span></button></th>
-          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("category")}>Category <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("category","asc")}>▲</span><span class:sort-arrow-on={isSortActive("category","desc")}>▼</span></span></button></th>
-          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("payment")}>Payment <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("payment","asc")}>▲</span><span class:sort-arrow-on={isSortActive("payment","desc")}>▼</span></span></button></th>
+          <th class="th-sort"
+            ><button
+              type="button"
+              class="sort-header-btn"
+              onclick={() => cycleSort("date")}
+              >Date <span class="sort-arrows"
+                ><span class:sort-arrow-on={isSortActive("date", "asc")}>▲</span
+                ><span class:sort-arrow-on={isSortActive("date", "desc")}
+                  >▼</span
+                ></span
+              ></button
+            ></th
+          >
+          <th class="th-sort"
+            ><button
+              type="button"
+              class="sort-header-btn"
+              onclick={() => cycleSort("amount")}
+              >Amount <span class="sort-arrows"
+                ><span class:sort-arrow-on={isSortActive("amount", "asc")}
+                  >▲</span
+                ><span class:sort-arrow-on={isSortActive("amount", "desc")}
+                  >▼</span
+                ></span
+              ></button
+            ></th
+          >
+          <th class="th-sort"
+            ><button
+              type="button"
+              class="sort-header-btn"
+              onclick={() => cycleSort("paid_by")}
+              >Paid by <span class="sort-arrows"
+                ><span class:sort-arrow-on={isSortActive("paid_by", "asc")}
+                  >▲</span
+                ><span class:sort-arrow-on={isSortActive("paid_by", "desc")}
+                  >▼</span
+                ></span
+              ></button
+            ></th
+          >
+          <th class="th-sort"
+            ><button
+              type="button"
+              class="sort-header-btn"
+              onclick={() => cycleSort("sent_to")}
+              >Sent to <span class="sort-arrows"
+                ><span class:sort-arrow-on={isSortActive("sent_to", "asc")}
+                  >▲</span
+                ><span class:sort-arrow-on={isSortActive("sent_to", "desc")}
+                  >▼</span
+                ></span
+              ></button
+            ></th
+          >
+          <th class="th-sort"
+            ><button
+              type="button"
+              class="sort-header-btn"
+              onclick={() => cycleSort("category")}
+              >Category <span class="sort-arrows"
+                ><span class:sort-arrow-on={isSortActive("category", "asc")}
+                  >▲</span
+                ><span class:sort-arrow-on={isSortActive("category", "desc")}
+                  >▼</span
+                ></span
+              ></button
+            ></th
+          >
+          <th class="th-sort"
+            ><button
+              type="button"
+              class="sort-header-btn"
+              onclick={() => cycleSort("payment")}
+              >Payment <span class="sort-arrows"
+                ><span class:sort-arrow-on={isSortActive("payment", "asc")}
+                  >▲</span
+                ><span class:sort-arrow-on={isSortActive("payment", "desc")}
+                  >▼</span
+                ></span
+              ></button
+            ></th
+          >
           <th>Note</th>
           <th>Receipt</th>
         </tr>
       {:else}
         <tr>
           <th class="col-num">#</th>
-          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("date")}>Date <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("date","asc")}>▲</span><span class:sort-arrow-on={isSortActive("date","desc")}>▼</span></span></button></th>
-          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("type")}>Type <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("type","asc")}>▲</span><span class:sort-arrow-on={isSortActive("type","desc")}>▼</span></span></button></th>
-          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("amount")}>Amount <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("amount","asc")}>▲</span><span class:sort-arrow-on={isSortActive("amount","desc")}>▼</span></span></button></th>
+          <th class="th-sort"
+            ><button
+              type="button"
+              class="sort-header-btn"
+              onclick={() => cycleSort("date")}
+              >Date <span class="sort-arrows"
+                ><span class:sort-arrow-on={isSortActive("date", "asc")}>▲</span
+                ><span class:sort-arrow-on={isSortActive("date", "desc")}
+                  >▼</span
+                ></span
+              ></button
+            ></th
+          >
+          <th class="th-sort"
+            ><button
+              type="button"
+              class="sort-header-btn"
+              onclick={() => cycleSort("type")}
+              >Type <span class="sort-arrows"
+                ><span class:sort-arrow-on={isSortActive("type", "asc")}>▲</span
+                ><span class:sort-arrow-on={isSortActive("type", "desc")}
+                  >▼</span
+                ></span
+              ></button
+            ></th
+          >
+          <th class="th-sort"
+            ><button
+              type="button"
+              class="sort-header-btn"
+              onclick={() => cycleSort("amount")}
+              >Amount <span class="sort-arrows"
+                ><span class:sort-arrow-on={isSortActive("amount", "asc")}
+                  >▲</span
+                ><span class:sort-arrow-on={isSortActive("amount", "desc")}
+                  >▼</span
+                ></span
+              ></button
+            ></th
+          >
           <th>Details</th>
         </tr>
       {/if}
@@ -402,7 +610,9 @@
             <td>{categoryLabel(ex.category)}</td>
             <td>{paymentLabel(ex.payment_type)}</td>
             <td class="note-cell">{ex.note?.trim() ? ex.note : "—"}</td>
-            <td class="receipt-cell" title={ex.receipt ?? ""}>{receiptPreview(ex.receipt)}</td>
+            <td class="receipt-cell" title={ex.receipt ?? ""}
+              >{receiptPreview(ex.receipt)}</td
+            >
           </tr>
         {:else}
           <tr class="row">
@@ -426,15 +636,23 @@
       {/each}
       {#if filteredExpenses.length === 0 && data.merchantBranchId}
         <tr>
-          <td colspan={typeFilter === "all" ? 5 : typeFilter === "major" ? 7 : 9} class="empty-state">
+          <td
+            colspan={typeFilter === "all" ? 5 : typeFilter === "major" ? 7 : 9}
+            class="empty-state"
+          >
             <p class="muted">No expenses yet. Create one to get started.</p>
           </td>
         </tr>
       {/if}
       {#if !data.merchantBranchId}
         <tr>
-          <td colspan={typeFilter === "all" ? 5 : typeFilter === "major" ? 7 : 9} class="empty-state">
-            <p class="muted">Assign a branch to your account to see expenses.</p>
+          <td
+            colspan={typeFilter === "all" ? 5 : typeFilter === "major" ? 7 : 9}
+            class="empty-state"
+          >
+            <p class="muted">
+              Assign a branch to your account to see expenses.
+            </p>
           </td>
         </tr>
       {/if}
@@ -463,7 +681,7 @@
         type="button"
         class="icon-close"
         disabled={submitting}
-        onclick={closeModal}
+        onclick={() => closeModal()}
         aria-label="Close">✕</button
       >
     </header>
@@ -473,120 +691,120 @@
       {/if}
 
       <fieldset class="expense-form-fields" disabled={submitting}>
-      <label class="field">
-        <span>Expense type</span>
-        <select bind:value={expenseType} required class="native-select">
-          {#each expenseTypes as t}
-            <option value={t}>{expenseTypeLabel(t)}</option>
-          {/each}
-        </select>
-      </label>
-
-      <label class="field">
-        <span>Paid by</span>
-        <input
-          type="text"
-          name="from_person"
-          bind:value={fromPerson}
-          required
-          autocomplete="name"
-          placeholder="Who paid"
-        />
-      </label>
-
-      {#if expenseType === "major"}
         <label class="field">
-          <span>From account</span>
+          <span>Expense type</span>
+          <select bind:value={expenseType} required class="native-select">
+            {#each expenseTypes as t}
+              <option value={t}>{expenseTypeLabel(t)}</option>
+            {/each}
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Paid by</span>
           <input
             type="text"
-            name="from_account"
-            bind:value={fromAccount}
+            name="from_person"
+            bind:value={fromPerson}
             required
-            placeholder="Bank or source account"
+            autocomplete="name"
+            placeholder="Who paid"
+          />
+        </label>
+
+        {#if expenseType === "major"}
+          <label class="field">
+            <span>From account</span>
+            <input
+              type="text"
+              name="from_account"
+              bind:value={fromAccount}
+              required
+              placeholder="Bank or source account"
+            />
+          </label>
+
+          <label class="field">
+            <span>To account</span>
+            <input
+              type="text"
+              name="to_account"
+              bind:value={toAccount}
+              required
+              placeholder="Destination account"
+            />
+          </label>
+        {/if}
+
+        <label class="field">
+          <span>Sent to (name)</span>
+          <input
+            type="text"
+            name="sent_to"
+            bind:value={sentTo}
+            required
+            autocomplete="name"
+            placeholder="Who received the payment"
           />
         </label>
 
         <label class="field">
-          <span>To account</span>
+          <span>Category</span>
+          <select bind:value={category} required class="native-select">
+            {#each categories as c}
+              <option value={c}>{categoryLabel(c)}</option>
+            {/each}
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Payment type</span>
+          <select bind:value={paymentType} required class="native-select">
+            {#each paymentTypes as p}
+              <option value={p}>{paymentLabel(p)}</option>
+            {/each}
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Amount (ETB)</span>
           <input
-            type="text"
-            name="to_account"
-            bind:value={toAccount}
+            type="number"
+            name="amount"
+            bind:value={amount}
+            min="0.01"
+            step="any"
             required
-            placeholder="Destination account"
+            placeholder="0"
           />
         </label>
-      {/if}
 
-      <label class="field">
-        <span>Sent to (name)</span>
-        <input
-          type="text"
-          name="sent_to"
-          bind:value={sentTo}
-          required
-          autocomplete="name"
-          placeholder="Who received the payment"
-        />
-      </label>
+        <label class="field">
+          <span>Note</span>
+          <textarea
+            name="note"
+            bind:value={note}
+            rows="3"
+            placeholder="Optional details"
+          ></textarea>
+        </label>
 
-      <label class="field">
-        <span>Category</span>
-        <select bind:value={category} required class="native-select">
-          {#each categories as c}
-            <option value={c}>{categoryLabel(c)}</option>
-          {/each}
-        </select>
-      </label>
-
-      <label class="field">
-        <span>Payment type</span>
-        <select bind:value={paymentType} required class="native-select">
-          {#each paymentTypes as p}
-            <option value={p}>{paymentLabel(p)}</option>
-          {/each}
-        </select>
-      </label>
-
-      <label class="field">
-        <span>Amount (ETB)</span>
-        <input
-          type="number"
-          name="amount"
-          bind:value={amount}
-          min="0.01"
-          step="any"
-          required
-          placeholder="0"
-        />
-      </label>
-
-      <label class="field">
-        <span>Note</span>
-        <textarea
-          name="note"
-          bind:value={note}
-          rows="3"
-          placeholder="Optional details"
-        ></textarea>
-      </label>
-
-      <label class="field">
-        <span>Receipt (optional)</span>
-        <textarea
-          name="receipt"
-          bind:value={receipt}
-          rows="2"
-          placeholder="Reference, URL, or short description"
-        ></textarea>
-      </label>
+        <label class="field">
+          <span>Receipt (optional)</span>
+          <textarea
+            name="receipt"
+            bind:value={receipt}
+            rows="2"
+            placeholder="Reference, URL, or short description"
+          ></textarea>
+        </label>
       </fieldset>
 
       <footer class="modal-foot">
         <button
           type="button"
           class="ghost"
-          onclick={closeModal}
+          onclick={() => closeModal()}
           disabled={submitting}>Cancel</button
         >
         <button type="submit" class="primary" disabled={submitting}>

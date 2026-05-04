@@ -14,6 +14,14 @@
   }>;
   let paymentSortColumn = $state<"none" | "date" | "amount" | "method">("none");
   let paymentSortDirection = $state<"asc" | "desc">("asc");
+  let customerDateRangePreset = $state<
+    "all" | "today" | "last7" | "last30" | "custom"
+  >("all");
+  let customerDateFrom = $state("");
+  let customerDateTo = $state("");
+  let customerDateFromInputEl = $state<HTMLInputElement | null>(null);
+  let customerDateToInputEl = $state<HTMLInputElement | null>(null);
+
   const sortedPayments = $derived.by(() => {
     const now = new Date();
     const startOfDay = (d: Date) =>
@@ -64,10 +72,10 @@
     });
   });
 
-  /** Branch-scoped net from this page's totals: positive = outstanding, negative = overpaid. */
+  /** Same convention as server `outstandingAmount`: positive = owes, negative = credit / overpaid (ledger). */
   const balanceSummary = $derived.by(() => {
-    const raw = Number(data.totalOrderAmount) - Number(data.totalPaymentAmount);
-    const n = Number.isFinite(raw) ? raw : 0;
+    const ledger = Number(data.outstandingAmount);
+    const n = Number.isFinite(ledger) ? ledger : 0;
     const overpaid = n < 0;
     return {
       isOverpaid: overpaid,
@@ -78,13 +86,6 @@
   type Tab = "orders" | "payments";
   let tab = $state<Tab>("orders");
   let orders = $state([] as CustomerDetailOrder[]);
-  let customerDateRangePreset = $state<
-    "all" | "today" | "last7" | "last30" | "custom"
-  >("all");
-  let customerDateFrom = $state("");
-  let customerDateTo = $state("");
-  let customerDateFromInputEl = $state<HTMLInputElement | null>(null);
-  let customerDateToInputEl = $state<HTMLInputElement | null>(null);
   let orderSortColumn = $state<
     "none" | "date" | "stock" | "quantity" | "status" | "total"
   >("none");

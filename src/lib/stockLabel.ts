@@ -38,7 +38,9 @@ export function formatCoffeeCapacityWithUnit(
 export function buildStockLabel(stock: StockLabelInput): string {
   const attrs = stock.attributes ?? {};
   const typeSuffix = formatProductTypeLabel(stock.type ?? stock.product_type ?? null);
-  const typeKey = String(stock.type ?? "").trim().toLowerCase();
+  const typeKey = String(stock.type ?? stock.product_type ?? "")
+    .trim()
+    .toLowerCase();
   if (typeKey === "coffee_tools") {
     const name = attrs.name != null ? String(attrs.name).trim() : "";
     const capU = formatCoffeeCapacityWithUnit(attrs);

@@ -112,6 +112,8 @@
   ]);
   let createSubmitting = $state(false);
   let cancelSubmitting = $state(false);
+  /** For partially_paid cancellations: keep credit on balance vs neutralize after cash refund */
+  let cancelPartialRefundChoice = $state<"balance" | "cash">("balance");
   let createError = $state("");
 
   let showAddCustomerModal = $state(false);
@@ -537,8 +539,8 @@
     showCreateModal = true;
   }
 
-  function closeCreateModal() {
-    if (createSubmitting) return;
+  function closeCreateModal(force?: boolean) {
+    if (force !== true && createSubmitting) return;
     showCreateModal = false;
     resetCreateModal();
   }
@@ -569,8 +571,8 @@
     showAddCustomerModal = true;
   }
 
-  function closeAddCustomerModal() {
-    if (addCustomerSubmitting) return;
+  function closeAddCustomerModal(force?: boolean) {
+    if (force !== true && addCustomerSubmitting) return;
     showAddCustomerModal = false;
   }
 
@@ -611,7 +613,7 @@
         selectedCustomerId = payload.customer.id;
       }
       showToast(payload.message ?? "Customer added", "success");
-      closeAddCustomerModal();
+      closeAddCustomerModal(true);
       successMessage = "";
       errorMessage = "";
     } catch {
@@ -687,7 +689,7 @@
       showToast(payload.message ?? "Orders created", "success");
       successMessage = "";
       errorMessage = "";
-      closeCreateModal();
+      closeCreateModal(true);
       afterToast(TOAST_MS, () => window.location.reload());
     } catch {
       createError = "Request failed";
@@ -802,12 +804,27 @@
 
   function openCancelModal(order: OrderSummary, event: Event) {
     event.stopPropagation();
+    cancelPartialRefundChoice = "balance";
     orderToCancel = order;
     showCancelModal = true;
   }
 
-  function closeCancelModal() {
-    if (cancelSubmitting) return;
+  function totalPaidOnOrder(orderId: string): number {
+    let n = 0;
+    for (const p of payments) {
+      if (p.order_id !== orderId) continue;
+      const raw = p.amount;
+      const amt =
+        typeof raw === "number"
+          ? raw
+          : Number(String(raw).replace(/[^0-9.-]/g, ""));
+      if (Number.isFinite(amt)) n += amt;
+    }
+    return n;
+  }
+
+  function closeCancelModal(force?: boolean) {
+    if (force !== true && cancelSubmitting) return;
     showCancelModal = false;
     orderToCancel = null;
   }
@@ -819,6 +836,12 @@
     try {
       const formData = new FormData();
       formData.append("orderId", orderToCancel.id);
+      const st = String(orderToCancel.status ?? "")
+        .trim()
+        .toLowerCase();
+      if (st === "partially_paid") {
+        formData.append("partialCancelRefund", cancelPartialRefundChoice);
+      }
 
       const response = await fetch("?/cancelOrder", {
         method: "POST",
@@ -839,7 +862,7 @@
         showToast(payload.message ?? "Order cancelled successfully", "success");
         successMessage = "";
         errorMessage = "";
-        closeCancelModal();
+        closeCancelModal(true);
       } else {
         const msg = payload?.message ?? "Could not cancel order";
         errorMessage = msg;
@@ -984,7 +1007,7 @@
       <button
         class="icon"
         aria-label="Close"
-        onclick={closeCreateModal}
+        onclick={() => closeCreateModal()}
         disabled={createSubmitting}>✕</button
       >
     </header>
@@ -1166,7 +1189,7 @@
       <button
         type="button"
         class="ghost"
-        onclick={closeCreateModal}
+        onclick={() => closeCreateModal()}
         disabled={createSubmitting}>Cancel</button
       >
       <button
@@ -1204,7 +1227,7 @@
         class="icon"
         aria-label="Close"
         disabled={addCustomerSubmitting}
-        onclick={closeAddCustomerModal}>✕</button
+        onclick={() => closeAddCustomerModal()}>✕</button
       >
     </header>
     <div class="modal-body">
@@ -1253,7 +1276,7 @@
       <button
         type="button"
         class="ghost"
-        onclick={closeAddCustomerModal}
+        onclick={() => closeAddCustomerModal()}
         disabled={addCustomerSubmitting}>Cancel</button
       >
       <button
@@ -1294,7 +1317,7 @@
         class="icon"
         aria-label="Close"
         disabled={cancelSubmitting}
-        onclick={closeCancelModal}>✕</button
+        onclick={() => closeCancelModal()}>✕</button
       >
     </header>
     <div class="modal-content">
@@ -1315,12 +1338,62 @@
         Stock quantity for this line will be restored. The order will stay on
         record as cancelled.
       </p>
+      {#if String(orderToCancel.status ?? "").trim().toLowerCase() === "partially_paid"}
+        {@const paidHint = totalPaidOnOrder(orderToCancel.id)}
+        <fieldset class="cancel-refund-fieldset">
+          <legend class="cancel-refund-legend">Partial payments recorded</legend>
+          {#if paidHint > 0}
+            <p class="cancel-refund-paid-hint muted-strong">
+              Payments on file for this order: {formatMoney(paidHint)} (cash /
+              bank). Choose how you settled with the customer.
+            </p>
+          {:else}
+            <p class="cancel-refund-paid-hint muted-strong">
+              Choose how partial payments should affect the customer ledger after
+              cancellation.
+            </p>
+          {/if}
+          <label class="cancel-refund-option">
+            <input
+              type="radio"
+              name="partialCancelRefund"
+              value="balance"
+              bind:group={cancelPartialRefundChoice}
+              disabled={cancelSubmitting}
+            />
+            <span>
+              <strong>Refund to customer balance</strong>
+              <span class="cancel-refund-detail"
+                >Leave the paid amount as credit on their account (current
+                behaviour).</span
+              >
+            </span>
+          </label>
+          <label class="cancel-refund-option">
+            <input
+              type="radio"
+              name="partialCancelRefund"
+              value="cash"
+              bind:group={cancelPartialRefundChoice}
+              disabled={cancelSubmitting}
+            />
+            <span>
+              <strong>Refund in cash</strong>
+              <span class="cancel-refund-detail"
+                >You returned cash/bank takings outside the system — those
+                payment lines are cleared from the ledger. Amounts that were
+                only moved from customer balance are unchanged.</span
+              >
+            </span>
+          </label>
+        </fieldset>
+      {/if}
     </div>
     <footer>
       <button
         type="button"
         class="ghost"
-        onclick={closeCancelModal}
+        onclick={() => closeCancelModal()}
         disabled={cancelSubmitting}>Back</button
       >
       <button
@@ -2010,6 +2083,51 @@
     font-weight: 600;
     font-size: 0.9rem;
     margin: 0.75rem 0 0;
+  }
+  .cancel-refund-fieldset {
+    margin: 1rem 0 0;
+    padding: 0.85rem 0.95rem;
+    border-radius: 0.65rem;
+    border: 1px solid color-mix(in oklab, var(--surface-2), white 14%);
+    background: color-mix(in oklab, var(--surface-2), white 3%);
+  }
+  .cancel-refund-legend {
+    padding: 0 0.35rem;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #94a3b8;
+  }
+  .cancel-refund-paid-hint {
+    margin: 0 0 0.65rem;
+  }
+  .cancel-refund-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.65rem;
+    margin: 0.55rem 0 0;
+    cursor: pointer;
+    font-size: 0.92rem;
+    color: #e2e8f0;
+    line-height: 1.35;
+  }
+  .cancel-refund-option input {
+    margin-top: 0.2rem;
+    flex-shrink: 0;
+    accent-color: var(--brand, #3b82f6);
+  }
+  .cancel-refund-option strong {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.15rem;
+  }
+  .cancel-refund-detail {
+    display: block;
+    font-size: 0.82rem;
+    font-weight: 400;
+    color: #94a3b8;
+    line-height: 1.4;
   }
   footer {
     display: flex;

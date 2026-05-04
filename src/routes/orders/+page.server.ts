@@ -5,6 +5,7 @@ import { createPaymentRecord } from '$lib/payments.server';
 import {
   fetchCustomerLatestBalance,
   insertCustomerTransaction,
+  sumOrderLedgerCashInflowPayments,
   sumOrderLedgerOrderDebits,
 } from '$lib/customerTransactions.server';
 import { config, getGraphQLHeaders } from '$lib/config';
@@ -1015,6 +1016,7 @@ export const actions: Actions = {
   cancelOrder: async ({ request }) => {
     const formData = await request.formData();
     const orderId = formData.get('orderId') as string;
+    const partialRefundRaw = String(formData.get('partialCancelRefund') ?? '').trim();
 
     if (!orderId) {
       return {
@@ -1033,11 +1035,29 @@ export const actions: Actions = {
       return { success: false, message: 'Order not found' };
     }
 
-    if (orderRow.status === 'cancelled') {
+    const statusNorm = String(orderRow.status ?? '')
+      .trim()
+      .toLowerCase();
+
+    if (statusNorm === 'cancelled') {
       return { success: false, message: 'This order is already cancelled' };
     }
-    if (orderRow.status === 'paid') {
+    if (statusNorm === 'paid') {
       return { success: false, message: 'Paid orders cannot be cancelled' };
+    }
+
+    let partialCancelRefund: '' | 'balance' | 'cash' = '';
+    if (partialRefundRaw === 'balance' || partialRefundRaw === 'cash') {
+      partialCancelRefund = partialRefundRaw;
+    }
+    if (statusNorm === 'partially_paid') {
+      if (partialCancelRefund !== 'balance' && partialCancelRefund !== 'cash') {
+        return {
+          success: false,
+          message:
+            'Partially paid orders: choose whether you refunded the customer in cash or left the amount on their balance.',
+        };
+      }
     }
 
     try {
@@ -1072,6 +1092,23 @@ export const actions: Actions = {
                 note: 'Order cancelled — ledger reversal',
                 created_by: merchantId,
               });
+            }
+
+            if (statusNorm === 'partially_paid' && partialCancelRefund === 'cash') {
+              const cashInflowSum = await sumOrderLedgerCashInflowPayments(orderId);
+              const neutralAmount = -cashInflowSum;
+              if (neutralAmount !== 0 && Number.isFinite(neutralAmount)) {
+                await insertCustomerTransaction({
+                  company: companyId,
+                  customer: orderRow.customer_id,
+                  amount: neutralAmount,
+                  type: 'adjustment',
+                  reference: orderId,
+                  reference_type: 'order',
+                  note: 'Order cancelled — cash refund (cash/bank payment ledger neutralized)',
+                  created_by: merchantId,
+                });
+              }
             }
           } catch (ledgerErr) {
             return {

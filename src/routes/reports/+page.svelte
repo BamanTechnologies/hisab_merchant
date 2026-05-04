@@ -2,7 +2,10 @@
   import { enhance } from "$app/forms";
   import type { PageData } from "./$types";
   import { soldUnitPriceForReportOrder } from "$lib/reportSoldPrice";
-  import { buildStockLabel } from "$lib/stockLabel";
+  import {
+    buildStockLabel,
+    formatCoffeeCapacityWithUnit,
+  } from "$lib/stockLabel";
   import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
 
   type Report = {
@@ -24,6 +27,8 @@
     stocks: Array<{
       id: string;
       type?: string | null;
+      product_type?: string | null;
+      attributes?: Record<string, unknown> | null;
       model_number?: string | null;
       country?: string | null;
       thickness?: number | string | null;
@@ -119,6 +124,40 @@
   function reportDash(v: unknown) {
     if (v === null || v === undefined || v === "") return "—";
     return String(v);
+  }
+
+  function reportStockTypeKey(s: {
+    type?: string | null;
+    product_type?: string | null;
+  }) {
+    return String(s.type ?? s.product_type ?? "")
+      .trim()
+      .toLowerCase();
+  }
+
+  /** Model #: legacy column first, then JSONB `attributes.model_number` when needed. */
+  function reportStockModelCell(stock: ReportData["stocks"][number]) {
+    const top = stock.model_number != null ? String(stock.model_number).trim() : "";
+    if (top !== "") return reportDash(top);
+    const attrs = stock.attributes ?? {};
+    const m =
+      attrs.model_number != null ? String(attrs.model_number).trim() : "";
+    return reportDash(m || null);
+  }
+
+  /** Name: `attributes.name` when present (e.g. coffee_tools); future types can use alongside model #. */
+  function reportStockNameCell(stock: ReportData["stocks"][number]) {
+    const attrs = stock.attributes ?? {};
+    const n = attrs.name != null ? String(attrs.name).trim() : "";
+    return reportDash(n || null);
+  }
+
+  function reportStockThicknessCell(stock: ReportData["stocks"][number]) {
+    if (reportStockTypeKey(stock) === "coffee_tools") {
+      const cap = formatCoffeeCapacityWithUnit(stock.attributes ?? null);
+      return cap.trim() !== "" ? cap : "—";
+    }
+    return reportDash(stock.thickness);
   }
   function formatMoney(v: number | string | null | undefined): string {
     const n =
@@ -537,10 +576,11 @@
                     <th class="col-num">#</th>
                     <th>Type</th>
                     <th>Model #</th>
+                    <th>Name</th>
                     <th>Country</th>
                     <th>Color</th>
                     <th>Figure</th>
-                    <th>Thickness</th>
+                    <th>Thickness / Capacity</th>
                     <th>Quantity</th>
                     <th>Price</th>
                     <th>Factor</th>
@@ -550,12 +590,17 @@
                   {#each generatedReportData.stocks as stock, i (stock.id)}
                     <tr>
                       <td class="col-num">{i + 1}</td>
-                      <td>{reportStockTypeLabel(stock.type)}</td>
-                      <td>{reportDash(stock.model_number)}</td>
+                      <td
+                        >{reportStockTypeLabel(
+                          stock.type ?? stock.product_type,
+                        )}</td
+                      >
+                      <td>{reportStockModelCell(stock)}</td>
+                      <td>{reportStockNameCell(stock)}</td>
                       <td>{reportDash(stock.country)}</td>
                       <td>{reportDash(stock.color)}</td>
                       <td>{reportDash(stock.figure)}</td>
-                      <td>{reportDash(stock.thickness)}</td>
+                      <td>{reportStockThicknessCell(stock)}</td>
                       <td>{stock.quantity}</td>
                       <td>{formatMoney(stock.selling_price)}</td>
                       <td>{reportDash(stock.factor)}</td>
