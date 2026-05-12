@@ -733,6 +733,18 @@
     if (!s) return o.stock_id.slice(0, 8) + "…";
     return buildStockLabel(s);
   }
+  function stockNameParts(name: string): { base: string; more: string } {
+    const trimmed = name.trim();
+    const m = trimmed.match(/^(.*)\s\+(\d+)\s+more$/i);
+    if (!m) return { base: trimmed, more: "" };
+    return { base: m[1].trim(), more: `+ ${m[2]} More` };
+  }
+  function stockNameBase(name: string): string {
+    return stockNameParts(name).base;
+  }
+  function stockNameMore(name: string): string {
+    return stockNameParts(name).more;
+  }
 
   function statusClass(status: string) {
     if (status === "cancelled") return "muted";
@@ -1335,7 +1347,7 @@
         <p><strong>Status:</strong> {orderToCancel.status}</p>
       </div>
       <p class="warning">
-        Stock quantity for this line will be restored. The order will stay on
+        Stock quantities for all order items will be restored. The order will stay on
         record as cancelled.
       </p>
       {#if String(orderToCancel.status ?? "").trim().toLowerCase() === "partially_paid"}
@@ -1413,9 +1425,9 @@
       <tr>
         <th class="col-num">#</th>
         <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("date")}>Date <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("date","asc")}>▲</span><span class:sort-arrow-on={isSortActive("date","desc")}>▼</span></span></button></th>
-        <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("stock")}>Stock <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("stock","asc")}>▲</span><span class:sort-arrow-on={isSortActive("stock","desc")}>▼</span></span></button></th>
+        <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("stock")}>Stocks (Item) <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("stock","asc")}>▲</span><span class:sort-arrow-on={isSortActive("stock","desc")}>▼</span></span></button></th>
         <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("customer")}>Customer <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("customer","asc")}>▲</span><span class:sort-arrow-on={isSortActive("customer","desc")}>▼</span></span></button></th>
-        <th class="right th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("quantity")}>Quantity <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("quantity","asc")}>▲</span><span class:sort-arrow-on={isSortActive("quantity","desc")}>▼</span></span></button></th>
+        <th class="center th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("quantity")}>Quantity <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("quantity","asc")}>▲</span><span class:sort-arrow-on={isSortActive("quantity","desc")}>▼</span></span></button></th>
         <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("status")}>Status <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("status","asc")}>▲</span><span class:sort-arrow-on={isSortActive("status","desc")}>▼</span></span></button></th>
         <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("total")}>Total amount <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("total","asc")}>▲</span><span class:sort-arrow-on={isSortActive("total","desc")}>▼</span></span></button></th>
         <th class="center">Actions</th>
@@ -1431,9 +1443,14 @@
         >
           <td class="col-num">{i + 1}</td>
           <td class="nowrap">{formatOrderDate(o.created_at)}</td>
-          <td>{orderStockName(o)}</td>
+          <td>
+            {stockNameBase(orderStockName(o))}
+            {#if stockNameMore(orderStockName(o))}
+              <span class="stock-more"> {stockNameMore(orderStockName(o))}</span>
+            {/if}
+          </td>
           <td>{o.customer_name}</td>
-          <td class="right">{orderQtyCell(o)}</td>
+          <td class="center qty-cell">{orderQtyCell(o)}</td>
           <td><span class="chip {statusClass(o.status)}">{o.status}</span></td>
           <td>{formatMoney(o.total_amount)}</td>
           <td class="center">
@@ -1646,6 +1663,18 @@
   }
   .center {
     text-align: center;
+  }
+  th.center.th-sort .sort-header-btn {
+    justify-content: center;
+    text-align: center;
+  }
+  td.qty-cell {
+    text-align: center;
+    white-space: nowrap;
+  }
+  .stock-more {
+    color: var(--brand, #60a5fa);
+    font-weight: 700;
   }
   td {
     border-top: 1px solid color-mix(in oklab, var(--surface-2), white 8%);

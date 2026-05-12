@@ -60,9 +60,31 @@ const ORDER_PAYMENT_SUM_QUERY = `
   }
 `;
 
-/** Negative `payment` amounts only = cash/bank paid in (see `postOrderLedgerAndAutoPay` vs manual payments). */
-const ORDER_PAYMENT_CASH_INFLOW_SUM_QUERY = `
-  query OrderLedgerCashPaymentSum($orderId: uuid!) {
+/** Payments drawn from prepaid balance toward this order (see `postOrderLedgerAndAutoPay` notes). */
+const ORDER_PAYMENT_CUSTOMER_BALANCE_SUM_QUERY = `
+  query OrderLedgerCustomerBalancePaymentSum($orderId: uuid!) {
+    customer_transactions_aggregate(
+      where: {
+        _and: [
+          { reference: { _eq: $orderId } }
+          { reference_type: { _eq: "order" } }
+          { type: { _eq: "payment" } }
+          { note: { _ilike: "%customer balance%" } }
+        ]
+      }
+    ) {
+      aggregate {
+        sum {
+          amount
+        }
+      }
+    }
+  }
+`;
+
+/** Cash/bank paid in on this order (`createPayment` uses negative amounts — see orders/[id] manual payment). */
+const ORDER_PAYMENT_MANUAL_CASH_SUM_QUERY = `
+  query OrderLedgerManualCashPaymentSum($orderId: uuid!) {
     customer_transactions_aggregate(
       where: {
         _and: [
@@ -194,14 +216,32 @@ export async function sumOrderLedgerPayments(orderId: string): Promise<number> {
   }
 }
 
-/** Sum of **negative** `payment` rows only (cash/bank inflow). Used for cancel → refund in cash (do not touch balance-application positives). */
-export async function sumOrderLedgerCashInflowPayments(orderId: string): Promise<number> {
+/** Sum of prepaid balance consumed toward this order (matches auto-pay line notes). */
+export async function sumOrderLedgerCustomerBalancePayments(orderId: string): Promise<number> {
   try {
     const data = await gql<{
       customer_transactions_aggregate: {
         aggregate: { sum: { amount: unknown } | null } | null;
       } | null;
-    }>(ORDER_PAYMENT_CASH_INFLOW_SUM_QUERY, { orderId: orderId.trim() });
+    }>(ORDER_PAYMENT_CUSTOMER_BALANCE_SUM_QUERY, { orderId: orderId.trim() });
+
+    return parseNumeric(data.customer_transactions_aggregate?.aggregate?.sum?.amount ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Sum of negative `payment` rows on this order (cash/bank in). Typically ≤ 0.
+ * Used when cancelling with “refund to customer balance” so manual payments become prepaid credit again.
+ */
+export async function sumOrderLedgerManualCashPayments(orderId: string): Promise<number> {
+  try {
+    const data = await gql<{
+      customer_transactions_aggregate: {
+        aggregate: { sum: { amount: unknown } | null } | null;
+      } | null;
+    }>(ORDER_PAYMENT_MANUAL_CASH_SUM_QUERY, { orderId: orderId.trim() });
 
     return parseNumeric(data.customer_transactions_aggregate?.aggregate?.sum?.amount ?? 0);
   } catch {

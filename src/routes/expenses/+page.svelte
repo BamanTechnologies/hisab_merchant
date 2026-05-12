@@ -9,19 +9,20 @@
   let { data }: { data: PageData } = $props();
 
   let expenses = $state(data.expenses as ExpenseRow[]);
-  let totalOperationalExpenseAmount = $state(
-    data.totalOperationalExpenseAmount,
-  );
-  let totalMajorExpenseAmount = $state(data.totalMajorExpenseAmount);
   let typeFilter = $state<"all" | "operation" | "major">("all");
+  let dateRangePreset = $state<"all" | "today" | "last7" | "last30" | "custom">(
+    "all",
+  );
+  let customDateFrom = $state("");
+  let customDateTo = $state("");
+  /** "all" or a category value from `categories` (operation + major rows store `category`). */
+  let categoryFilter = $state<string>("all");
   let sortColumn = $state<string>("none");
   let sortDirection = $state<"asc" | "desc">("asc");
   let listStateReady = $state(false);
 
   $effect(() => {
     expenses = data.expenses as ExpenseRow[];
-    totalOperationalExpenseAmount = data.totalOperationalExpenseAmount;
-    totalMajorExpenseAmount = data.totalMajorExpenseAmount;
   });
 
   let showModal = $state(false);
@@ -41,13 +42,85 @@
   const paymentTypes = data.paymentTypes ?? [];
   const expenseTypes = data.expenseTypes ?? ["operation", "major"];
   const categories = data.categories ?? [];
-  const EXPENSE_LIST_STATE_KEY = "expenses:list-state:v1";
+  const EXPENSE_LIST_STATE_KEY = "expenses:list-state:v2";
+
+  function expenseCreatedInRange(ex: ExpenseRow): boolean {
+    const now = new Date();
+    const startOfDay = (d: Date) =>
+      new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const endOfDay = (d: Date) =>
+      new Date(
+        d.getFullYear(),
+        d.getMonth(),
+        d.getDate(),
+        23,
+        59,
+        59,
+        999,
+      ).getTime();
+    const todayStart = startOfDay(now);
+    const fromInputTs = customDateFrom
+      ? startOfDay(new Date(customDateFrom))
+      : null;
+    const toInputTs = customDateTo ? endOfDay(new Date(customDateTo)) : null;
+    const created = new Date(ex.created_at ?? "").getTime();
+    if (!Number.isFinite(created)) return false;
+    if (dateRangePreset === "all") return true;
+    if (dateRangePreset === "today") {
+      return created >= todayStart && created <= endOfDay(now);
+    }
+    if (dateRangePreset === "last7") {
+      const from = todayStart - 6 * 24 * 60 * 60 * 1000;
+      return created >= from && created <= endOfDay(now);
+    }
+    if (dateRangePreset === "last30") {
+      const from = todayStart - 29 * 24 * 60 * 60 * 1000;
+      return created >= from && created <= endOfDay(now);
+    }
+    if (dateRangePreset === "custom") {
+      if (fromInputTs != null && created < fromInputTs) return false;
+      if (toInputTs != null && created > toInputTs) return false;
+      return true;
+    }
+    return true;
+  }
+
+  function expenseMatchesCategory(ex: ExpenseRow): boolean {
+    if (categoryFilter === "all") return true;
+    return (
+      String(ex.category ?? "")
+        .trim()
+        .toLowerCase() === categoryFilter.trim().toLowerCase()
+    );
+  }
 
   const filteredExpenses = $derived.by(() => {
-    if (typeFilter === "all") return expenses;
-    return expenses.filter(
-      (ex) => (ex.expense_type ?? "operation") === typeFilter,
+    const byType =
+      typeFilter === "all"
+        ? expenses
+        : expenses.filter(
+            (ex) => (ex.expense_type ?? "operation") === typeFilter,
+          );
+    return byType.filter(
+      (ex) => expenseCreatedInRange(ex) && expenseMatchesCategory(ex),
     );
+  });
+
+  const displayOperationalTotal = $derived.by(() => {
+    let s = 0;
+    for (const e of filteredExpenses) {
+      if (String(e.expense_type ?? "operation").toLowerCase() === "operation")
+        s += Number(e.amount ?? 0);
+    }
+    return s;
+  });
+  const displayMajorTotal = $derived.by(() => {
+    let s = 0;
+    for (const e of filteredExpenses) {
+      if (String(e.expense_type ?? "").toLowerCase() === "major")
+        s += Number(e.amount ?? 0);
+    }
+    return s;
   });
   const isMajorOnly = $derived(typeFilter === "major");
   const isOperationOnly = $derived(typeFilter === "operation");
@@ -115,8 +188,9 @@
     const v = String(c ?? "")
       .trim()
       .toLowerCase();
+    if (!v) return "—";
     if (v === "lc") return "LC";
-    return c.replace(/\b\w/g, (ch) => ch.toUpperCase());
+    return String(c).replace(/\b\w/g, (ch) => ch.toUpperCase());
   }
 
   function formatDate(iso: string) {
@@ -266,24 +340,76 @@
       nextType === "all"
     ) {
       typeFilter = nextType;
-      return;
+    } else {
+      typeFilter = "all";
     }
-    typeFilter = "all";
+
+    const d = String(params.get("date") ?? "")
+      .trim()
+      .toLowerCase();
+    if (
+      d === "today" ||
+      d === "last7" ||
+      d === "last30" ||
+      d === "custom" ||
+      d === "all"
+    ) {
+      if (d === "today") dateRangePreset = "today";
+      else if (d === "last7") dateRangePreset = "last7";
+      else if (d === "last30") dateRangePreset = "last30";
+      else if (d === "custom") dateRangePreset = "custom";
+      else dateRangePreset = "all";
+    } else {
+      dateRangePreset = "all";
+    }
+    customDateFrom = String(params.get("from") ?? "").trim();
+    customDateTo = String(params.get("to") ?? "").trim();
+
+    const catRaw = String(
+      params.get("category") ?? params.get("cat") ?? "",
+    ).trim();
+    if (!catRaw || catRaw.toLowerCase() === "all") {
+      categoryFilter = "all";
+    } else {
+      const found = categories.find(
+        (c) => c.toLowerCase() === catRaw.toLowerCase(),
+      );
+      categoryFilter = found ?? "all";
+    }
   }
 
   onMount(() => {
     const params = new URLSearchParams(window.location.search);
-    const hasTypeInUrl = params.has("type");
-    if (hasTypeInUrl) {
+    const hasUrlState =
+      params.has("type") ||
+      params.has("date") ||
+      params.has("from") ||
+      params.has("to") ||
+      params.has("category") ||
+      params.has("cat");
+    if (hasUrlState) {
       applyListStateFromParams(params);
     } else {
       try {
         const raw = window.sessionStorage.getItem(EXPENSE_LIST_STATE_KEY);
         if (raw) {
-          const parsed = JSON.parse(raw) as { type?: string };
+          const parsed = JSON.parse(raw) as {
+            type?: string;
+            date?: string;
+            from?: string;
+            to?: string;
+            category?: string;
+          };
           const fallback = new URLSearchParams();
           if (typeof parsed.type === "string")
             fallback.set("type", parsed.type);
+          if (typeof parsed.date === "string")
+            fallback.set("date", parsed.date);
+          if (typeof parsed.from === "string")
+            fallback.set("from", parsed.from);
+          if (typeof parsed.to === "string") fallback.set("to", parsed.to);
+          if (typeof parsed.category === "string")
+            fallback.set("category", parsed.category);
           applyListStateFromParams(fallback);
         }
       } catch {}
@@ -295,6 +421,12 @@
     if (!listStateReady) return;
     const params = new URLSearchParams();
     if (typeFilter !== "all") params.set("type", typeFilter);
+    if (dateRangePreset !== "all") params.set("date", dateRangePreset);
+    if (dateRangePreset === "custom") {
+      if (customDateFrom) params.set("from", customDateFrom);
+      if (customDateTo) params.set("to", customDateTo);
+    }
+    if (categoryFilter !== "all") params.set("category", categoryFilter);
     const qs = params.toString();
     const url = qs
       ? `${window.location.pathname}?${qs}`
@@ -302,7 +434,13 @@
     window.history.replaceState(window.history.state, "", url);
     window.sessionStorage.setItem(
       EXPENSE_LIST_STATE_KEY,
-      JSON.stringify({ type: typeFilter }),
+      JSON.stringify({
+        type: typeFilter,
+        date: dateRangePreset,
+        from: customDateFrom,
+        to: customDateTo,
+        category: categoryFilter,
+      }),
     );
   });
 </script>
@@ -325,13 +463,13 @@
     <div class="total-pill" aria-live="polite">
       <span class="total-label">Total Operational Expenses</span>
       <span class="total-value operational"
-        >{formatMoney(totalOperationalExpenseAmount)}</span
+        >{formatMoney(displayOperationalTotal)}</span
       >
     </div>
     <div class="total-pill" aria-live="polite">
       <span class="total-label">Total Major Expenses</span>
       <span class="total-value major"
-        >{formatMoney(totalMajorExpenseAmount)}</span
+        >{formatMoney(displayMajorTotal)}</span
       >
     </div>
     <button
@@ -360,6 +498,46 @@
     <p>{formError}</p>
   </div>
 {/if}
+
+<section class="expenses-filters" aria-label="Filter expenses">
+  <label class="filter-field">
+    <span class="filter-label">Date range</span>
+    <select class="native-select" bind:value={dateRangePreset}>
+      <option value="all">All time</option>
+      <option value="today">Today</option>
+      <option value="last7">Last 7 days</option>
+      <option value="last30">Last 30 days</option>
+      <option value="custom">Custom range…</option>
+    </select>
+  </label>
+  {#if dateRangePreset === "custom"}
+    <label class="filter-field">
+      <span class="filter-label">From</span>
+      <input
+        type="date"
+        class="native-select date-clickable"
+        bind:value={customDateFrom}
+      />
+    </label>
+    <label class="filter-field">
+      <span class="filter-label">To</span>
+      <input
+        type="date"
+        class="native-select date-clickable"
+        bind:value={customDateTo}
+      />
+    </label>
+  {/if}
+  <label class="filter-field">
+    <span class="filter-label">Category</span>
+    <select class="native-select" bind:value={categoryFilter}>
+      <option value="all">All categories</option>
+      {#each categories as c}
+        <option value={c}>{categoryLabel(c)}</option>
+      {/each}
+    </select>
+  </label>
+</section>
 
 <section class="table-wrap">
   <table class="data-table">
@@ -640,7 +818,13 @@
             colspan={typeFilter === "all" ? 5 : typeFilter === "major" ? 7 : 9}
             class="empty-state"
           >
-            <p class="muted">No expenses yet. Create one to get started.</p>
+            <p class="muted">
+              {#if expenses.length > 0}
+                No expenses match your current filters.
+              {:else}
+                No expenses yet. Create one to get started.
+              {/if}
+            </p>
           </td>
         </tr>
       {/if}
@@ -850,6 +1034,24 @@
     align-items: center;
     gap: 0.75rem;
     flex-wrap: wrap;
+  }
+  .expenses-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    padding: 0.85rem 1rem;
+    border-radius: 0.75rem;
+    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
+    background: color-mix(in oklab, var(--surface-2), white 3%);
+  }
+  .expenses-filters .filter-field {
+    min-width: 9rem;
+  }
+  .date-clickable {
+    min-height: 2.25rem;
+    box-sizing: border-box;
   }
   .filter-field {
     display: flex;

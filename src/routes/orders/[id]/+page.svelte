@@ -24,6 +24,16 @@
     unit?: string | null;
   };
 
+  type OrderItem = {
+    stock_id: string;
+    quantity: number;
+    unit?: string | null;
+    unit_price?: number | string | null;
+    line_total?: number | string | null;
+    factor_snapshot?: number | string | null;
+    stock?: OrderStock | null;
+  };
+
   type InvestorRow = {
     id: string;
     first_name: string;
@@ -43,6 +53,7 @@
     total_amount: number;
     outstanding_amount: number;
     unit?: string | null;
+    order_items?: OrderItem[] | null;
     stock?: OrderStock | null;
   };
 
@@ -134,10 +145,25 @@
   const investors = (data.investors ?? []) as InvestorRow[];
   const merchantId = data.merchantId as string | undefined;
 
-  /** One row per linked stock today; same shape if orders gain multiple lines later. */
-  const orderStocks = $derived(
-    order?.stock ? [order.stock as OrderStock] : ([] as OrderStock[]),
-  );
+  const orderItems = $derived.by(() => {
+    const fromItems = (order?.order_items ?? []).filter(
+      (x): x is OrderItem => Boolean(x && typeof x === "object"),
+    );
+    if (fromItems.length > 0) return fromItems;
+    return order?.stock
+      ? [
+          {
+            stock_id: order.stock_id,
+            quantity: order.order_quantity,
+            unit: order.unit ?? order.stock.unit ?? null,
+            unit_price: undefined,
+            line_total: order.total_amount,
+            stock: order.stock,
+          } satisfies OrderItem,
+        ]
+      : [];
+  });
+  const orderStocks = $derived(orderItems.map((x) => x.stock).filter(Boolean) as OrderStock[]);
   const singleType = $derived.by(() => {
     const keys = new Set(orderStocks.map((s) => stockTypeKey(s)));
     return keys.size === 1 ? [...keys][0] : "";
@@ -291,22 +317,24 @@
                 {/if}
                 <th>Quantity</th>
                 <th>Price</th>
+                <th>Total amount</th>
                 <th>Investors</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {#each orderStocks as s, i (s.id)}
+              {#each orderItems as item, i (`${item.stock_id}-${i}`)}
+                {@const s = item.stock}
                 <tr>
                   <td class="col-num">{i + 1}</td>
-                  <td>{reportStockTypeLabel(stockTypeKey(s))}</td>
+                  <td>{s ? reportStockTypeLabel(stockTypeKey(s)) : "—"}</td>
                   {#if dynamicFields.length > 0}
                     {#each dynamicFields as f}
-                      <td>{stockAttr(s, f)}</td>
+                      <td>{s ? stockAttr(s, f) : "—"}</td>
                     {/each}
                   {:else}
                     <td>
-                      {#if s.attributes && Object.keys(s.attributes).length > 0}
+                      {#if s && s.attributes && Object.keys(s.attributes).length > 0}
                         {orderStockAttrEntries(s)
                           .map(([k, v]) => `${attrLabel(k)}: ${v}`)
                           .join(" · ")}
@@ -316,14 +344,24 @@
                     </td>
                   {/if}
                   <td>
-                    {(s.unit ?? "").trim()
-                      ? `${s.quantity} ${(s.unit ?? "").trim()}`
-                      : String(s.quantity)}
+                    {((item.unit ?? s?.unit ?? "").trim())
+                      ? `${item.quantity} ${(item.unit ?? s?.unit ?? "").trim()}`
+                      : String(item.quantity)}
                   </td>
-                  <td>{formatMoney(s.selling_price)}</td>
-                  <td class="investors-cell">{stockInvestorLabels(s)}</td>
+                  <td>{formatMoney(item.unit_price ?? s?.selling_price)}</td>
+                  <td>
+                    {formatMoney(
+                      item.line_total ??
+                        Number(item.quantity ?? 0) * Number(item.unit_price ?? s?.selling_price ?? 0),
+                    )}
+                  </td>
+                  <td class="investors-cell">{s ? stockInvestorLabels(s) : "—"}</td>
                   <td class="actions-cell">
-                    <a class="stock-link" href="/stocks/{s.id}">View stock</a>
+                    {#if s}
+                      <a class="stock-link" href="/stocks/{s.id}">View stock</a>
+                    {:else}
+                      —
+                    {/if}
                   </td>
                 </tr>
               {/each}

@@ -196,6 +196,18 @@
     if (!s) return o.stock_id.slice(0, 8) + "…";
     return buildStockLabel(s);
   }
+  function stockNameParts(name: string): { base: string; more: string } {
+    const trimmed = name.trim();
+    const m = trimmed.match(/^(.*)\s\+(\d+)\s+more$/i);
+    if (!m) return { base: trimmed, more: "" };
+    return { base: m[1].trim(), more: `+ ${m[2]} More` };
+  }
+  function stockNameBase(name: string): string {
+    return stockNameParts(name).base;
+  }
+  function stockNameMore(name: string): string {
+    return stockNameParts(name).more;
+  }
   function formatMoney(v: number | string | null | undefined): string {
     const n =
       typeof v === "string"
@@ -367,8 +379,8 @@
         <tr>
           <th class="col-num">#</th>
           <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleOrderSort("date")}>Date <span class="sort-arrows"><span class:sort-arrow-on={isOrderSortActive("date","asc")}>▲</span><span class:sort-arrow-on={isOrderSortActive("date","desc")}>▼</span></span></button></th>
-          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleOrderSort("stock")}>Stock <span class="sort-arrows"><span class:sort-arrow-on={isOrderSortActive("stock","asc")}>▲</span><span class:sort-arrow-on={isOrderSortActive("stock","desc")}>▼</span></span></button></th>
-          <th class="right th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleOrderSort("quantity")}>Quantity <span class="sort-arrows"><span class:sort-arrow-on={isOrderSortActive("quantity","asc")}>▲</span><span class:sort-arrow-on={isOrderSortActive("quantity","desc")}>▼</span></span></button></th>
+          <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleOrderSort("stock")}>Stocks(Item) <span class="sort-arrows"><span class:sort-arrow-on={isOrderSortActive("stock","asc")}>▲</span><span class:sort-arrow-on={isOrderSortActive("stock","desc")}>▼</span></span></button></th>
+          <th class="center th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleOrderSort("quantity")}>Quantity <span class="sort-arrows"><span class:sort-arrow-on={isOrderSortActive("quantity","asc")}>▲</span><span class:sort-arrow-on={isOrderSortActive("quantity","desc")}>▼</span></span></button></th>
           <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleOrderSort("status")}>Status <span class="sort-arrows"><span class:sort-arrow-on={isOrderSortActive("status","asc")}>▲</span><span class:sort-arrow-on={isOrderSortActive("status","desc")}>▼</span></span></button></th>
           <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleOrderSort("total")}>Total amount <span class="sort-arrows"><span class:sort-arrow-on={isOrderSortActive("total","asc")}>▲</span><span class:sort-arrow-on={isOrderSortActive("total","desc")}>▼</span></span></button></th>
         </tr>
@@ -383,8 +395,13 @@
           >
             <td class="col-num">{i + 1}</td>
             <td class="nowrap">{formatOrderDate(o.created_at)}</td>
-            <td>{stockName(o)}</td>
-            <td class="right">{orderQtyCell(o)}</td>
+            <td>
+              {stockNameBase(stockName(o))}
+              {#if stockNameMore(stockName(o))}
+                <span class="stock-more"> {stockNameMore(stockName(o))}</span>
+              {/if}
+            </td>
+            <td class="center qty-cell">{orderQtyCell(o)}</td>
             <td><span class="chip {statusClass(o.status)}">{o.status}</span></td
             >
             <td>{formatMoney(o.total_amount)}</td>
@@ -599,9 +616,21 @@
     font-weight: 700;
     font-size: 0.9rem;
   }
-  th.right,
-  td.right {
-    text-align: right;
+  th.center,
+  td.center {
+    text-align: center;
+  }
+  th.center.th-sort .sort-header-btn {
+    justify-content: center;
+    text-align: center;
+  }
+  td.qty-cell {
+    text-align: center;
+    white-space: nowrap;
+  }
+  .stock-more {
+    color: var(--brand, #60a5fa);
+    font-weight: 700;
   }
   .nowrap {
     white-space: nowrap;

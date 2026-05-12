@@ -101,6 +101,19 @@ const GENERATE_INVESTOR_REPORT_QUERY = `
   }
 `;
 
+const FETCH_ORDER_ITEMS_BY_ORDER_IDS_QUERY = `
+  query ReportOrderItemsByOrderIds($orderIds: [uuid!]!) {
+    order_items(where: { order_id: { _in: $orderIds } }) {
+      id
+      order_id
+      stock_id
+      quantity
+      line_total
+      unit_price
+    }
+  }
+`;
+
 // GraphQL mutation to send report via SMS
 const SEND_REPORT_MUTATION = `
   mutation SendReport($data: String!) {
@@ -169,7 +182,79 @@ async function generateInvestorReport(investorId: string, investorPhone: string,
     throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
   }
 
-  return result.data;
+  const reportData = result.data as Record<string, unknown>;
+  const ordersRaw = Array.isArray(reportData.orders)
+    ? reportData.orders.filter((o): o is Record<string, unknown> => Boolean(o && typeof o === 'object'))
+    : [];
+  const orderIds = [
+    ...new Set(
+      ordersRaw
+        .map((o) => (typeof o.id === 'string' ? o.id : ''))
+        .filter((id) => id.length > 0),
+    ),
+  ];
+  if (orderIds.length === 0) return reportData;
+
+  let itemsByOrderId = new Map<string, Array<Record<string, unknown>>>();
+  try {
+    const linesResp = await fetch(config.graphql.endpoint, {
+      method: 'POST',
+      headers: getGraphQLHeaders(),
+      body: JSON.stringify({
+        query: FETCH_ORDER_ITEMS_BY_ORDER_IDS_QUERY,
+        variables: { orderIds },
+      }),
+    });
+    if (linesResp.ok) {
+      const linesResult = await linesResp.json();
+      if (!linesResult.errors) {
+        const lines = Array.isArray(linesResult.data?.order_items)
+          ? (linesResult.data.order_items as Array<Record<string, unknown>>)
+          : [];
+        for (const line of lines) {
+          const oid = typeof line.order_id === 'string' ? line.order_id : '';
+          if (!oid) continue;
+          const list = itemsByOrderId.get(oid) ?? [];
+          list.push(line);
+          itemsByOrderId.set(oid, list);
+        }
+      }
+    }
+  } catch {
+    // Fallback to header-only report rows when lines cannot be fetched.
+  }
+
+  const investorStockIds = new Set(
+    (Array.isArray(reportData.stocks) ? reportData.stocks : [])
+      .map((s) => (s && typeof s === 'object' && typeof (s as Record<string, unknown>).id === 'string'
+        ? ((s as Record<string, unknown>).id as string)
+        : ''))
+      .filter((id) => id.length > 0),
+  );
+
+  const expandedOrders: Record<string, unknown>[] = [];
+  for (const order of ordersRaw) {
+    const oid = typeof order.id === 'string' ? order.id : '';
+    const orderItems = (itemsByOrderId.get(oid) ?? []).filter((it) => {
+      const sid = typeof it.stock_id === 'string' ? it.stock_id : '';
+      return sid.length > 0 && (investorStockIds.size === 0 || investorStockIds.has(sid));
+    });
+    if (orderItems.length === 0) {
+      expandedOrders.push(order);
+      continue;
+    }
+    for (const item of orderItems) {
+      expandedOrders.push({
+        ...order,
+        stock_id: item.stock_id,
+        order_quantity: item.quantity,
+        total_amount: item.line_total,
+        unit_price: item.unit_price,
+      });
+    }
+  }
+
+  return { ...reportData, orders: expandedOrders };
 }
 
 function withComputedSoldPrice(reportData: Record<string, unknown>): Record<string, unknown> {
@@ -187,10 +272,15 @@ function withComputedSoldPrice(reportData: Record<string, unknown>): Record<stri
     if (!row || typeof row !== 'object') return row;
     const rec = row as Record<string, unknown>;
     const sid = typeof rec.stock_id === 'string' ? rec.stock_id : '';
+    const directUnitPrice =
+      rec.unit_price == null ? null : Number(String(rec.unit_price).replace(/[^0-9.-]/g, ''));
     return {
       ...rec,
       // String for downstream SMS formatter that calls `.replace(...)`.
-      selling_price: soldUnitPriceForReportOrder(rec, stocks),
+      selling_price:
+        directUnitPrice != null && Number.isFinite(directUnitPrice)
+          ? directUnitPrice.toFixed(2)
+          : soldUnitPriceForReportOrder(rec, stocks),
       stock_name: stockLabelById.get(sid) ?? (sid ? sid.slice(0, 8) + '…' : '—'),
     };
   });

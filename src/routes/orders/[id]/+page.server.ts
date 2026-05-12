@@ -28,6 +28,35 @@ const FETCH_ORDER_FOR_MERCHANT_QUERY = `
       total_amount
       outstanding_amount
       unit
+      order_items(order_by: [{ created_at: asc }, { id: asc }]) {
+        stock_id
+        quantity
+        unit
+        unit_price
+        line_total
+        factor_snapshot
+        stock {
+          id
+          branch
+          product_type
+          attributes
+          type
+          model_number
+          country
+          color
+          created_by
+          figure
+          investors
+          merchant {
+            id
+          }
+          quantity
+          selling_price
+          thickness
+          factor
+          unit
+        }
+      }
       stock {
         id
         branch
@@ -139,7 +168,12 @@ export const actions: Actions = {
     }
 
     const customerId = String((order as { customer_id?: string }).customer_id ?? '').trim();
-    const stockBranch = (order as { stock?: { branch?: string | null } | null }).stock?.branch;
+    const stockBranch =
+      (order as {
+        order_items?: Array<{ stock?: { branch?: string | null } | null }> | null;
+        stock?: { branch?: string | null } | null;
+      }).order_items?.find((x) => x?.stock?.branch)?.stock?.branch ??
+      (order as { stock?: { branch?: string | null } | null }).stock?.branch;
     const companyId = stockBranch ? await fetchBranchCompanyId(stockBranch) : null;
 
     if (!customerId || !companyId) {

@@ -5,7 +5,8 @@ import { createPaymentRecord } from '$lib/payments.server';
 import {
   fetchCustomerLatestBalance,
   insertCustomerTransaction,
-  sumOrderLedgerCashInflowPayments,
+  sumOrderLedgerCustomerBalancePayments,
+  sumOrderLedgerManualCashPayments,
   sumOrderLedgerOrderDebits,
 } from '$lib/customerTransactions.server';
 import { config, getGraphQLHeaders } from '$lib/config';
@@ -144,6 +145,25 @@ const FETCH_ORDERS_QUERY = `
       total_amount
       outstanding_amount
       unit
+      order_items(order_by: [{ created_at: asc }, { id: asc }]) {
+        stock_id
+        quantity
+        unit
+        line_total
+        unit_price
+        factor_snapshot
+        stock {
+          unit
+          type
+          product_type
+          attributes
+          model_number
+          country
+          color
+          figure
+          thickness
+        }
+      }
       stock {
         unit
         type
@@ -167,20 +187,6 @@ const FETCH_ORDERS_QUERY = `
   }
 `;
 
-const FETCH_ORDER_FOR_MERCHANT_QUERY = `
-  query OrderForMerchant($id: uuid!, $merchantId: uuid!) {
-    orders(
-      where: { _and: [{ id: { _eq: $id } }, { created_by: { _eq: $merchantId } }] }
-      limit: 1
-    ) {
-      id
-      stock_id
-      order_quantity
-      status
-    }
-  }
-`;
-
 const FETCH_ORDER_CANCEL_CONTEXT_QUERY = `
   query OrderCancelContext($id: uuid!, $merchantId: uuid!) {
     orders(
@@ -194,6 +200,16 @@ const FETCH_ORDER_CANCEL_CONTEXT_QUERY = `
       customer_id
       total_amount
       outstanding_amount
+      order_items(order_by: [{ created_at: asc }, { id: asc }]) {
+        stock_id
+        quantity
+        stock {
+          branch
+          type
+          product_type
+          attributes
+        }
+      }
       stock {
         branch
         type
@@ -222,9 +238,17 @@ const CANCEL_ORDER_MUTATION = `
   }
 `;
 
-const CREATE_ORDERS_BULK_MUTATION = `
-  mutation CreateOrdersBulk($objects: [orders_insert_input!]!) {
-    insert_orders(objects: $objects) {
+const CREATE_ORDER_MUTATION = `
+  mutation CreateOrder($object: orders_insert_input!) {
+    insert_orders_one(object: $object) {
+      id
+    }
+  }
+`;
+
+const CREATE_ORDER_ITEMS_BULK_MUTATION = `
+  mutation CreateOrderItemsBulk($objects: [order_items_insert_input!]!) {
+    insert_order_items(objects: $objects) {
       affected_rows
       returning {
         id
@@ -437,14 +461,32 @@ async function fetchOrders(merchantId: string) {
     const orders = (data.orders ?? []).map((row) => {
       if (!row || typeof row !== 'object') return row;
       const rec = row as Record<string, unknown>;
+      const itemsRaw = Array.isArray(rec.order_items) ? rec.order_items : [];
+      const items = itemsRaw.filter(
+        (x): x is Record<string, unknown> => Boolean(x && typeof x === 'object'),
+      );
       const stock =
         rec.stock && typeof rec.stock === 'object'
           ? (rec.stock as Record<string, unknown>)
           : null;
       const fallbackId = String(rec.stock_id ?? '').slice(0, 8) + '…';
+      const itemNames = items
+        .map((it) => {
+          const s = it.stock;
+          if (s && typeof s === 'object') return buildStockLabel(s as Record<string, unknown>);
+          const sid = String(it.stock_id ?? '').trim();
+          return sid ? `${sid.slice(0, 8)}…` : '';
+        })
+        .filter((x) => x.length > 0);
+      const mergedName =
+        itemNames.length === 0
+          ? null
+          : itemNames.length <= 2
+            ? itemNames.join(' + ')
+            : `${itemNames[0]} +${itemNames.length - 1} more`;
       return {
         ...rec,
-        stock_name: stock ? buildStockLabel(stock) : fallbackId,
+        stock_name: mergedName ?? (stock ? buildStockLabel(stock) : fallbackId),
       };
     });
     const payments = (data.payment ?? []).filter(
@@ -456,27 +498,14 @@ async function fetchOrders(merchantId: string) {
   }
 }
 
-async function orderBelongsToMerchant(orderId: string, merchantId: string): Promise<boolean> {
-  try {
-    const data = await gql<{ orders: unknown[] }>(FETCH_ORDER_FOR_MERCHANT_QUERY, {
-      id: orderId,
-      merchantId,
-    });
-    return (data.orders ?? []).length > 0;
-  } catch {
-    return false;
-  }
-}
-
 type MerchantOrderCancelRow = {
   id: string;
-  stock_id: string;
-  order_quantity: number;
   status: string;
   customer_id: string;
   total_amount: number;
   outstanding_amount: number;
   stock_branch: string | null;
+  lines: Array<{ stock_id: string; quantity: number }>;
 };
 
 function parseMoney(v: unknown): number {
@@ -494,30 +523,46 @@ async function fetchMerchantOrderForCancel(
     const data = await gql<{
       orders: Array<{
         id: string;
-        stock_id?: string | null;
-        order_quantity?: unknown;
         status?: string | null;
         customer_id?: string | null;
         total_amount?: unknown;
         outstanding_amount?: unknown;
+        order_items?: Array<{
+          stock_id?: string | null;
+          quantity?: unknown;
+          stock?: { branch?: string | null } | null;
+        }> | null;
         stock?: { branch?: string | null } | null;
       }>;
     }>(FETCH_ORDER_CANCEL_CONTEXT_QUERY, { id: orderId, merchantId });
     const row = data.orders?.[0];
-    if (!row?.stock_id) return null;
-    const q = Number(row.order_quantity);
-    if (!Number.isFinite(q) || q <= 0) return null;
+    if (!row) return null;
+    const lines = (row.order_items ?? [])
+      .map((it) => ({
+        stock_id: String(it?.stock_id ?? '').trim(),
+        quantity: Number(it?.quantity),
+      }))
+      .filter((it) => it.stock_id !== '' && Number.isFinite(it.quantity) && it.quantity > 0);
+    const fallbackStockId = String((row as { stock_id?: string | null }).stock_id ?? '').trim();
+    const fallbackQty = Number((row as { order_quantity?: unknown }).order_quantity);
+    const normalizedLines =
+      lines.length > 0
+        ? lines
+        : fallbackStockId && Number.isFinite(fallbackQty) && fallbackQty > 0
+          ? [{ stock_id: fallbackStockId, quantity: fallbackQty }]
+          : [];
+    if (normalizedLines.length === 0) return null;
     const customerId = String(row.customer_id ?? '').trim();
     if (!customerId) return null;
+    const firstLineBranch = row.order_items?.find((x) => x?.stock?.branch)?.stock?.branch ?? null;
     return {
       id: row.id,
-      stock_id: row.stock_id,
-      order_quantity: q,
       status: String(row.status ?? '').trim() || 'unpaid',
       customer_id: customerId,
       total_amount: parseMoney(row.total_amount),
       outstanding_amount: parseMoney(row.outstanding_amount),
-      stock_branch: row.stock?.branch ?? null,
+      stock_branch: firstLineBranch ?? row.stock?.branch ?? null,
+      lines: normalizedLines,
     };
   } catch {
     return null;
@@ -655,27 +700,41 @@ type OrderInsertObject = {
   unit: string | null;
 };
 
-async function insertOrdersBulk(objects: OrderInsertObject[]) {
-  if (objects.length === 0) {
-    throw new Error('No orders to insert');
-  }
+type OrderItemInsertObject = {
+  order_id: string;
+  stock_id: string;
+  quantity: number;
+  unit_price: number;
+  factor_snapshot: number;
+  line_total: number;
+  unit: string | null;
+  created_by: string;
+};
 
+async function insertOrder(object: OrderInsertObject): Promise<{ id: string }> {
   const data = await gql<{
-    insert_orders: {
+    insert_orders_one: { id: string } | null;
+  }>(CREATE_ORDER_MUTATION, { object });
+  const row = data.insert_orders_one;
+  if (!row?.id) throw new Error('Order insert returned no row');
+  return row;
+}
+
+async function insertOrderItemsBulk(objects: OrderItemInsertObject[]) {
+  if (objects.length === 0) throw new Error('No order items to insert');
+  const data = await gql<{
+    insert_order_items: {
       affected_rows: number;
       returning: { id: string }[];
     };
-  }>(CREATE_ORDERS_BULK_MUTATION, { objects });
-
-  const inserted = data.insert_orders?.returning ?? [];
-  const affected = data.insert_orders?.affected_rows ?? 0;
-
+  }>(CREATE_ORDER_ITEMS_BULK_MUTATION, { objects });
+  const inserted = data.insert_order_items?.returning ?? [];
+  const affected = data.insert_order_items?.affected_rows ?? 0;
   if (affected !== objects.length || inserted.length !== objects.length) {
     throw new Error(
-      `Bulk insert mismatch: expected ${objects.length} rows, got ${inserted.length} (affected_rows=${affected})`,
+      `Order items insert mismatch: expected ${objects.length} rows, got ${inserted.length} (affected_rows=${affected})`,
     );
   }
-
   return inserted;
 }
 
@@ -853,7 +912,17 @@ export const actions: Actions = {
     const stockRows = await fetchStocksByIdsForOrder(uniqueStockIds);
     const stockById = new Map(stockRows.map((s) => [s.id, s]));
 
-    const orderObjects: OrderInsertObject[] = [];
+    const orderItems: Array<{
+      stock_id: string;
+      quantity: number;
+      unit_price: number;
+      factor_snapshot: number;
+      line_total: number;
+      unit: string | null;
+    }> = [];
+    let totalOrderQuantity = 0;
+    let totalOrderAmount = 0;
+    let headerUnit: string | null = null;
 
     for (const line of lines) {
       const stockRow = stockById.get(line.stock_id);
@@ -875,64 +944,94 @@ export const actions: Actions = {
 
       const f = resolveOrderFactor(stockRow);
       const total_amount = q * unitPrice * f;
-      const outstanding_amount = total_amount;
-
       const rawUnit = stockRow.unit;
       const orderUnit =
         rawUnit != null && String(rawUnit).trim() !== ''
           ? String(rawUnit).trim()
           : null;
 
-      orderObjects.push({
-        created_by: userId,
-        customer_id: customerId,
-        customer_name: customer_name || 'Customer',
-        customer_address,
-        customer_phone,
-        order_quantity: q,
+      totalOrderQuantity += q;
+      totalOrderAmount += total_amount;
+      headerUnit = headerUnit ?? orderUnit;
+      orderItems.push({
         stock_id: line.stock_id,
-        total_amount,
-        outstanding_amount,
-        status: 'unpaid',
+        quantity: q,
+        unit_price: unitPrice,
+        factor_snapshot: f,
+        line_total: total_amount,
         unit: orderUnit,
       });
     }
 
-    let inserted: { id: string }[];
+    const orderObject: OrderInsertObject = {
+      created_by: userId,
+      customer_id: customerId,
+      customer_name: customer_name || 'Customer',
+      customer_address,
+      customer_phone,
+      order_quantity: totalOrderQuantity,
+      // Legacy NOT NULL column on `orders`; line-level truth is in `order_items`.
+      stock_id: orderItems[0].stock_id,
+      total_amount: totalOrderAmount,
+      outstanding_amount: totalOrderAmount,
+      status: 'unpaid',
+      unit: headerUnit,
+    };
+
+    const decremented: Array<{ stock_id: string; quantity: number }> = [];
     try {
-      inserted = await insertOrdersBulk(orderObjects);
+      for (const line of orderItems) {
+        await incrementStockQuantity(line.stock_id, -line.quantity);
+        decremented.push({ stock_id: line.stock_id, quantity: line.quantity });
+      }
     } catch (err) {
+      for (const line of decremented) {
+        await incrementStockQuantity(line.stock_id, line.quantity).catch(() => {});
+      }
       return {
         success: false,
-        message: `Failed to create orders: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        message: `Failed to reserve stock quantities: ${err instanceof Error ? err.message : 'Unknown error'}`,
       };
     }
 
-    for (let i = 0; i < inserted.length; i++) {
-      const orderId = inserted[i].id;
-      const obj = orderObjects[i];
-      try {
-        await postOrderLedgerAndAutoPay({
-          userId,
-          companyId,
-          customerId,
-          orderId,
-          orderTotalAmount: obj.total_amount,
-        });
-      } catch (err) {
-        return {
-          success: false,
-          message: `Orders created but ledger / balance step failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
-        };
+    let inserted: { id: string };
+    try {
+      inserted = await insertOrder(orderObject);
+      await insertOrderItemsBulk(
+        orderItems.map((line) => ({
+          ...line,
+          order_id: inserted.id,
+          created_by: userId,
+        })),
+      );
+    } catch (err) {
+      for (const line of decremented) {
+        await incrementStockQuantity(line.stock_id, line.quantity).catch(() => {});
       }
+      return {
+        success: false,
+        message: `Failed to create order: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      };
+    }
+
+    try {
+      await postOrderLedgerAndAutoPay({
+        userId,
+        companyId,
+        customerId,
+        orderId: inserted.id,
+        orderTotalAmount: totalOrderAmount,
+      });
+    } catch (err) {
+      return {
+        success: false,
+        message: `Order created but ledger / balance step failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      };
     }
 
     return {
       success: true,
-      message:
-        lines.length === 1
-          ? 'Order created successfully'
-          : `${lines.length} orders created successfully`,
+      message: 'Order created successfully',
     };
   },
 
@@ -1061,7 +1160,9 @@ export const actions: Actions = {
     }
 
     try {
-      await incrementStockQuantity(orderRow.stock_id, orderRow.order_quantity);
+      for (const line of orderRow.lines) {
+        await incrementStockQuantity(line.stock_id, line.quantity);
+      }
     } catch (error) {
       return {
         success: false,
@@ -1072,7 +1173,9 @@ export const actions: Actions = {
     try {
       const result = await cancelOrderInDatabase(orderId);
       if (!result?.id) {
-        await incrementStockQuantity(orderRow.stock_id, -orderRow.order_quantity).catch(() => {});
+        for (const line of orderRow.lines) {
+          await incrementStockQuantity(line.stock_id, -line.quantity).catch(() => {});
+        }
         return { success: false, message: 'Order could not be cancelled' };
       }
 
@@ -1081,11 +1184,33 @@ export const actions: Actions = {
         if (companyId) {
           try {
             const orderDebitSum = await sumOrderLedgerOrderDebits(orderId);
-            if (orderDebitSum > 0) {
+            /**
+             * Reversal must match **remaining obligation**, not always full `type: order` rows.
+             *
+             * Split-payment allocation often lowers `orders.outstanding_amount` via triggers while the ledger
+             * still has one full `+total_amount` line on this order and **no** per-order payment rows.
+             * Reversing the full debit double-counts against cash booked only on another order → bogus credit.
+             *
+             * When ledger splits unpaid (`partial balance`), debits ≈ outstanding — same number.
+             */
+            const outstandingAmt = Math.max(0, parseMoney(orderRow.outstanding_amount));
+            const debitMag = Math.abs(orderDebitSum);
+            let reversalMag = 0;
+            if (debitMag > 0) {
+              reversalMag =
+                outstandingAmt > 0 ? Math.min(debitMag, outstandingAmt) : debitMag;
+            } else if (outstandingAmt > 0) {
+              reversalMag = outstandingAmt;
+            }
+            if (reversalMag !== 0 && Number.isFinite(reversalMag)) {
+              const debitSign =
+                orderDebitSum !== 0 && Number.isFinite(orderDebitSum)
+                  ? Math.sign(orderDebitSum)
+                  : 1;
               await insertCustomerTransaction({
                 company: companyId,
                 customer: orderRow.customer_id,
-                amount: -orderDebitSum,
+                amount: -debitSign * reversalMag,
                 type: 'adjustment',
                 reference: orderId,
                 reference_type: 'order',
@@ -1094,20 +1219,58 @@ export const actions: Actions = {
               });
             }
 
-            if (statusNorm === 'partially_paid' && partialCancelRefund === 'cash') {
-              const cashInflowSum = await sumOrderLedgerCashInflowPayments(orderId);
-              const neutralAmount = -cashInflowSum;
-              if (neutralAmount !== 0 && Number.isFinite(neutralAmount)) {
+            /**
+             * Partial pay from prepaid posts `type: payment` with positive amounts (credit consumed).
+             * Reversing only `type: order` leaves those rows — ledger wrongly shows debt matching that slice.
+             * Undo balance-application lines first; cash refund then offsets that undo for a net-zero position.
+             */
+            if (statusNorm === 'partially_paid') {
+              const balanceAppliedSum = await sumOrderLedgerCustomerBalancePayments(orderId);
+              if (balanceAppliedSum !== 0 && Number.isFinite(balanceAppliedSum)) {
                 await insertCustomerTransaction({
                   company: companyId,
                   customer: orderRow.customer_id,
-                  amount: neutralAmount,
+                  amount: -balanceAppliedSum,
                   type: 'adjustment',
                   reference: orderId,
                   reference_type: 'order',
-                  note: 'Order cancelled — cash refund (cash/bank payment ledger neutralized)',
+                  note: 'Order cancelled — reverse prepaid applied to order',
                   created_by: merchantId,
                 });
+
+                if (partialCancelRefund === 'cash') {
+                  await insertCustomerTransaction({
+                    company: companyId,
+                    customer: orderRow.customer_id,
+                    amount: balanceAppliedSum,
+                    type: 'refund',
+                    reference: orderId,
+                    reference_type: 'order',
+                    note: 'Order cancelled — cash refund recorded',
+                    created_by: merchantId,
+                  });
+                }
+              }
+
+              /**
+               * Manual cash/bank on this order (`payment` with negative amount) does not hit the prepaid undo above.
+               * “Refund to customer balance” must convert that slice back into prepaid (negative running balance).
+               */
+              if (partialCancelRefund === 'balance') {
+                const manualCashSum = await sumOrderLedgerManualCashPayments(orderId);
+                const manualCashPaidMag = Math.max(0, -manualCashSum);
+                if (manualCashPaidMag > 0 && Number.isFinite(manualCashPaidMag)) {
+                  await insertCustomerTransaction({
+                    company: companyId,
+                    customer: orderRow.customer_id,
+                    amount: -manualCashPaidMag,
+                    type: 'adjustment',
+                    reference: orderId,
+                    reference_type: 'order',
+                    note: 'Order cancelled — cash payment released to customer balance',
+                    created_by: merchantId,
+                  });
+                }
               }
             }
           } catch (ledgerErr) {
@@ -1127,7 +1290,9 @@ export const actions: Actions = {
       };
     } catch (error) {
       try {
-        await incrementStockQuantity(orderRow.stock_id, -orderRow.order_quantity);
+        for (const line of orderRow.lines) {
+          await incrementStockQuantity(line.stock_id, -line.quantity);
+        }
       } catch {
         // Rollback failed; stock may be overstated until corrected manually.
       }

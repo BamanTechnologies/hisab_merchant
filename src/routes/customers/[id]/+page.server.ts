@@ -72,6 +72,20 @@ const FETCH_CUSTOMER_ACTIVITY_QUERY = `
       total_amount
       outstanding_amount
       unit
+      order_items(order_by: [{ created_at: asc }, { id: asc }]) {
+        stock_id
+        stock {
+          unit
+          type
+          product_type
+          attributes
+          model_number
+          country
+          color
+          figure
+          thickness
+        }
+      }
       stock {
         unit
         type
@@ -208,6 +222,20 @@ const FETCH_CUSTOMER_ORDERS_ONLY_QUERY = `
       total_amount
       outstanding_amount
       unit
+      order_items(order_by: [{ created_at: asc }, { id: asc }]) {
+        stock_id
+        stock {
+          unit
+          type
+          product_type
+          attributes
+          model_number
+          country
+          color
+          figure
+          thickness
+        }
+      }
       stock {
         unit
         type
@@ -330,6 +358,26 @@ function normalizeOrderRow(raw: Record<string, unknown>): CustomerDetailOrder {
       ? (raw.stock as Record<string, unknown>)
       : null;
   const stockId = String(raw.stock_id ?? '');
+  const orderItems = Array.isArray(raw.order_items)
+    ? raw.order_items.filter(
+        (x): x is Record<string, unknown> => Boolean(x && typeof x === 'object'),
+      )
+    : [];
+  const itemNames = orderItems
+    .map((it) => {
+      const s = it.stock;
+      if (s && typeof s === 'object') return buildStockLabel(s as Record<string, unknown>);
+      const sid = String(it.stock_id ?? '').trim();
+      return sid ? `${sid.slice(0, 8)}…` : '';
+    })
+    .filter((x) => x.length > 0);
+  const mergedName =
+    itemNames.length === 0
+      ? null
+      : itemNames.length <= 2
+        ? itemNames.join(' + ')
+        : `${itemNames[0]} +${itemNames.length - 1} more`;
+
   return {
     id: String(raw.id),
     created_at: String(raw.created_at ?? ''),
@@ -342,7 +390,7 @@ function normalizeOrderRow(raw: Record<string, unknown>): CustomerDetailOrder {
     stock_id: stockId,
     total_amount: parseMoney(raw.total_amount),
     outstanding_amount: parseMoney(raw.outstanding_amount),
-    stock_name: stock ? buildStockLabel(stock) : stockId.slice(0, 8) + '…',
+    stock_name: mergedName ?? (stock ? buildStockLabel(stock) : stockId.slice(0, 8) + '…'),
     unit: raw.unit as string | null | undefined,
     stock: raw.stock as CustomerDetailOrder['stock'],
   };

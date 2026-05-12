@@ -126,6 +126,28 @@
     return String(v);
   }
 
+  /** Hasura / JSON may return `attributes` as object or stringified JSON. */
+  function reportStockAttributes(
+    stock: ReportData["stocks"][number],
+  ): Record<string, unknown> {
+    const raw = stock.attributes;
+    if (raw == null) return {};
+    if (typeof raw === "string") {
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>)
+          : {};
+      } catch {
+        return {};
+      }
+    }
+    if (typeof raw === "object" && !Array.isArray(raw)) {
+      return raw as Record<string, unknown>;
+    }
+    return {};
+  }
+
   function reportStockTypeKey(s: {
     type?: string | null;
     product_type?: string | null;
@@ -139,7 +161,7 @@
   function reportStockModelCell(stock: ReportData["stocks"][number]) {
     const top = stock.model_number != null ? String(stock.model_number).trim() : "";
     if (top !== "") return reportDash(top);
-    const attrs = stock.attributes ?? {};
+    const attrs = reportStockAttributes(stock);
     const m =
       attrs.model_number != null ? String(attrs.model_number).trim() : "";
     return reportDash(m || null);
@@ -147,16 +169,57 @@
 
   /** Name: `attributes.name` when present (e.g. coffee_tools); future types can use alongside model #. */
   function reportStockNameCell(stock: ReportData["stocks"][number]) {
-    const attrs = stock.attributes ?? {};
+    const attrs = reportStockAttributes(stock);
     const n = attrs.name != null ? String(attrs.name).trim() : "";
     return reportDash(n || null);
   }
 
+  /** Align with `buildStockLabel`: JSONB first, then legacy columns (glass etc.). */
+  function reportStockCountryCell(stock: ReportData["stocks"][number]) {
+    const attrs = reportStockAttributes(stock);
+    const fromAttr =
+      attrs.country != null ? String(attrs.country).trim() : "";
+    if (fromAttr !== "") return reportDash(fromAttr);
+    return reportDash(stock.country);
+  }
+
+  function reportStockColorCell(stock: ReportData["stocks"][number]) {
+    const attrs = reportStockAttributes(stock);
+    const fromAttr = attrs.color != null ? String(attrs.color).trim() : "";
+    if (fromAttr !== "") return reportDash(fromAttr);
+    return reportDash(stock.color);
+  }
+
+  function reportStockFigureCell(stock: ReportData["stocks"][number]) {
+    const attrs = reportStockAttributes(stock);
+    const fromAttr = attrs.figure != null ? String(attrs.figure).trim() : "";
+    if (fromAttr !== "") return reportDash(fromAttr);
+    return reportDash(stock.figure);
+  }
+
+  /** Same resolution order as `soldUnitPriceForReportOrder` / order creation. */
+  function reportStockFactorCell(stock: ReportData["stocks"][number]) {
+    const attrs = reportStockAttributes(stock);
+    const fromAttr = attrs.factor;
+    const fromCol = stock.factor;
+    const pick =
+      fromAttr != null && String(fromAttr).trim() !== ""
+        ? fromAttr
+        : fromCol != null && String(fromCol).trim() !== ""
+          ? fromCol
+          : null;
+    return reportDash(pick);
+  }
+
   function reportStockThicknessCell(stock: ReportData["stocks"][number]) {
     if (reportStockTypeKey(stock) === "coffee_tools") {
-      const cap = formatCoffeeCapacityWithUnit(stock.attributes ?? null);
+      const cap = formatCoffeeCapacityWithUnit(reportStockAttributes(stock));
       return cap.trim() !== "" ? cap : "—";
     }
+    const attrs = reportStockAttributes(stock);
+    const fromAttr =
+      attrs.thickness != null ? String(attrs.thickness).trim() : "";
+    if (fromAttr !== "") return reportDash(fromAttr);
     return reportDash(stock.thickness);
   }
   function formatMoney(v: number | string | null | undefined): string {
@@ -173,7 +236,13 @@
   const reportStockNameByStockId = $derived.by(() => {
     const map = new Map<string, string>();
     for (const s of generatedReportData?.stocks ?? []) {
-      map.set(s.id, buildStockLabel(s));
+      map.set(
+        s.id,
+        buildStockLabel({
+          ...s,
+          attributes: reportStockAttributes(s),
+        }),
+      );
     }
     return map;
   });
@@ -597,13 +666,13 @@
                       >
                       <td>{reportStockModelCell(stock)}</td>
                       <td>{reportStockNameCell(stock)}</td>
-                      <td>{reportDash(stock.country)}</td>
-                      <td>{reportDash(stock.color)}</td>
-                      <td>{reportDash(stock.figure)}</td>
+                      <td>{reportStockCountryCell(stock)}</td>
+                      <td>{reportStockColorCell(stock)}</td>
+                      <td>{reportStockFigureCell(stock)}</td>
                       <td>{reportStockThicknessCell(stock)}</td>
                       <td>{stock.quantity}</td>
                       <td>{formatMoney(stock.selling_price)}</td>
-                      <td>{reportDash(stock.factor)}</td>
+                      <td>{reportStockFactorCell(stock)}</td>
                     </tr>
                   {/each}
                 </tbody>
@@ -630,7 +699,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {#each generatedReportData.orders as order, i (order.id)}
+                  {#each generatedReportData.orders as order, i (`${order.id}-${order.stock_id}-${i}`)}
                     <tr>
                       <td class="col-num">{i + 1}</td>
                       <td
