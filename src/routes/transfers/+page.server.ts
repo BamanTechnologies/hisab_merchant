@@ -2,6 +2,7 @@ import type { PageServerLoad } from "./$types";
 import { getUserIdFromRequest } from "$lib/auth";
 import { config, getGraphQLHeaders } from "$lib/config";
 import { fetchBranchCompanyId } from "$lib/companyInvestors.server";
+import { buildStockLabel, type StockLabelInput } from "$lib/stockLabel";
 
 type TransferRow = {
   id: string;
@@ -13,6 +14,61 @@ type TransferRow = {
   destination_merchant?: string | null;
   quantity?: number | string | null;
   created_at?: string | null;
+};
+
+/** Same as client `chosenStockId`: sender → source; receiver → destination or legacy source. */
+function transferLinkStockId(
+  t: TransferRow,
+  merchantId: string,
+): string | null {
+  const nonEmpty = (v: unknown): string | null => {
+    if (v == null) return null;
+    const s = String(v).trim();
+    return s.length > 0 ? s : null;
+  };
+  const isSender = String(t.created_by ?? "").trim() === String(merchantId).trim();
+  if (isSender) return nonEmpty(t.stock);
+  return nonEmpty(t.destination_stock) ?? nonEmpty(t.stock);
+}
+
+function stockRowForLabel(row: Record<string, unknown>): StockLabelInput {
+  const pt = row.product_type;
+  const product_type =
+    pt && typeof pt === "object" && pt !== null && "name" in (pt as object)
+      ? String((pt as { name?: unknown }).name ?? "").trim() || null
+      : typeof pt === "string"
+        ? pt.trim() || null
+        : null;
+  let attributes: Record<string, unknown> = {};
+  const raw = row.attributes;
+  if (raw != null && typeof raw === "object" && !Array.isArray(raw)) {
+    attributes = raw as Record<string, unknown>;
+  } else if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        attributes = parsed as Record<string, unknown>;
+      }
+    } catch {
+      attributes = {};
+    }
+  }
+  return {
+    id: String(row.id ?? ""),
+    type: (row.type as string | null) ?? null,
+    product_type,
+    attributes,
+    model_number: (row.model_number as string | null) ?? null,
+    country: (row.country as string | null) ?? null,
+    thickness: row.thickness as number | string | null,
+    color: (row.color as string | null) ?? null,
+    figure: (row.figure as string | null) ?? null,
+  };
+}
+
+type TransferRowEnriched = TransferRow & {
+  stock_link_id: string | null;
+  stock_display_name: string;
 };
 
 type BranchRow = { id: string; name?: string | null };
@@ -68,6 +124,22 @@ const FETCH_MERCHANTS_QUERY = `
   }
 `;
 
+const FETCH_STOCKS_BY_IDS_FOR_TRANSFERS_QUERY = `
+  query TransferStocksByIds($ids: [uuid!]!) {
+    stock(where: { id: { _in: $ids } }) {
+      id
+      type
+      product_type
+      attributes
+      model_number
+      country
+      thickness
+      color
+      figure
+    }
+  }
+`;
+
 async function gqlRequest<T>(query: string, variables?: Record<string, unknown>) {
   const response = await fetch(config.graphql.endpoint, {
     method: "POST",
@@ -116,6 +188,44 @@ export const load: PageServerLoad = async ({ request, url, parent }) => {
 
     const transfers = transferData.transfers ?? [];
 
+    const stockIdSet = new Set<string>();
+    for (const t of transfers) {
+      const a = t.stock != null ? String(t.stock).trim() : "";
+      const b = t.destination_stock != null ? String(t.destination_stock).trim() : "";
+      if (a) stockIdSet.add(a);
+      if (b) stockIdSet.add(b);
+    }
+    const stockIds = [...stockIdSet];
+    const labelByStockId = new Map<string, string>();
+    if (stockIds.length > 0) {
+      try {
+        const stockPack = await gqlRequest<{ stock: Record<string, unknown>[] }>(
+          FETCH_STOCKS_BY_IDS_FOR_TRANSFERS_QUERY,
+          { ids: stockIds },
+        );
+        for (const row of stockPack.stock ?? []) {
+          const id = String(row.id ?? "").trim();
+          if (!id) continue;
+          labelByStockId.set(id, buildStockLabel(stockRowForLabel(row)));
+        }
+      } catch {
+        // Labels fall back to short id below
+      }
+    }
+
+    const transfersEnriched: TransferRowEnriched[] = transfers.map((t) => {
+      const linkId = merchantId ? transferLinkStockId(t, merchantId) : null;
+      const label =
+        linkId != null
+          ? labelByStockId.get(linkId) ?? `${linkId.slice(0, 8)}…`
+          : "—";
+      return {
+        ...t,
+        stock_link_id: linkId,
+        stock_display_name: label,
+      };
+    });
+
     let branches: BranchRow[] = [];
     if (companyId) {
       const branchData = await gqlRequest<{ branches: BranchRow[] }>(
@@ -133,7 +243,7 @@ export const load: PageServerLoad = async ({ request, url, parent }) => {
     }
 
     return {
-      transfers,
+      transfers: transfersEnriched,
       branches,
       merchants: merchantData.merchant ?? [],
       merchantId,

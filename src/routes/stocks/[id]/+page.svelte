@@ -44,6 +44,10 @@
 
   let { data }: { data: PageData } = $props();
   const stock = data.stock as Stock | null;
+  const stockHeldAtBranch = data.stockHeldAtBranch as
+    | { id: string; name: string }
+    | null
+    | undefined;
   const originBranchName = data.originBranchName ?? null;
   const investors = data.investors;
   const transferTargetBranches = (data.transferTargetBranches ??
@@ -288,6 +292,15 @@
         <span class="label">Investors:</span><span>{investorNames}</span>
       </div>
     </div>
+  {:else if stockHeldAtBranch}
+    <div class="held-elsewhere" role="status">
+      <p class="held-elsewhere-title">View this stock in its branch</p>
+      <p class="held-elsewhere-body">
+        Full stock details are available in the sender branch
+        <strong>{stockHeldAtBranch.name}</strong>. Switch your workspace to that
+        branch (or ask a teammate there) to open this record.
+      </p>
+    </div>
   {:else}
     <p class="muted">Stock not found.</p>
   {/if}
@@ -441,6 +454,27 @@
   }
   .muted {
     color: #94a3b8;
+  }
+  .held-elsewhere {
+    max-width: 32rem;
+    padding: 1rem 1.15rem;
+    border-radius: 0.9rem;
+    border: 1px solid color-mix(in oklab, var(--surface-2), white 14%);
+    background: color-mix(in oklab, var(--surface-2), white 5%);
+  }
+  .held-elsewhere-title {
+    margin: 0 0 0.5rem;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #e5e7eb;
+  }
+  .held-elsewhere-body {
+    margin: 0;
+    color: #cbd5e1;
+    line-height: 1.55;
+  }
+  .held-elsewhere-body strong {
+    color: #f1f5f9;
   }
   .header-actions {
     margin: 0 0 0.75rem;

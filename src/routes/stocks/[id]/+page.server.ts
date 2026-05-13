@@ -271,8 +271,25 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
   const stockBranch = typeof stock?.branch === 'string' ? stock.branch : null;
   const stockOrigin = typeof stock?.origin === 'string' ? stock.origin : null;
 
-  if (merchantBranchId != null && stockBranch !== merchantBranchId) {
-    error(404, 'Stock not found');
+  if (
+    merchantBranchId != null &&
+    stockBranch != null &&
+    stockBranch !== merchantBranchId
+  ) {
+    const homeBranch = await fetchBranchByPk(stockBranch);
+    const branchName =
+      homeBranch?.name != null && String(homeBranch.name).trim() !== ''
+        ? String(homeBranch.name)
+        : `${stockBranch.slice(0, 8)}…`;
+    return {
+      stock: null,
+      investors,
+      merchantId,
+      originBranchName: null,
+      transferTargetBranches: [],
+      merchantsInTransferBranches: [],
+      stockHeldAtBranch: { id: stockBranch, name: branchName },
+    };
   }
 
   let originBranchName: string | null = null;
@@ -300,6 +317,7 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
     originBranchName,
     transferTargetBranches,
     merchantsInTransferBranches,
+    stockHeldAtBranch: null,
   };
 };
 

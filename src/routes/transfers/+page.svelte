@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from "$app/navigation";
   import type { PageData } from "./$types";
 
   type Transfer = {
@@ -11,6 +12,8 @@
     destination_merchant?: string | null;
     quantity?: number | string | null;
     created_at?: string | null;
+    stock_link_id?: string | null;
+    stock_display_name?: string;
   };
 
   type Branch = { id: string; name?: string | null };
@@ -60,19 +63,6 @@
     return Number.isFinite(n) ? n.toLocaleString() : "—";
   }
 
-  function nonEmptyStockId(v: string | null | undefined): string | null {
-    if (v == null) return null;
-    const s = String(v).trim();
-    return s.length > 0 ? s : null;
-  }
-
-  /** Link target: sender → source stock; receiver → destination line, or legacy `stock` if missing. */
-  function chosenStockId(t: Transfer) {
-    const isSender = t.created_by === merchantId;
-    if (isSender) return nonEmptyStockId(t.stock);
-    return nonEmptyStockId(t.destination_stock) ?? nonEmptyStockId(t.stock);
-  }
-
   function clearFilters() {
     fromFilter = "";
     toFilter = "";
@@ -110,6 +100,26 @@
       return true;
     }),
   );
+
+  function stockLinkId(t: Transfer): string | null {
+    const id = t.stock_link_id;
+    if (id == null) return null;
+    const s = String(id).trim();
+    return s.length > 0 ? s : null;
+  }
+
+  function onTransferRowClick(t: Transfer) {
+    const id = stockLinkId(t);
+    if (id) goto(`/stocks/${id}`);
+  }
+
+  function onTransferRowKeydown(e: KeyboardEvent, t: Transfer) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const id = stockLinkId(t);
+    if (!id) return;
+    e.preventDefault();
+    goto(`/stocks/${id}`);
+  }
 </script>
 
 <section class="header">
@@ -172,9 +182,9 @@
         <th>To</th>
         <th>From merchant</th>
         <th>To merchant</th>
+        <th>Stock</th>
         <th class="right">Quantity</th>
         <th>Date</th>
-        <th class="center">Action</th>
       </tr>
     </thead>
     <tbody>
@@ -186,22 +196,28 @@
         </tr>
       {:else}
         {#each filteredTransfers as t, i}
-          {@const stockId = chosenStockId(t)}
-          <tr>
+          {@const linkId = stockLinkId(t)}
+          <tr
+            class:row-clickable={!!linkId}
+            onclick={() => onTransferRowClick(t)}
+            onkeydown={(e) => onTransferRowKeydown(e, t)}
+            tabindex={linkId ? 0 : undefined}
+            role={linkId ? "button" : undefined}
+          >
             <td>{i + 1}</td>
             <td>{branchName(t.from)}</td>
             <td>{branchName(t.to)}</td>
             <td>{merchantName(t.created_by)}</td>
             <td>{merchantName(t.destination_merchant)}</td>
-            <td class="right">{quantityLabel(t.quantity)}</td>
-            <td>{formatDate(t.created_at)}</td>
-            <td class="center">
-              {#if stockId}
-                <a class="link-btn" href={`/stocks/${stockId}`}>View stock</a>
+            <td>
+              {#if linkId}
+                {t.stock_display_name ?? "—"}
               {:else}
                 <span class="muted">Unavailable</span>
               {/if}
             </td>
+            <td class="right">{quantityLabel(t.quantity)}</td>
+            <td>{formatDate(t.created_at)}</td>
           </tr>
         {/each}
       {/if}
@@ -287,23 +303,15 @@
   .right {
     text-align: right;
   }
-  .center {
-    text-align: center;
+  tr.row-clickable {
+    cursor: pointer;
   }
-  .link-btn {
-    display: inline-flex;
-    align-items: center;
-    text-decoration: none;
-    font-weight: 700;
-    color: #0b1220;
-    background: linear-gradient(
-      180deg,
-      color-mix(in oklab, var(--brand), white 10%),
-      var(--brand)
-    );
-    border: 1px solid color-mix(in oklab, var(--brand), black 35%);
-    border-radius: 0.55rem;
-    padding: 0.34rem 0.65rem;
+  tr.row-clickable:hover td {
+    background: color-mix(in oklab, var(--surface-2), white 6%);
+  }
+  tr.row-clickable:focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--brand), white 20%);
+    outline-offset: -2px;
   }
   .empty {
     text-align: center;
