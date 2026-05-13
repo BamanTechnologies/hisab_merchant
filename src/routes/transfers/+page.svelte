@@ -60,19 +60,17 @@
     return Number.isFinite(n) ? n.toLocaleString() : "—";
   }
 
+  function nonEmptyStockId(v: string | null | undefined): string | null {
+    if (v == null) return null;
+    const s = String(v).trim();
+    return s.length > 0 ? s : null;
+  }
+
+  /** Link target: sender → source stock; receiver → destination line, or legacy `stock` if missing. */
   function chosenStockId(t: Transfer) {
     const isSender = t.created_by === merchantId;
-    return isSender ? (t.stock ?? null) : (t.destination_stock ?? null);
-  }
-
-  function chosenStockLabel(t: Transfer) {
-    const isSender = t.created_by === merchantId;
-    return isSender ? "Stock" : "Destination stock";
-  }
-
-  function shortId(v: string | null | undefined) {
-    if (!v) return "—";
-    return `${v.slice(0, 8)}…`;
+    if (isSender) return nonEmptyStockId(t.stock);
+    return nonEmptyStockId(t.destination_stock) ?? nonEmptyStockId(t.stock);
   }
 
   function clearFilters() {

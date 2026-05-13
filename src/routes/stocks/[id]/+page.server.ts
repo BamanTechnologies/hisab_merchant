@@ -555,6 +555,7 @@ async function transferStockPartial(input: {
       to: toBranch,
       quantity: transferQty,
       created_by: actorId,
+      destination_merchant: assigneeId,
       destination_stock: reusableDestinationId,
     };
 
@@ -614,6 +615,7 @@ async function transferStockPartial(input: {
     to: toBranch,
     quantity: transferQty,
     created_by: actorId,
+    destination_merchant: assigneeId,
     destination_stock: newDestinationStockId,
   };
 
