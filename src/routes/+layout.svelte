@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "../app.css";
   import favicon from "$lib/assets/favicon.svg";
   import ToastHost from "$lib/ToastHost.svelte";
   import { browser } from "$app/environment";
