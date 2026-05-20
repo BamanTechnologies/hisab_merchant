@@ -1,20 +1,14 @@
 <script lang="ts">
-  import { enhance } from "$app/forms";
-  import { goto } from "$app/navigation";
-  import { showToast } from "$lib/toast";
   import { Button } from "$lib/components/ui/button/index.js";
   import { FormField } from "$lib/components/ui/form-field/index.js";
   import Icon from "$lib/components/ui/Icon/index.js";
   import { onMount, onDestroy } from "svelte";
-  import type { PageData } from "./$types";
 
-  let { data, form }: { data: PageData; form?: any } = $props();
-
+  let name = $state("");
+  let email = $state("");
   let phone = $state("");
   let password = $state("");
-  let signInPending = $state(false);
-
-  // Carousel
+  let confirmPassword = $state("");
   let currentSlide = $state(0);
   let carouselContainer: HTMLDivElement;
   let isDragging = $state(false);
@@ -24,16 +18,19 @@
 
   const slides = [
     {
-      title: "Manage your stock in real time",
-      description: "Track inventory movements, manage product levels, and stay on top of your branch operations.",
+      title: "Organize stocks across locations",
+      description:
+        "Manage products, merchants, and inventory across all your branches from one secure platform.",
     },
     {
-      title: "Streamline your orders",
-      description: "Create orders, manage customers, and handle payments all from one unified dashboard.",
+      title: "Real-time inventory tracking",
+      description:
+        "Get instant updates on stock levels, track movements, and prevent stockouts with automated alerts.",
     },
     {
-      title: "Powerful reports at your fingertips",
-      description: "Generate clear, accurate sales and stock reports to understand your business performance.",
+      title: "Streamlined business operations",
+      description:
+        "Simplify your workflow with powerful analytics, reporting tools, and seamless integration capabilities.",
     },
   ];
 
@@ -70,26 +67,6 @@
   onDestroy(() => stopAutoScroll());
 
   $effect(() => { isDragging ? stopAutoScroll() : startAutoScroll(); });
-
-  // Handle login response — original backend logic untouched
-  $effect(() => {
-    if (form) {
-      if (form.token) {
-        showToast("Signed in successfully", "success");
-        localStorage.setItem("authToken", form.token);
-        if (form.merchantBranchId) {
-          localStorage.setItem("merchantBranchId", form.merchantBranchId);
-          document.cookie = `merchantBranchId=${form.merchantBranchId}; path=/; samesite=strict`;
-        } else {
-          localStorage.removeItem("merchantBranchId");
-          document.cookie = "merchantBranchId=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-        }
-        goto("/");
-      } else {
-        showToast("One of the details is incorrect", "error");
-      }
-    }
-  });
 </script>
 
 <svelte:head>
@@ -97,11 +74,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Raleway:wght@400;500;600;700&display=swap" rel="stylesheet" />
 </svelte:head>
-
-<a href="/" class="fixed top-4 left-4 z-50 flex items-center gap-2 px-3 py-2 rounded-lg bg-white/80 border border-gray-200 shadow-sm hover:bg-white transition-colors text-sm font-medium text-gray-700 backdrop-blur-sm">
-  <Icon iconName="icon/arrow-left" size={16} />
-  Home
-</a>
 
 <div class="min-h-screen bg-white flex items-center justify-center p-4">
   <div class="w-full max-w-6xl flex flex-col lg:flex-row rounded-2xl overflow-hidden shadow-xl">
@@ -162,24 +134,36 @@
       </div>
     </div>
 
-    <!-- Right: sign-in form -->
+    <!-- Right: register form -->
     <div class="w-full lg:w-1/2 bg-white flex items-center justify-center p-8 lg:p-16">
       <div class="w-full max-w-md space-y-8">
 
         <div class="space-y-2 text-center lg:text-left">
-          <h2 class="text-3xl font-bold text-foreground">Log in to your account</h2>
+          <h2 class="text-3xl font-bold text-foreground">Create an Account</h2>
           <p class="text-muted-foreground text-sm">Please enter your details to continue.</p>
         </div>
 
-        <form
-          method="POST"
-          action="?/login"
-          class="space-y-6"
-          use:enhance={() => {
-            signInPending = true;
-            return async ({ update }) => { await update(); signInPending = false; };
-          }}
-        >
+        <form class="space-y-6" onsubmit={(e) => e.preventDefault()}>
+          <FormField
+            id="name"
+            name="name"
+            label="Full Name"
+            type="text"
+            placeholder="Enter your full name"
+            bind:value={name}
+            required
+          />
+
+          <FormField
+            id="email"
+            name="email"
+            label="Email"
+            type="email"
+            placeholder="Enter your email address"
+            bind:value={email}
+            required
+          />
+
           <FormField
             id="phone"
             name="phone"
@@ -188,7 +172,6 @@
             placeholder="+2519********"
             bind:value={phone}
             required
-            disabled={signInPending}
           />
 
           <FormField
@@ -200,18 +183,32 @@
             bind:value={password}
             showPasswordToggle
             required
-            disabled={signInPending}
+          />
+
+          <FormField
+            id="confirm-password"
+            name="confirm-password"
+            label="Confirm Password"
+            type="password"
+            placeholder="Enter your password again"
+            bind:value={confirmPassword}
+            showPasswordToggle
+            required
           />
 
           <Button
             type="submit"
             size="lg"
             class="w-full bg-info text-info-foreground hover:bg-info/90 rounded-full py-6 text-lg font-medium"
-            disabled={signInPending}
           >
-            {signInPending ? "Signing in…" : "Login"}
+            Create Account
           </Button>
         </form>
+
+        <div class="text-center text-sm text-muted-foreground">
+          Already have an account?
+          <a href="/sign-in" class="text-info font-bold ml-1 hover:opacity-80">Log In</a>
+        </div>
 
       </div>
     </div>
