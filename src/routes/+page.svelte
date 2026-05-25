@@ -56,7 +56,7 @@
 
 <div class="min-h-screen bg-background">
 
-  <!-- Navbar -->m
+  <!-- Navbar -->
   <nav class="sticky top-0 z-50 border-b border-border/20 bg-white/90 backdrop-blur-sm">
     <div class="container mx-auto px-6">
       <div class="flex h-16 items-center justify-between">
