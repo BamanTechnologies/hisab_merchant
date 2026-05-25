@@ -9,6 +9,7 @@
 
   let isAuthenticated = $state(false);
   let faqOpen = $state<Record<number, boolean>>({ 0: true });
+  let mobileMenuOpen = $state(false);
 
   onMount(() => {
     if (!browser) return;
@@ -61,33 +62,59 @@
     <div class="container mx-auto px-6">
       <div class="flex h-16 items-center justify-between">
         <a href="/" class="flex items-center gap-2 hover:opacity-80 transition-opacity">
-          <!-- <div class="w-10 h-10 rounded-xl bg-info flex items-center justify-center">
-            <Icon iconName="icon/trending-up" size={20} class="text-info-foreground" />
-          </div> -->
-          <img src="./logonew.png" alt="Bamanstock" class="w-50 h-20 object-cover" />
-          <!-- <span class="text-xl font-bold text-info">BAMANSTOCK</span> -->
+          <img src="./logonew.png" alt="Bamanstock" class="h-14 md:h-20 w-auto object-cover" />
         </a>
 
         <div class="hidden md:flex items-center gap-8">
-          <a href="#features" class="text-foreground hover:text-info transition-colors text-sm">Features</a>
-          <a href="#how-it-works" class="text-foreground hover:text-info transition-colors text-sm">How It Works</a>
-          <a href="#about" class="text-foreground hover:text-info transition-colors text-sm">About</a>
-          <a href="#contact" class="text-foreground hover:text-info transition-colors text-sm">Contact</a>
+          <a href="#features" onclick={(e) => smoothScrollToHash(e, '#features')} class="text-foreground hover:text-info transition-colors text-sm">Features</a>
+          <a href="#how-it-works" onclick={(e) => smoothScrollToHash(e, '#how-it-works')} class="text-foreground hover:text-info transition-colors text-sm">How It Works</a>
+          <a href="#about" onclick={(e) => smoothScrollToHash(e, '#about')} class="text-foreground hover:text-info transition-colors text-sm">About</a>
+          <a href="#contact" onclick={(e) => smoothScrollToHash(e, '#contact')} class="text-foreground hover:text-info transition-colors text-sm">Contact</a>
         </div>
 
-        <div class="flex items-center gap-3">
+        <div class="hidden md:flex items-center gap-3">
           {#if isAuthenticated}
             <Button variant="outline" href="/stocks" size="sm">Open Dashboard</Button>
             <Button onclick={handleLogout} size="sm" class="bg-info text-info-foreground hover:bg-info/90">Logout</Button>
           {:else}
-            <!-- <Button variant="outline" href="/guideline" size="sm">Guidelines</Button> -->
-            <!-- <Button variant="outline" href="/register" size="sm">Getting Started</Button> -->
             <a href="/sign-in" class="text-info hover:opacity-80 transition-opacity text-sm font-medium">Sign in</a>
             <Button href="/register" size="sm" class="bg-info text-info-foreground hover:bg-info/90">Register</Button>
           {/if}
         </div>
+
+        <!-- Hamburger button (mobile only) -->
+        <button
+          class="md:hidden flex items-center justify-center w-10 h-10 rounded-lg hover:bg-muted transition-colors"
+          onclick={() => (mobileMenuOpen = !mobileMenuOpen)}
+          aria-label="Toggle menu"
+        >
+          {#if mobileMenuOpen}
+            <Icon iconName="icon/x" size={22} class="text-info" />
+          {:else}
+            <Icon iconName="icon/menu" size={22} class="text-info" />
+          {/if}
+        </button>
       </div>
     </div>
+
+    <!-- Mobile menu dropdown -->
+    {#if mobileMenuOpen}
+      <div class="md:hidden border-t border-border/20 bg-white/95 backdrop-blur-sm px-6 py-4 space-y-1">
+        <a href="#features" onclick={(e) => { smoothScrollToHash(e, '#features'); mobileMenuOpen = false; }} class="block py-3 text-foreground hover:text-info transition-colors text-sm font-medium border-b border-border/10">Features</a>
+        <a href="#how-it-works" onclick={(e) => { smoothScrollToHash(e, '#how-it-works'); mobileMenuOpen = false; }} class="block py-3 text-foreground hover:text-info transition-colors text-sm font-medium border-b border-border/10">How It Works</a>
+        <a href="#about" onclick={(e) => { smoothScrollToHash(e, '#about'); mobileMenuOpen = false; }} class="block py-3 text-foreground hover:text-info transition-colors text-sm font-medium border-b border-border/10">About</a>
+        <a href="#contact" onclick={(e) => { smoothScrollToHash(e, '#contact'); mobileMenuOpen = false; }} class="block py-3 text-foreground hover:text-info transition-colors text-sm font-medium border-b border-border/10">Contact</a>
+        <div class="pt-3 flex flex-col gap-2">
+          {#if isAuthenticated}
+            <Button variant="outline" href="/stocks" class="w-full">Open Dashboard</Button>
+            <Button onclick={handleLogout} class="w-full bg-info text-info-foreground hover:bg-info/90">Logout</Button>
+          {:else}
+            <a href="/sign-in" class="block py-2 text-center text-info hover:opacity-80 transition-opacity text-sm font-medium">Sign in</a>
+            <Button href="/register" class="w-full bg-info text-info-foreground hover:bg-info/90">Register</Button>
+          {/if}
+        </div>
+      </div>
+    {/if}
   </nav>
 
   <!-- Hero Section -->
