@@ -27,6 +27,25 @@
   function toggleFaq(index: number) {
     faqOpen[index] = !faqOpen[index];
   }
+
+  async function smoothScrollToHash(e: Event, hash?: string) {
+    e?.preventDefault?.();
+    if (!browser) return;
+
+    const targetHash = hash || (e.currentTarget as HTMLAnchorElement)?.getAttribute?.("href");
+    if (!targetHash || !targetHash.startsWith("#")) return;
+
+    const id = targetHash.slice(1);
+    const el = document.getElementById(id);
+    if (!el) return;
+
+    const navOffset = 80; 
+
+    await new Promise((res) => setTimeout(res, 80));
+
+    const top = el.getBoundingClientRect().top + window.scrollY - navOffset;
+    window.scrollTo({ top, behavior: "smooth" });
+  }
 </script>
 
 <svelte:head>
@@ -37,15 +56,16 @@
 
 <div class="min-h-screen bg-background">
 
-  <!-- Navbar -->
+  <!-- Navbar -->m
   <nav class="sticky top-0 z-50 border-b border-border/20 bg-white/90 backdrop-blur-sm">
     <div class="container mx-auto px-6">
       <div class="flex h-16 items-center justify-between">
         <a href="/" class="flex items-center gap-2 hover:opacity-80 transition-opacity">
-          <div class="w-10 h-10 rounded-xl bg-info flex items-center justify-center">
+          <!-- <div class="w-10 h-10 rounded-xl bg-info flex items-center justify-center">
             <Icon iconName="icon/trending-up" size={20} class="text-info-foreground" />
-          </div>
-          <span class="text-xl font-bold text-info">BAMANSTOCK</span>
+          </div> -->
+          <img src="./logonew.png" alt="Bamanstock" class="w-50 h-20 object-cover" />
+          <!-- <span class="text-xl font-bold text-info">BAMANSTOCK</span> -->
         </a>
 
         <div class="hidden md:flex items-center gap-8">
@@ -61,7 +81,7 @@
             <Button onclick={handleLogout} size="sm" class="bg-info text-info-foreground hover:bg-info/90">Logout</Button>
           {:else}
             <!-- <Button variant="outline" href="/guideline" size="sm">Guidelines</Button> -->
-            <Button variant="outline" href="/register" size="sm">Getting Started</Button>
+            <!-- <Button variant="outline" href="/register" size="sm">Getting Started</Button> -->
             <a href="/sign-in" class="text-info hover:opacity-80 transition-opacity text-sm font-medium">Sign in</a>
             <Button href="/register" size="sm" class="bg-info text-info-foreground hover:bg-info/90">Register</Button>
           {/if}
@@ -93,7 +113,7 @@
             Get Started Now
             <Icon iconName="icon/arrow-right" size={20} />
           </Button>
-          <Button variant="outline" size="lg" href="#features" class="min-w-[200px]">
+          <Button variant="outline" size="lg" href="#features" onclick={(e) => smoothScrollToHash(e, '#features')} class="min-w-[200px]">
             Learn More
           </Button>
         </div>
@@ -131,7 +151,7 @@
     <div class="container mx-auto px-6">
       <div class="max-w-6xl mx-auto">
         <div class="text-center mb-12">
-          <span class="inline-block px-4 py-1.5 rounded-full bg-muted text-muted-foreground text-sm font-medium mb-4">
+          <span class="inline-block px-4 py-1.5 rounded-full bg-info text-info-foreground hover:bg-info/90 text-sm font-medium mb-4">
             Features
           </span>
           <h2 class="text-4xl lg:text-5xl font-bold text-foreground mb-6">
@@ -193,7 +213,7 @@
             <h2 class="font-bold text-foreground mb-6" style="font-size: 45px; line-height: 1.2; font-family: 'Sora', sans-serif;">
               Three Steps to Your Most Organized Workflow
             </h2>
-            <Button href="#features" class="bg-info text-info-foreground hover:bg-info/90">
+            <Button href="#features" onclick={(e) => smoothScrollToHash(e, '#features')} class="bg-info text-info-foreground hover:bg-info/90">
               Learn more
               <Icon iconName="icon/arrow-right" size={16} />
             </Button>
