@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "../app.css";
   import favicon from "$lib/assets/favicon.svg";
   import ToastHost from "$lib/ToastHost.svelte";
   import { browser } from "$app/environment";
@@ -75,8 +76,6 @@
     document.cookie =
       "merchantBranchId=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
     isAuthenticated = false;
-
-    // Redirect to sign-in page
     goto("/sign-in");
   }
 </script>
