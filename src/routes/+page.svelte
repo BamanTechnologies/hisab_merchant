@@ -6,6 +6,15 @@
   import { onMount } from "svelte";
   import heroBackground from "$lib/assets/landing/hero-background.png";
   import browserScreenshot from "$lib/assets/landing/browser-screenshot.png";
+  import businessOne from "../assets/landing/business_one.png";
+  import businessTwo from "../assets/landing/business_two.png";
+  import businessThree from "../assets/landing/business_three.png";
+
+  const trustedBusinesses = [
+    { src: businessOne, name: "Awtar Coffee and Machinery" },
+    { src: businessTwo, name: "Lanta Brew Tech" },
+    { src: businessThree, name: "AMI Glass Distributor" },
+  ] as const;
 
   let isAuthenticated = $state(false);
   let faqOpen = $state<Record<number, boolean>>({ 0: true });
@@ -164,12 +173,28 @@
     <h2 class="text-3xl lg:text-4xl font-bold text-foreground mb-10" style="font-family: 'Sora', sans-serif;">
       Trusted by Leading Businesses
     </h2>
-    <div class="flex flex-wrap justify-center items-center gap-8 lg:gap-12">
-      <span class="text-2xl font-semibold text-foreground flex items-center gap-2"><span class="text-indigo-500">◎</span> Ephemeral</span>
-      <span class="text-2xl font-semibold text-foreground flex items-center gap-2"><span class="text-indigo-500">◣</span> Wildcrafted</span>
-      <span class="text-2xl font-semibold text-foreground flex items-center gap-2"><span class="text-indigo-500">▦</span> Codecraft_</span>
-      <span class="text-2xl font-semibold text-foreground flex items-center gap-2"><span class="text-indigo-500">✶</span> Convergence</span>
-      <span class="text-2xl font-semibold text-foreground flex items-center gap-2"><span class="text-indigo-500">✦</span> ImgCompress</span>
+    <div
+      class="mx-auto flex max-w-5xl flex-wrap items-start justify-center gap-x-12 gap-y-10 px-6 lg:gap-x-16"
+    >
+      {#each trustedBusinesses as business}
+        <figure class="flex w-48 flex-col items-center gap-3 sm:w-56">
+          <div
+            class="flex h-20 w-full items-center justify-center sm:h-24"
+            aria-hidden="true"
+          >
+            <img
+              src={business.src}
+              alt=""
+              class="h-full w-full object-contain object-center"
+              loading="lazy"
+              decoding="async"
+            />
+          </div>
+          <figcaption class="text-center text-sm font-medium leading-snug text-muted-foreground">
+            {business.name}
+          </figcaption>
+        </figure>
+      {/each}
     </div>
   </section>
 

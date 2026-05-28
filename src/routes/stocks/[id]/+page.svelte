@@ -1,6 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import { invalidateAll } from "$app/navigation";
+  import { mc } from "$lib/merchant-styles.js";
   import { formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
   import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
   import type { PageData } from "./$types";
@@ -188,6 +189,21 @@
     return u ? `${stock.quantity} ${u}` : String(stock.quantity);
   });
 
+  const stockDetailRows = $derived.by(() => {
+    if (!stock) return [] as { label: string; value: string }[];
+    const rows: { label: string; value: string }[] = [
+      {
+        label: "Origin",
+        value: stock.origin ? (originBranchName ?? "—") : "—",
+      },
+    ];
+    for (const key of dynamicFields) {
+      rows.push({ label: attributeLabel(key), value: attr(key) });
+    }
+    rows.push({ label: "Investors", value: investorNames });
+    return rows;
+  });
+
   function openTransferModal() {
     errorMessage = "";
     successMessage = "";
@@ -231,79 +247,102 @@
   }
 </script>
 
-<section>
-  <h1>Stock Details</h1>
+<section class={mc.pageHeader}>
+  <div>
+    <h1 class={mc.pageTitle}>Stock Details</h1>
+    {#if stock}
+      <p class={mc.pageSubtitle}>{typeDisplay(productTypeName())}</p>
+    {/if}
+  </div>
   {#if stock}
-    <div class="header-actions">
-      <button
-        type="button"
-        class="secondary"
-        onclick={openTransferModal}
-        disabled={!canTransferStock}
-        title={!canTransferStock
-          ? !stock?.branch
-            ? "Stock has no branch"
-            : transferTargetBranches.length === 0
-              ? "No other branches in the same company"
-              : Number(stock?.quantity) <= 0
-                ? "No quantity to transfer"
-                : "Cannot transfer"
-          : "Move this stock to another branch in the same company"}
-      >
-        Transfer stock
-      </button>
+    <button
+      type="button"
+      class={mc.primaryBtn}
+      onclick={openTransferModal}
+      disabled={!canTransferStock}
+      title={!canTransferStock
+        ? !stock?.branch
+          ? "Stock has no branch"
+          : transferTargetBranches.length === 0
+            ? "No other branches in the same company"
+            : Number(stock?.quantity) <= 0
+              ? "No quantity to transfer"
+              : "Cannot transfer"
+        : "Move this stock to another branch in the same company"}
+    >
+      Transfer stock
+    </button>
+  {/if}
+</section>
+
+{#if errorMessage}
+  <div class={mc.alertError}>
+    <p>{errorMessage}</p>
+  </div>
+{/if}
+
+{#if successMessage}
+  <div class={mc.alertSuccess}>
+    <p>{successMessage}</p>
+  </div>
+{/if}
+
+{#if stock}
+  <div class={mc.tableSection}>
+    <div class="border-b border-[#e6eaed] bg-[#f2f2f2] px-5 py-4">
+      <div class="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p class="text-xs font-medium uppercase tracking-wide text-gray-500">
+            Product type
+          </p>
+          <p class="mt-1 text-lg font-semibold text-[#1a1a1a]">
+            {typeDisplay(productTypeName())}
+          </p>
+        </div>
+        <div class="flex flex-wrap gap-8 sm:gap-10">
+          <div>
+            <p class="text-xs font-medium text-gray-500">Selling price</p>
+            <p class="mt-1 text-lg font-bold tabular-nums text-[#1a1a1a]">
+              {formatMoney(stock.selling_price)}
+            </p>
+          </div>
+          <div>
+            <p class="text-xs font-medium text-gray-500">Quantity on hand</p>
+            <p class="mt-1 text-lg font-bold tabular-nums text-[#1a1a1a]">
+              {quantityDisplay}
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
 
-    {#if errorMessage}
-      <div class="alert error">
-        <p>{errorMessage}</p>
-      </div>
-    {/if}
-
-    {#if successMessage}
-      <div class="alert success">
-        <p>{successMessage}</p>
-      </div>
-    {/if}
-
-    <div class="detail">
-      <div>
-        <span class="label">Type:</span><span class="value-chip">{typeDisplay(productTypeName())}</span>
-      </div>
-      <div>
-        <span class="label">Origin:</span><span
-          >{stock.origin ? originBranchName ?? "—" : "-"}</span
-        >
-      </div>
-      <div>
-        <span class="label">Selling price:</span><span
-          >{formatMoney(stock.selling_price)}</span
-        >
-      </div>
-      <div>
-        <span class="label">Quantity:</span><span>{quantityDisplay}</span>
-      </div>
-      {#each dynamicFields as key}
-        <div>
-          <span class="label">{attributeLabel(key)}:</span><span>{attr(key)}</span>
+    <dl class="grid divide-x divide-y divide-[#e6eaed] sm:grid-cols-2 lg:grid-cols-3">
+      {#each stockDetailRows as row}
+        <div class="bg-white px-5 py-3.5">
+          <dt class="text-xs font-medium text-gray-500">{row.label}</dt>
+          <dd class="mt-1 text-sm font-medium leading-snug text-[#1a1a1a]">
+            {row.value}
+          </dd>
         </div>
       {/each}
-      <div>
-        <span class="label">Investors:</span><span>{investorNames}</span>
-      </div>
-    </div>
-  {:else if stockHeldAtBranch}
-    <div class="held-elsewhere" role="status">
-      <p class="held-elsewhere-title">View this stock in its branch</p>
-      <p class="held-elsewhere-body">
-        Full stock details are available in the sender branch
-        <strong>{stockHeldAtBranch.name}</strong>. Switch your workspace to that
-        branch (or ask a teammate there) to open this record.
-      </p>
-    </div>
-  {:else}
-    <p class="muted">Stock not found.</p>
-  {/if}
+    </dl>
+  </div>
+{:else if stockHeldAtBranch}
+  <div
+    class="rounded-[5px] border border-[#e6eaed] bg-white px-5 py-4"
+    role="status"
+  >
+    <p class="text-base font-semibold text-[#1a1a1a]">View this stock in its branch</p>
+    <p class="mt-2 text-sm leading-relaxed text-gray-600">
+      Full stock details are available in the sender branch
+      <strong class="font-semibold text-[#1a1a1a]">{stockHeldAtBranch.name}</strong>.
+      Switch your workspace to that branch (or ask a teammate there) to open this
+      record.
+    </p>
+  </div>
+{:else}
+  <p class="text-sm text-gray-500">Stock not found.</p>
+{/if}
 
   {#if showTransferModal && stock}
     <div
@@ -446,259 +485,25 @@
       </form>
     </dialog>
   {/if}
-</section>
 
 <style>
-  h1 {
-    margin: 0 0 0.5rem;
-  }
-  .muted {
-    color: #94a3b8;
-  }
-  .held-elsewhere {
-    max-width: 32rem;
-    padding: 1rem 1.15rem;
-    border-radius: 0.9rem;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 14%);
-    background: color-mix(in oklab, var(--surface-2), white 5%);
-  }
-  .held-elsewhere-title {
-    margin: 0 0 0.5rem;
-    font-size: 1.05rem;
-    font-weight: 700;
-    color: #e5e7eb;
-  }
-  .held-elsewhere-body {
-    margin: 0;
-    color: #cbd5e1;
-    line-height: 1.55;
-  }
-  .held-elsewhere-body strong {
-    color: #f1f5f9;
-  }
-  .header-actions {
-    margin: 0 0 0.75rem;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    align-items: center;
-  }
-  .secondary {
-    appearance: none;
-    background: transparent;
-    color: #e5e7eb;
-    border: 1px solid color-mix(in oklab, var(--brand), white 25%);
-    font-weight: 700;
-    padding: 0.5rem 0.9rem;
-    border-radius: 0.6rem;
-    cursor: pointer;
-  }
-  .secondary:hover:not(:disabled) {
-    background: color-mix(in oklab, var(--brand), black 85%);
-    color: #0b1220;
-  }
-  .secondary:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
-  .modal-compact {
-    max-width: 440px;
-  }
-  .transfer-form .grid-single {
-    grid-template-columns: 1fr;
-  }
-  .native-select {
-    background: color-mix(in oklab, var(--surface-2), white 2%);
-    color: #e5e7eb;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 12%);
-    border-radius: 0.6rem;
-    padding: 0.55rem 0.7rem;
-    cursor: pointer;
-  }
-  .transfer-note {
-    margin: 0 0 0.5rem;
-    font-size: 0.8rem;
-    color: #94a3b8;
-    line-height: 1.4;
-  }
   fieldset.transfer-form-fields {
     border: none;
     padding: 0;
     margin: 0;
     min-width: 0;
   }
-  .detail {
+
+  .transfer-form .grid-single {
     display: grid;
-    grid-template-columns: 240px 1fr;
-    gap: 0.75rem 1.1rem;
-    background:
-      radial-gradient(
-        120% 90% at 0% 0%,
-        color-mix(in oklab, var(--brand), transparent 88%),
-        transparent 55%
-      ),
-      color-mix(in oklab, var(--surface-2), white 4%);
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 12%);
-    border-radius: 0.9rem;
-    padding: 1.05rem 1.1rem;
-    box-shadow: 0 14px 26px rgba(0, 0, 0, 0.22);
-  }
-  .detail > div {
-    display: flex;
-    align-items: baseline;
-    gap: 0.55rem;
-  }
-  .label {
-    color: #94a3b8;
-    font-weight: 700;
-  }
-  .value-chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.15rem 0.55rem;
-    border-radius: 999px;
-    background: color-mix(in oklab, var(--brand), black 70%);
-    color: #dbeafe;
-    font-weight: 700;
-    font-size: 0.86rem;
-  }
-
-  .primary {
-    appearance: none;
-    border: 1px solid color-mix(in oklab, var(--brand), black 35%);
-    background: linear-gradient(
-      180deg,
-      color-mix(in oklab, var(--brand), white 10%),
-      var(--brand)
-    );
-    color: #0b1220;
-    font-weight: 700;
-    padding: 0.5rem 0.9rem;
-    border-radius: 0.6rem;
-    cursor: pointer;
-    box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.2) inset,
-      0 8px 20px rgba(59, 130, 246, 0.2);
-  }
-
-  .primary:disabled {
-    background: color-mix(in oklab, var(--surface-2), black 20%);
-    border-color: color-mix(in oklab, var(--surface-2), black 20%);
-    color: color-mix(in oklab, var(--text-2), black 30%);
-    cursor: not-allowed;
-    box-shadow: none;
-    opacity: 0.6;
-  }
-  .ghost {
-    appearance: none;
-    background: transparent;
-    color: #e5e7eb;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-    padding: 0.5rem 0.9rem;
-    border-radius: 0.6rem;
-    cursor: pointer;
-  }
-
-  /* Modal */
-  .modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(2, 6, 23, 0.6);
-    backdrop-filter: blur(2px);
-    z-index: 30;
-  }
-  .modal {
-    position: fixed;
-    inset: 0;
-    margin: auto;
-    max-width: 720px;
-    width: calc(100% - 2rem);
-    background: color-mix(in oklab, var(--surface), black 2%);
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-    border-radius: 0.9rem;
-    padding: 0;
-    z-index: 40;
-    color: #e5e7eb;
-  }
-  .modal header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 1rem 1rem;
-    border-bottom: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-  }
-  .modal h2 {
-    margin: 0;
-    font-size: 1.15rem;
-    font-weight: 600;
-    color: #f8fafc;
-  }
-  .modal .icon {
-    background: transparent;
-    border: none;
-    color: #94a3b8;
-    font-size: 1.1rem;
-    cursor: pointer;
-  }
-  .form {
-    padding: 1rem;
-  }
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
     gap: 0.9rem;
   }
-  label {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-  }
-  label span {
-    color: #94a3b8;
-    font-weight: 600;
-  }
-  input {
-    background: color-mix(in oklab, var(--surface-2), white 2%);
-    color: #e5e7eb;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 12%);
-    border-radius: 0.6rem;
-    padding: 0.55rem 0.7rem;
-  }
-  footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.6rem;
-    padding: 1rem;
-    border-top: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-  }
 
-  .alert {
-    margin: 1rem 0;
-    padding: 1rem;
-    border-radius: 0.5rem;
-    border: 1px solid;
-  }
-  .alert.error {
-    background: color-mix(in oklab, #ef4444, white 90%);
-    border-color: #ef4444;
-    color: #991b1b;
-  }
-  .alert.success {
-    background: color-mix(in oklab, #10b981, white 90%);
-    border-color: #10b981;
-    color: #064e3b;
-  }
-  .alert p {
-    margin: 0;
-    font-weight: 500;
-  }
-
-  @media (max-width: 720px) {
-    .detail {
-      grid-template-columns: 1fr;
-    }
-    .grid {
-      grid-template-columns: 1fr;
-    }
+  .transfer-note {
+    margin: 0 0 0.5rem;
+    font-size: 0.8125rem;
+    color: #6b7280;
+    line-height: 1.45;
   }
 </style>

@@ -3,6 +3,11 @@
   import { goto } from "$app/navigation";
   import { afterToast, showToast, TOAST_MS } from "$lib/toast";
   import { tick } from "svelte";
+  import TablePagination from "$lib/components/TablePagination.svelte";
+  import TableSortHeader from "$lib/components/TableSortHeader.svelte";
+  import SummaryMetricCard from "$lib/components/SummaryMetricCard.svelte";
+  import { mc, statusChipClass } from "$lib/merchant-styles.js";
+  import { paginateSlice } from "$lib/pagination.js";
   import { buildStockLabel, formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
   import type { PageData } from "./$types";
 
@@ -215,6 +220,15 @@
       return sortDirection === "asc" ? cmp : -cmp;
     });
   });
+
+  let tablePage = $state(1);
+  let tablePageSize = $state(10);
+  const ordersPaginationResetKey = $derived(
+    `${dateRangePreset}|${customerFilterName}|${customDateFrom}|${customDateTo}|${sortColumn}|${sortDirection}|${filteredOrders.length}`,
+  );
+  const pagedOrders = $derived(
+    paginateSlice(sortedOrders, tablePage, tablePageSize),
+  );
 
   const branchesList = $derived((data.branches ?? []) as BranchLite[]);
 
@@ -746,12 +760,6 @@
     return stockNameParts(name).more;
   }
 
-  function statusClass(status: string) {
-    if (status === "cancelled") return "muted";
-    if (status === "paid") return "ok";
-    if (status === "partially_paid") return "warn";
-    return "bad";
-  }
   function cycleSort(
     col: "date" | "stock" | "customer" | "quantity" | "status" | "total",
   ) {
@@ -891,20 +899,20 @@
   }
 </script>
 
-<section class="header">
+<section class={mc.pageHeader}>
   <div>
-    <h1>Orders</h1>
-    <p class="muted">Click a row to view full order details.</p>
+    <h1 class={mc.pageTitle}>Orders</h1>
+    <p class={mc.pageSubtitle}>Click a row to view full order details.</p>
   </div>
-  <button type="button" class="primary" onclick={openCreateModal}>
+  <button type="button" class={mc.primaryBtn} onclick={openCreateModal}>
     Create Order
   </button>
 </section>
 
-<section class="orders-filters" aria-label="Filter orders">
-  <label class="filter-field">
-    <span class="filter-label">Date range</span>
-    <select class="native-select" bind:value={dateRangePreset}>
+<section class={mc.filterSection} aria-label="Filter orders">
+  <label>
+    <span class={mc.filterLabel}>Date range</span>
+    <select class={mc.filterSelect} bind:value={dateRangePreset}>
       <option value="all">All time</option>
       <option value="today">Today</option>
       <option value="last7">Last 7 days</option>
@@ -914,10 +922,10 @@
   </label>
 
   {#if dateRangePreset === "custom"}
-    <label class="filter-field">
-      <span class="filter-label">From</span>
+    <label>
+      <span class={mc.filterLabel}>From</span>
       <input
-        class="native-select date-clickable"
+        class="{mc.filterDate} cursor-pointer"
         type="date"
         bind:value={customDateFrom}
         bind:this={customDateFromInputEl}
@@ -925,10 +933,10 @@
         onfocus={() => openDatePicker(customDateFromInputEl)}
       />
     </label>
-    <label class="filter-field">
-      <span class="filter-label">To</span>
+    <label>
+      <span class={mc.filterLabel}>To</span>
       <input
-        class="native-select date-clickable"
+        class="{mc.filterDate} cursor-pointer"
         type="date"
         bind:value={customDateTo}
         bind:this={customDateToInputEl}
@@ -938,9 +946,9 @@
     </label>
   {/if}
 
-  <label class="filter-field">
-    <span class="filter-label">Customer</span>
-    <select class="native-select" bind:value={customerFilterName}>
+  <label>
+    <span class={mc.filterLabel}>Customer</span>
+    <select class={mc.filterSelect} bind:value={customerFilterName}>
       <option value="">All customers</option>
       {#each customerFilterOptions as customerName}
         <option value={customerName}>{customerName}</option>
@@ -949,40 +957,36 @@
   </label>
 </section>
 
-<section class="summary-cards" aria-label="Orders summary">
-  <div class="summary-card neutral">
-    <span class="summary-label">Total orders created</span>
-    <span class="summary-value">
-      {formatMoney(orderSummary.totalCreatedAmount)} ({orderSummary.totalCreatedCount.toLocaleString()}
-      {orderSummary.totalCreatedCount === 1 ? " order" : " orders"})
-    </span>
-  </div>
-  <div class="summary-card paid">
-    <span class="summary-label">Total amount paid</span>
-    <span class="summary-value">{formatMoney(orderSummary.totalPaidAmount)}</span>
-  </div>
-  <div class="summary-card unpaid">
-    <span class="summary-label">
-      {orderSummary.totalUnpaidAmount < 0 ? "Total amount overpaid" : "Total amount unpaid"}
-    </span>
-    <span class="summary-value">
-      {formatMoney(
-        orderSummary.totalUnpaidAmount < 0
-          ? Math.abs(orderSummary.totalUnpaidAmount)
-          : orderSummary.totalUnpaidAmount,
-      )}
-    </span>
-  </div>
+<section class={mc.summaryGrid} aria-label="Orders summary">
+  <SummaryMetricCard
+    value={`${formatMoney(orderSummary.totalCreatedAmount)} (${orderSummary.totalCreatedCount.toLocaleString()} ${orderSummary.totalCreatedCount === 1 ? "order" : "orders"})`}
+    label="Total orders created"
+    icon="three"
+  />
+  <SummaryMetricCard
+    value={formatMoney(orderSummary.totalPaidAmount)}
+    label="Total amount paid"
+    icon="five"
+  />
+  <SummaryMetricCard
+    value={formatMoney(
+      orderSummary.totalUnpaidAmount < 0
+        ? Math.abs(orderSummary.totalUnpaidAmount)
+        : orderSummary.totalUnpaidAmount,
+    )}
+    label={orderSummary.totalUnpaidAmount < 0 ? "Total amount overpaid" : "Total amount unpaid"}
+    icon="eight"
+  />
 </section>
 
 {#if errorMessage}
-  <div class="alert error">
+  <div class={mc.alertError}>
     <p>{errorMessage}</p>
   </div>
 {/if}
 
 {#if successMessage}
-  <div class="alert success">
+  <div class={mc.alertSuccess}>
     <p>{successMessage}</p>
   </div>
 {/if}
@@ -1015,7 +1019,7 @@
     }}
   >
     <header>
-      <h2 style="color: white;">Create Order</h2>
+      <h2>Create Order</h2>
       <button
         class="icon"
         aria-label="Close"
@@ -1234,7 +1238,7 @@
     oncancel={(e) => addCustomerSubmitting && e.preventDefault()}
   >
     <header>
-      <h2 style="color: white;">New Customer</h2>
+      <h2>New Customer</h2>
       <button
         class="icon"
         aria-label="Close"
@@ -1324,7 +1328,7 @@
     oncancel={(e) => cancelSubmitting && e.preventDefault()}
   >
     <header>
-      <h2 style="color: white;">Cancel order</h2>
+      <h2>Cancel order</h2>
       <button
         class="icon"
         aria-label="Close"
@@ -1419,45 +1423,46 @@
   </dialog>
 {/if}
 
-<section class="table-wrap">
-  <table class="data-table">
+<section class={mc.tableSection}>
+  <div class="overflow-x-auto">
+  <table class={mc.table}>
     <thead>
       <tr>
-        <th class="col-num">#</th>
-        <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("date")}>Date <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("date","asc")}>▲</span><span class:sort-arrow-on={isSortActive("date","desc")}>▼</span></span></button></th>
-        <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("stock")}>Stocks (Item) <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("stock","asc")}>▲</span><span class:sort-arrow-on={isSortActive("stock","desc")}>▼</span></span></button></th>
-        <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("customer")}>Customer <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("customer","asc")}>▲</span><span class:sort-arrow-on={isSortActive("customer","desc")}>▼</span></span></button></th>
-        <th class="center th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("quantity")}>Quantity <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("quantity","asc")}>▲</span><span class:sort-arrow-on={isSortActive("quantity","desc")}>▼</span></span></button></th>
-        <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("status")}>Status <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("status","asc")}>▲</span><span class:sort-arrow-on={isSortActive("status","desc")}>▼</span></span></button></th>
-        <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("total")}>Total amount <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("total","asc")}>▲</span><span class:sort-arrow-on={isSortActive("total","desc")}>▼</span></span></button></th>
-        <th class="center">Actions</th>
+        <th class={mc.colNumHead}>#</th>
+        <th class={mc.th}><TableSortHeader label="Date" onclick={() => cycleSort("date")} ascActive={isSortActive("date","asc")} descActive={isSortActive("date","desc")} /></th>
+        <th class={mc.th}><TableSortHeader label="Stocks (Item)" onclick={() => cycleSort("stock")} ascActive={isSortActive("stock","asc")} descActive={isSortActive("stock","desc")} /></th>
+        <th class={mc.th}><TableSortHeader label="Customer" onclick={() => cycleSort("customer")} ascActive={isSortActive("customer","asc")} descActive={isSortActive("customer","desc")} /></th>
+        <th class={mc.thCenter}><TableSortHeader label="Quantity" align="center" onclick={() => cycleSort("quantity")} ascActive={isSortActive("quantity","asc")} descActive={isSortActive("quantity","desc")} /></th>
+        <th class={mc.th}><TableSortHeader label="Status" onclick={() => cycleSort("status")} ascActive={isSortActive("status","asc")} descActive={isSortActive("status","desc")} /></th>
+        <th class={mc.th}><TableSortHeader label="Total amount" onclick={() => cycleSort("total")} ascActive={isSortActive("total","asc")} descActive={isSortActive("total","desc")} /></th>
+        <th class={mc.thCenter}>Actions</th>
       </tr>
     </thead>
     <tbody>
-      {#each sortedOrders as o, i}
+      {#each pagedOrders as o, i}
         <tr
-          class="row"
+          class={mc.rowClickable}
           onclick={() => goto(`/orders/${o.id}`)}
           tabindex="0"
           role="button"
         >
-          <td class="col-num">{i + 1}</td>
-          <td class="nowrap">{formatOrderDate(o.created_at)}</td>
-          <td>
+          <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
+          <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{formatOrderDate(o.created_at)}</td>
+          <td class={mc.td}>
             {stockNameBase(orderStockName(o))}
             {#if stockNameMore(orderStockName(o))}
-              <span class="stock-more"> {stockNameMore(orderStockName(o))}</span>
+              <span class="font-semibold text-[#4DA0E6]"> {stockNameMore(orderStockName(o))}</span>
             {/if}
           </td>
-          <td>{o.customer_name}</td>
-          <td class="center qty-cell">{orderQtyCell(o)}</td>
-          <td><span class="chip {statusClass(o.status)}">{o.status}</span></td>
-          <td>{formatMoney(o.total_amount)}</td>
-          <td class="center">
+          <td class={mc.td}>{o.customer_name}</td>
+          <td class="{mc.tdCenter} whitespace-nowrap">{orderQtyCell(o)}</td>
+          <td class={mc.td}><span class={statusChipClass(o.status)}>{o.status}</span></td>
+          <td class="{mc.td} font-semibold">{formatMoney(o.total_amount)}</td>
+          <td class={mc.tdCenter}>
             {#if o.status !== "cancelled" && o.status !== "paid"}
               <button
                 type="button"
-                class="cancel-inline-btn"
+                class="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
                 onclick={(e) => openCancelModal(o, e)}
                 aria-label="Cancel order"
                 title="Cancel order"
@@ -1465,302 +1470,32 @@
                 Cancel
               </button>
             {:else}
-              <span class="action-placeholder">—</span>
+              <span class="text-gray-400">—</span>
             {/if}
           </td>
         </tr>
       {/each}
       {#if sortedOrders.length === 0}
         <tr>
-          <td colspan="8" class="empty-state">
-            <p class="muted">
+          <td colspan="8" class={mc.emptyCell}>
               {orders.length === 0
                 ? "No orders found. Create your first order to get started."
                 : "No orders match your current filters."}
-            </p>
           </td>
         </tr>
       {/if}
     </tbody>
   </table>
+  </div>
+  <TablePagination
+    bind:page={tablePage}
+    bind:pageSize={tablePageSize}
+    total={sortedOrders.length}
+    resetKey={ordersPaginationResetKey}
+  />
 </section>
 
 <style>
-  h1 {
-    margin: 0 0 0.25rem;
-  }
-  .muted {
-    color: #94a3b8;
-    margin: 0;
-  }
-  .header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 1rem;
-    gap: 1rem;
-    flex-wrap: wrap;
-  }
-  .orders-filters {
-    display: flex;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    align-items: end;
-    margin: 0 0 0.85rem;
-    padding: 0.7rem 0.8rem;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-    border-radius: 0.7rem;
-    background: color-mix(in oklab, var(--surface-2), white 2%);
-  }
-  .filter-field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-    min-width: 11.5rem;
-  }
-  .filter-label {
-    font-size: 0.74rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #94a3b8;
-    font-weight: 700;
-  }
-  .date-clickable {
-    cursor: pointer;
-  }
-  .summary-cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-    gap: 0.75rem;
-    margin: 0 0 1rem;
-  }
-  .summary-card {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    padding: 0.75rem 0.9rem;
-    border-radius: 0.7rem;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-    background: color-mix(in oklab, var(--surface-2), white 3%);
-  }
-  .summary-card.neutral {
-    border-color: color-mix(in oklab, #64748b, transparent 65%);
-    background: color-mix(in oklab, #64748b, transparent 90%);
-  }
-  .summary-card.paid {
-    border-color: color-mix(in oklab, #22c55e, transparent 60%);
-    background: color-mix(in oklab, #22c55e, transparent 90%);
-  }
-  .summary-card.unpaid {
-    border-color: color-mix(in oklab, #f59e0b, transparent 55%);
-    background: color-mix(in oklab, #f59e0b, transparent 90%);
-  }
-  .summary-label {
-    font-size: 0.74rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #94a3b8;
-    font-weight: 700;
-  }
-  .summary-value {
-    font-size: 1.08rem;
-    font-weight: 800;
-    font-variant-numeric: tabular-nums;
-    color: #e2e8f0;
-  }
-  .summary-card.neutral .summary-value {
-    color: #60a5fa;
-  }
-  .summary-card.paid .summary-value {
-    color: #86efac;
-  }
-  .summary-card.unpaid .summary-value {
-    color: #fcd34d;
-  }
-  .primary {
-    appearance: none;
-    background: var(--brand, #3b82f6);
-    color: #0b1220;
-    border: none;
-    font-weight: 700;
-    padding: 0.5rem 0.9rem;
-    border-radius: 0.6rem;
-    cursor: pointer;
-  }
-  .primary:hover:not(:disabled) {
-    filter: brightness(1.06);
-  }
-  .primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .table-wrap {
-    overflow: auto;
-    border-radius: 0.75rem;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  thead tr {
-    background: color-mix(in oklab, var(--surface-2), white 4%);
-  }
-  th,
-  td {
-    padding: 0.75rem 0.75rem;
-  }
-  th {
-    text-align: left;
-    color: #94a3b8;
-    font-weight: 700;
-    font-size: 0.9rem;
-  }
-  .nowrap {
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
-  .col-num {
-    width: 2.25rem;
-    white-space: nowrap;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-  }
-  .th-sort {
-    padding: 0.35rem 0.5rem;
-    vertical-align: middle;
-  }
-  .sort-header-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    width: 100%;
-    margin: 0;
-    padding: 0.35rem 0.4rem;
-    border: none;
-    border-radius: 0.45rem;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    font-weight: 700;
-    cursor: pointer;
-    text-align: left;
-  }
-  .sort-arrows {
-    display: inline-flex;
-    flex-direction: column;
-    line-height: 0.8;
-    font-size: 0.6rem;
-    opacity: 0.45;
-  }
-  .sort-arrow-on {
-    opacity: 1;
-    color: #cbd5e1;
-  }
-  .right {
-    text-align: right;
-  }
-  .center {
-    text-align: center;
-  }
-  th.center.th-sort .sort-header-btn {
-    justify-content: center;
-    text-align: center;
-  }
-  td.qty-cell {
-    text-align: center;
-    white-space: nowrap;
-  }
-  .stock-more {
-    color: var(--brand, #60a5fa);
-    font-weight: 700;
-  }
-  td {
-    border-top: 1px solid color-mix(in oklab, var(--surface-2), white 8%);
-  }
-  .row {
-    cursor: pointer;
-  }
-  .row:hover {
-    background: color-mix(in oklab, var(--surface-2), white 6%);
-  }
-  .empty-state {
-    text-align: center;
-    padding: 2rem;
-  }
-  .empty-state p {
-    margin: 0;
-    font-style: italic;
-  }
-  .chip {
-    display: inline-block;
-    padding: 0.2rem 0.5rem;
-    border-radius: 999px;
-    background: color-mix(in oklab, var(--surface-2), white 6%);
-    font-size: 0.8rem;
-    font-weight: 600;
-  }
-  .chip.ok {
-    background: color-mix(in oklab, #10b981, white 20%);
-    color: #064e3b;
-  }
-  .chip.warn {
-    background: color-mix(in oklab, #f59e0b, white 20%);
-    color: #92400e;
-  }
-  .chip.bad {
-    background: color-mix(in oklab, #ef4444, white 20%);
-    color: #991b1b;
-  }
-  .chip.muted {
-    background: color-mix(in oklab, #64748b, white 12%);
-    color: #cbd5e1;
-  }
-  .cancel-inline-btn {
-    appearance: none;
-    background: transparent;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 18%);
-    color: #e2e8f0;
-    font-size: 0.8rem;
-    font-weight: 600;
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.5rem;
-    cursor: pointer;
-  }
-  .cancel-inline-btn:hover {
-    background: color-mix(in oklab, var(--surface-2), white 8%);
-  }
-  .action-placeholder {
-    color: #64748b;
-    font-size: 0.85rem;
-  }
-  .row:focus {
-    outline: none;
-    box-shadow: inset 0 0 0 2px var(--ring);
-  }
-
-  .alert {
-    margin: 1rem 0;
-    padding: 1rem;
-    border-radius: 0.5rem;
-    border: 1px solid;
-  }
-  .alert.error {
-    background: color-mix(in oklab, #ef4444, white 90%);
-    border-color: #ef4444;
-    color: #991b1b;
-  }
-  .alert.success {
-    background: color-mix(in oklab, #10b981, white 90%);
-    border-color: #10b981;
-    color: #064e3b;
-  }
-  .alert p {
-    margin: 0;
-    font-weight: 500;
-  }
-
   /* Modal */
   .modal-overlay {
     position: fixed;

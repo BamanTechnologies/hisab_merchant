@@ -1,4 +1,8 @@
 <script lang="ts">
+  import TablePagination from "$lib/components/TablePagination.svelte";
+  import TableSortHeader from "$lib/components/TableSortHeader.svelte";
+  import { mc } from "$lib/merchant-styles.js";
+  import { paginateSlice } from "$lib/pagination.js";
   import type { PageData } from "./$types";
 
   type Payment = {
@@ -26,6 +30,8 @@
     "none",
   );
   let sortDirection = $state<"asc" | "desc">("asc");
+  let tablePage = $state(1);
+  let tablePageSize = $state(10);
   const customerFilterOptions = $derived.by(() => {
     const names = new Set<string>();
     for (const p of payments) {
@@ -95,6 +101,12 @@
       return sortDirection === "asc" ? cmp : -cmp;
     });
   });
+  const paginationResetKey = $derived(
+    `${dateRangePreset}|${customerFilterName}|${customDateFrom}|${customDateTo}|${sortColumn}|${sortDirection}`,
+  );
+  const pagedPayments = $derived(
+    paginateSlice(sortedPayments, tablePage, tablePageSize),
+  );
   function cycleSort(col: "date" | "amount" | "customer" | "method") {
     if (sortColumn !== col) {
       sortColumn = col;
@@ -142,17 +154,17 @@
   }
 </script>
 
-<section class="header">
+<section class={mc.pageHeader}>
   <div>
-    <h1>Payments</h1>
-    <p class="muted">Payment history and transaction records.</p>
+    <h1 class={mc.pageTitle}>Payments</h1>
+    <p class={mc.pageSubtitle}>Payment history and transaction records.</p>
   </div>
 </section>
 
-<section class="orders-filters" aria-label="Filter payments">
-  <label class="filter-field">
-    <span class="filter-label">Date range</span>
-    <select class="native-select" bind:value={dateRangePreset}>
+<section class={mc.filterSection} aria-label="Filter payments">
+  <label>
+    <span class={mc.filterLabel}>Date range</span>
+    <select class={mc.filterSelect} bind:value={dateRangePreset}>
       <option value="all">All time</option>
       <option value="today">Today</option>
       <option value="last7">Last 7 days</option>
@@ -162,10 +174,10 @@
   </label>
 
   {#if dateRangePreset === "custom"}
-    <label class="filter-field">
-      <span class="filter-label">From</span>
+    <label>
+      <span class={mc.filterLabel}>From</span>
       <input
-        class="native-select date-clickable"
+        class="{mc.filterDate} cursor-pointer"
         type="date"
         bind:value={customDateFrom}
         bind:this={customDateFromInputEl}
@@ -173,10 +185,10 @@
         onfocus={() => openDatePicker(customDateFromInputEl)}
       />
     </label>
-    <label class="filter-field">
-      <span class="filter-label">To</span>
+    <label>
+      <span class={mc.filterLabel}>To</span>
       <input
-        class="native-select date-clickable"
+        class="{mc.filterDate} cursor-pointer"
         type="date"
         bind:value={customDateTo}
         bind:this={customDateToInputEl}
@@ -186,9 +198,9 @@
     </label>
   {/if}
 
-  <label class="filter-field">
-    <span class="filter-label">Customer</span>
-    <select class="native-select" bind:value={customerFilterName}>
+  <label>
+    <span class={mc.filterLabel}>Customer</span>
+    <select class={mc.filterSelect} bind:value={customerFilterName}>
       <option value="">All customers</option>
       {#each customerFilterOptions as customerName}
         <option value={customerName}>{customerName}</option>
@@ -197,197 +209,50 @@
   </label>
 </section>
 
-<section class="table-wrap">
-  <table class="data-table">
+<section class={mc.tableSection}>
+  <div class="overflow-x-auto">
+  <table class={mc.table}>
     <thead>
       <tr>
-        <th class="col-num">#</th>
-        <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("date")}>Date <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("date","asc")}>▲</span><span class:sort-arrow-on={isSortActive("date","desc")}>▼</span></span></button></th>
-        <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("amount")}>Amount <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("amount","asc")}>▲</span><span class:sort-arrow-on={isSortActive("amount","desc")}>▼</span></span></button></th>
-        <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("customer")}>Customer <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("customer","asc")}>▲</span><span class:sort-arrow-on={isSortActive("customer","desc")}>▼</span></span></button></th>
-        <th class="th-sort"><button type="button" class="sort-header-btn" onclick={() => cycleSort("method")}>Method <span class="sort-arrows"><span class:sort-arrow-on={isSortActive("method","asc")}>▲</span><span class:sort-arrow-on={isSortActive("method","desc")}>▼</span></span></button></th>
-        <th>Created By</th>
-        <th>Actions</th>
+        <th class={mc.colNumHead}>#</th>
+        <th class={mc.th}><TableSortHeader label="Date" onclick={() => cycleSort("date")} ascActive={isSortActive("date","asc")} descActive={isSortActive("date","desc")} /></th>
+        <th class={mc.th}><TableSortHeader label="Amount" onclick={() => cycleSort("amount")} ascActive={isSortActive("amount","asc")} descActive={isSortActive("amount","desc")} /></th>
+        <th class={mc.th}><TableSortHeader label="Customer" onclick={() => cycleSort("customer")} ascActive={isSortActive("customer","asc")} descActive={isSortActive("customer","desc")} /></th>
+        <th class={mc.th}><TableSortHeader label="Method" onclick={() => cycleSort("method")} ascActive={isSortActive("method","asc")} descActive={isSortActive("method","desc")} /></th>
+        <th class={mc.th}>Created By</th>
+        <th class={mc.thCenter}>Actions</th>
       </tr>
     </thead>
     <tbody>
-      {#each sortedPayments as p, i}
-        <tr class="row">
-          <td class="col-num">{i + 1}</td>
-          <td class="date">{p.created_at ? formatDate(p.created_at) : "—"}</td>
-          <td class="amount">{formatMoney(p.amount)}</td>
-          <td>{p.order?.customer_name?.trim() || "—"}</td>
-          <td class="method">{p.payment_method}</td>
-          <td class="date">{p.created_by_name || "—"}</td>
-          <td>
-            <a class="action-link" href={`/orders/${p.order_id}`}>View order</a>
+      {#each pagedPayments as p, i}
+        <tr class="hover:bg-gray-50">
+          <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
+          <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{p.created_at ? formatDate(p.created_at) : "—"}</td>
+          <td class="{mc.td} font-semibold">{formatMoney(p.amount)}</td>
+          <td class={mc.td}>{p.order?.customer_name?.trim() || "—"}</td>
+          <td class={mc.td}>{p.payment_method}</td>
+          <td class="{mc.td} text-gray-500">{p.created_by_name || "—"}</td>
+          <td class={mc.td}>
+            <a class={mc.link} href={`/orders/${p.order_id}`}>View order</a>
           </td>
         </tr>
       {/each}
       {#if sortedPayments.length === 0}
         <tr>
-          <td colspan="7" class="empty-state">
-            <p class="muted">
+          <td colspan="7" class={mc.emptyCell}>
               {payments.length === 0
                 ? "No payments found. Payments will appear here once orders are paid."
                 : "No payments match your current filters."}
-            </p>
           </td>
         </tr>
       {/if}
     </tbody>
   </table>
+  </div>
+  <TablePagination
+    bind:page={tablePage}
+    bind:pageSize={tablePageSize}
+    total={sortedPayments.length}
+    resetKey={paginationResetKey}
+  />
 </section>
-
-<style>
-  h1 {
-    margin: 0 0 0.25rem;
-  }
-  .muted {
-    color: #94a3b8;
-    margin: 0;
-  }
-  .header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 1rem;
-  }
-  .orders-filters {
-    display: flex;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    align-items: end;
-    margin: 0 0 0.85rem;
-    padding: 0.7rem 0.8rem;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-    border-radius: 0.7rem;
-    background: color-mix(in oklab, var(--surface-2), white 2%);
-  }
-  .filter-field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-    min-width: 11.5rem;
-  }
-  .filter-label {
-    font-size: 0.74rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #94a3b8;
-    font-weight: 700;
-  }
-  .native-select {
-    appearance: none;
-    padding: 0.55rem 0.65rem;
-    border-radius: 0.6rem;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 12%);
-    background: color-mix(in oklab, var(--surface-2), white 4%);
-    color: #e2e8f0;
-    font: inherit;
-  }
-  .date-clickable {
-    cursor: pointer;
-  }
-
-  .table-wrap {
-    overflow: auto;
-    border-radius: 0.75rem;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  thead tr {
-    background: color-mix(in oklab, var(--surface-2), white 4%);
-  }
-  th,
-  td {
-    padding: 0.75rem 0.75rem;
-  }
-  th {
-    text-align: left;
-    color: #94a3b8;
-    font-weight: 700;
-    font-size: 0.9rem;
-  }
-  .th-sort {
-    padding: 0.35rem 0.5rem;
-    vertical-align: middle;
-  }
-  .sort-header-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    width: 100%;
-    margin: 0;
-    padding: 0.35rem 0.4rem;
-    border: none;
-    border-radius: 0.45rem;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    font-weight: 700;
-    cursor: pointer;
-    text-align: left;
-  }
-  .sort-arrows {
-    display: inline-flex;
-    flex-direction: column;
-    line-height: 0.8;
-    font-size: 0.6rem;
-    opacity: 0.45;
-  }
-  .sort-arrow-on {
-    opacity: 1;
-    color: #cbd5e1;
-  }
-  .amount {
-    font-weight: 600;
-  }
-  .method {
-    font-weight: 500;
-  }
-  .date {
-    color: #94a3b8;
-  }
-  .action-link {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.35rem 0.65rem;
-    border-radius: 0.45rem;
-    border: 1px solid color-mix(in oklab, #60a5fa, white 35%);
-    color: #60a5fa;
-    text-decoration: none;
-    font-weight: 600;
-    font-size: 0.86rem;
-    transition: background-color 120ms ease;
-  }
-  .action-link:hover {
-    background: color-mix(in oklab, #60a5fa, transparent 88%);
-  }
-  .col-num {
-    width: 2.25rem;
-    white-space: nowrap;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-  }
-  td {
-    border-top: 1px solid color-mix(in oklab, var(--surface-2), white 8%);
-  }
-  .row {
-    cursor: default;
-  }
-  .row:hover {
-    background: color-mix(in oklab, var(--surface-2), white 6%);
-  }
-  .empty-state {
-    text-align: center;
-    padding: 2rem;
-  }
-  .empty-state p {
-    margin: 0;
-    font-style: italic;
-  }
-</style>
