@@ -232,7 +232,7 @@
 				{@render children?.()}
 				{#if $navigating}
 					<div
-						class="absolute inset-0 z-50 flex items-center justify-center bg-[#F8F9FA]/70 backdrop-blur-sm"
+						class="fixed inset-0 z-60 flex items-center justify-center bg-[#F8F9FA]/80 backdrop-blur-sm"
 						aria-busy="true"
 						aria-live="polite"
 						role="status"

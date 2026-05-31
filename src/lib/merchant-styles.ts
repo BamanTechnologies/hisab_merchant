@@ -43,9 +43,9 @@ export const mc = {
 	tdRight: "border-b border-gray-100 px-4 py-2 text-right align-middle text-sm text-gray-700",
 	tdCenter: "border-b border-gray-100 px-4 py-2 text-center align-middle text-sm text-gray-700",
 	colNum:
-		"w-12 whitespace-nowrap border-b border-gray-100 bg-white px-4 py-2 text-center text-sm tabular-nums text-gray-500",
+		"sticky left-0 z-10 w-12 whitespace-nowrap border-b border-r border-gray-100 bg-white px-4 py-2 text-center text-sm tabular-nums text-gray-500",
 	colNumHead:
-		"h-[30px] w-12 whitespace-nowrap border-b border-[#e6eaed] bg-[#f2f2f2] px-4 text-center text-sm font-medium tabular-nums text-[#1a1a1a]",
+		"sticky left-0 z-20 h-[30px] w-12 whitespace-nowrap border-b border-r border-[#e6eaed] bg-[#f2f2f2] px-4 text-center text-sm font-medium tabular-nums text-[#1a1a1a]",
 	rowClickable: "cursor-pointer transition hover:bg-gray-50/80",
 	emptyCell: "border-b border-gray-100 px-4 py-8 text-center text-sm text-gray-500",
 	sortBtn:
