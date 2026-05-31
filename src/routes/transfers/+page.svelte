@@ -1,327 +1,239 @@
 <script lang="ts">
-  import { goto } from "$app/navigation";
-  import type { PageData } from "./$types";
+	import { goto } from "$app/navigation";
+	import TablePagination from "$lib/components/TablePagination.svelte";
+	import { mc } from "$lib/merchant-styles.js";
+	import { paginateSlice } from "$lib/pagination.js";
+	import type { PageData } from "./$types";
 
-  type Transfer = {
-    id: string;
-    stock?: string | null;
-    destination_stock?: string | null;
-    from?: string | null;
-    to?: string | null;
-    created_by?: string | null;
-    destination_merchant?: string | null;
-    quantity?: number | string | null;
-    created_at?: string | null;
-    stock_link_id?: string | null;
-    stock_display_name?: string;
-  };
+	type Transfer = {
+		id: string;
+		stock?: string | null;
+		destination_stock?: string | null;
+		from?: string | null;
+		to?: string | null;
+		created_by?: string | null;
+		destination_merchant?: string | null;
+		quantity?: number | string | null;
+		created_at?: string | null;
+		stock_link_id?: string | null;
+		stock_display_name?: string;
+	};
 
-  type Branch = { id: string; name?: string | null };
-  type Merchant = { id: string; first_name?: string | null; last_name?: string | null };
+	type Branch = { id: string; name?: string | null };
+	type Merchant = { id: string; first_name?: string | null; last_name?: string | null };
 
-  let { data }: { data: PageData } = $props();
+	let { data }: { data: PageData } = $props();
 
-  const transfers = (data.transfers ?? []) as Transfer[];
-  const branches = (data.branches ?? []) as Branch[];
-  const merchants = (data.merchants ?? []) as Merchant[];
-  const merchantId = (data.merchantId ?? "") as string;
+	const transfers = (data.transfers ?? []) as Transfer[];
+	const branches = (data.branches ?? []) as Branch[];
+	const merchants = (data.merchants ?? []) as Merchant[];
 
-  let fromFilter = $state("");
-  let toFilter = $state("");
-  let destinationMerchantFilter = $state("");
-  let createdByFilter = $state("");
+	let fromFilter = $state("");
+	let toFilter = $state("");
+	let destinationMerchantFilter = $state("");
+	let createdByFilter = $state("");
+	let tablePage = $state(1);
+	let tablePageSize = $state(10);
 
-  function branchName(id: string | null | undefined) {
-    if (!id) return "—";
-    const b = branches.find((x) => x.id === id);
-    return b?.name?.trim() ? b.name : `${id.slice(0, 8)}…`;
-  }
+	const filteredTransfers = $derived.by(() =>
+		transfers.filter((t) => {
+			if (fromFilter && t.from !== fromFilter) return false;
+			if (toFilter && t.to !== toFilter) return false;
+			if (destinationMerchantFilter && t.destination_merchant !== destinationMerchantFilter) {
+				return false;
+			}
+			if (createdByFilter && t.created_by !== createdByFilter) return false;
+			return true;
+		}),
+	);
 
-  function merchantName(id: string | null | undefined) {
-    if (!id) return "—";
-    const m = merchants.find((x) => x.id === id);
-    if (!m) return `${id.slice(0, 8)}…`;
-    const full = [m.first_name, m.last_name].filter(Boolean).join(" ").trim();
-    return full || `${id.slice(0, 8)}…`;
-  }
+	const paginationResetKey = $derived(
+		`${fromFilter}|${toFilter}|${destinationMerchantFilter}|${createdByFilter}`,
+	);
 
-  function formatDate(v: string | null | undefined) {
-    if (!v) return "—";
-    const d = new Date(v);
-    if (Number.isNaN(d.getTime())) return "—";
-    return d.toLocaleString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }
+	const pagedTransfers = $derived(
+		paginateSlice(filteredTransfers, tablePage, tablePageSize),
+	);
 
-  function quantityLabel(v: number | string | null | undefined) {
-    const n = Number(v ?? 0);
-    return Number.isFinite(n) ? n.toLocaleString() : "—";
-  }
+	const senderMerchantIds = $derived.by(() => {
+		const ids = new Set<string>();
+		for (const t of transfers) {
+			if (t.created_by) ids.add(t.created_by);
+		}
+		return Array.from(ids);
+	});
 
-  function clearFilters() {
-    fromFilter = "";
-    toFilter = "";
-    destinationMerchantFilter = "";
-    createdByFilter = "";
-  }
+	const destinationMerchantIds = $derived.by(() => {
+		const ids = new Set<string>();
+		for (const t of transfers) {
+			if (t.destination_merchant) ids.add(t.destination_merchant);
+		}
+		return Array.from(ids);
+	});
 
-  const senderMerchantIds = $derived.by(() => {
-    const ids = new Set<string>();
-    for (const t of transfers) {
-      if (t.created_by) ids.add(t.created_by);
-    }
-    return Array.from(ids);
-  });
+	function branchName(id: string | null | undefined) {
+		if (!id) return "—";
+		const b = branches.find((x) => x.id === id);
+		return b?.name?.trim() ? b.name : `${id.slice(0, 8)}…`;
+	}
 
-  const destinationMerchantIds = $derived.by(() => {
-    const ids = new Set<string>();
-    for (const t of transfers) {
-      if (t.destination_merchant) ids.add(t.destination_merchant);
-    }
-    return Array.from(ids);
-  });
+	function merchantName(id: string | null | undefined) {
+		if (!id) return "—";
+		const m = merchants.find((x) => x.id === id);
+		if (!m) return `${id.slice(0, 8)}…`;
+		const full = [m.first_name, m.last_name].filter(Boolean).join(" ").trim();
+		return full || `${id.slice(0, 8)}…`;
+	}
 
-  const filteredTransfers = $derived.by(() =>
-    transfers.filter((t) => {
-      if (fromFilter && t.from !== fromFilter) return false;
-      if (toFilter && t.to !== toFilter) return false;
-      if (
-        destinationMerchantFilter &&
-        t.destination_merchant !== destinationMerchantFilter
-      ) {
-        return false;
-      }
-      if (createdByFilter && t.created_by !== createdByFilter) return false;
-      return true;
-    }),
-  );
+	function formatDate(v: string | null | undefined) {
+		if (!v) return "—";
+		const d = new Date(v);
+		if (Number.isNaN(d.getTime())) return "—";
+		return d.toLocaleString(undefined, {
+			year: "numeric",
+			month: "short",
+			day: "2-digit",
+			hour: "2-digit",
+			minute: "2-digit",
+		});
+	}
 
-  function stockLinkId(t: Transfer): string | null {
-    const id = t.stock_link_id;
-    if (id == null) return null;
-    const s = String(id).trim();
-    return s.length > 0 ? s : null;
-  }
+	function quantityLabel(v: number | string | null | undefined) {
+		const n = Number(v ?? 0);
+		return Number.isFinite(n) ? n.toLocaleString() : "—";
+	}
 
-  function onTransferRowClick(t: Transfer) {
-    const id = stockLinkId(t);
-    if (id) goto(`/stocks/${id}`);
-  }
+	function clearFilters() {
+		fromFilter = "";
+		toFilter = "";
+		destinationMerchantFilter = "";
+		createdByFilter = "";
+	}
 
-  function onTransferRowKeydown(e: KeyboardEvent, t: Transfer) {
-    if (e.key !== "Enter" && e.key !== " ") return;
-    const id = stockLinkId(t);
-    if (!id) return;
-    e.preventDefault();
-    goto(`/stocks/${id}`);
-  }
+	function stockLinkId(t: Transfer): string | null {
+		const id = t.stock_link_id;
+		if (id == null) return null;
+		const s = String(id).trim();
+		return s.length > 0 ? s : null;
+	}
+
+	function onTransferRowClick(t: Transfer) {
+		const id = stockLinkId(t);
+		if (id) goto(`/stocks/${id}`);
+	}
+
+	function onTransferRowKeydown(e: KeyboardEvent, t: Transfer) {
+		if (e.key !== "Enter" && e.key !== " ") return;
+		const id = stockLinkId(t);
+		if (!id) return;
+		e.preventDefault();
+		goto(`/stocks/${id}`);
+	}
 </script>
 
-<section class="header">
-  <div>
-    <h1>Transfers</h1>
-    <p class="muted">
-      Transfers where you are sender or destination merchant.
-    </p>
-  </div>
+<section class={mc.pageHeader}>
+	<div>
+		<h1 class={mc.pageTitle}>Transfers</h1>
+		<p class={mc.pageSubtitle}>Transfers where you are sender or destination merchant.</p>
+	</div>
 </section>
 
-<section class="filters">
-  <label>
-    <span>From</span>
-    <select bind:value={fromFilter}>
-      <option value="">All</option>
-      {#each branches as b}
-        <option value={b.id}>{branchName(b.id)}</option>
-      {/each}
-    </select>
-  </label>
-  <label>
-    <span>To</span>
-    <select bind:value={toFilter}>
-      <option value="">All</option>
-      {#each branches as b}
-        <option value={b.id}>{branchName(b.id)}</option>
-      {/each}
-    </select>
-  </label>
-  <label>
-    <span>Destination merchant</span>
-    <select bind:value={destinationMerchantFilter}>
-      <option value="">All</option>
-      {#each destinationMerchantIds as id}
-        <option value={id}>{merchantName(id)}</option>
-      {/each}
-    </select>
-  </label>
-  <label>
-    <span>Created by</span>
-    <select bind:value={createdByFilter}>
-      <option value="">All</option>
-      {#each senderMerchantIds as id}
-        <option value={id}>{merchantName(id)}</option>
-      {/each}
-    </select>
-  </label>
-  <div class="filter-actions">
-    <button class="ghost" type="button" onclick={clearFilters}>Clear</button>
-  </div>
+<section class={mc.filterSection} aria-label="Filter transfers">
+	<label>
+		<span class={mc.filterLabel}>From</span>
+		<select class={mc.filterSelect} bind:value={fromFilter}>
+			<option value="">All</option>
+			{#each branches as b}
+				<option value={b.id}>{branchName(b.id)}</option>
+			{/each}
+		</select>
+	</label>
+	<label>
+		<span class={mc.filterLabel}>To</span>
+		<select class={mc.filterSelect} bind:value={toFilter}>
+			<option value="">All</option>
+			{#each branches as b}
+				<option value={b.id}>{branchName(b.id)}</option>
+			{/each}
+		</select>
+	</label>
+	<label>
+		<span class={mc.filterLabel}>Destination merchant</span>
+		<select class={mc.filterSelect} bind:value={destinationMerchantFilter}>
+			<option value="">All</option>
+			{#each destinationMerchantIds as id}
+				<option value={id}>{merchantName(id)}</option>
+			{/each}
+		</select>
+	</label>
+	<label>
+		<span class={mc.filterLabel}>Created by</span>
+		<select class={mc.filterSelect} bind:value={createdByFilter}>
+			<option value="">All</option>
+			{#each senderMerchantIds as id}
+				<option value={id}>{merchantName(id)}</option>
+			{/each}
+		</select>
+	</label>
+	<div class="flex items-end">
+		<button class={mc.ghostBtn} type="button" onclick={clearFilters}>Clear</button>
+	</div>
 </section>
 
-<section class="table-wrap">
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>From</th>
-        <th>To</th>
-        <th>From merchant</th>
-        <th>To merchant</th>
-        <th>Stock</th>
-        <th class="right">Quantity</th>
-        <th>Date</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#if filteredTransfers.length === 0}
-        <tr>
-          <td colspan="8" class="empty">
-            No transfers found for current filters.
-          </td>
-        </tr>
-      {:else}
-        {#each filteredTransfers as t, i}
-          {@const linkId = stockLinkId(t)}
-          <tr
-            class:row-clickable={!!linkId}
-            onclick={() => onTransferRowClick(t)}
-            onkeydown={(e) => onTransferRowKeydown(e, t)}
-            tabindex={linkId ? 0 : undefined}
-            role={linkId ? "button" : undefined}
-          >
-            <td>{i + 1}</td>
-            <td>{branchName(t.from)}</td>
-            <td>{branchName(t.to)}</td>
-            <td>{merchantName(t.created_by)}</td>
-            <td>{merchantName(t.destination_merchant)}</td>
-            <td>
-              {#if linkId}
-                {t.stock_display_name ?? "—"}
-              {:else}
-                <span class="muted">Unavailable</span>
-              {/if}
-            </td>
-            <td class="right">{quantityLabel(t.quantity)}</td>
-            <td>{formatDate(t.created_at)}</td>
-          </tr>
-        {/each}
-      {/if}
-    </tbody>
-  </table>
+<section class={mc.tableSection}>
+	<div class="overflow-x-auto">
+		<table class={mc.table}>
+			<thead>
+				<tr>
+					<th class={mc.colNumHead}>#</th>
+					<th class={mc.th}>From</th>
+					<th class={mc.th}>To</th>
+					<th class={mc.th}>From merchant</th>
+					<th class={mc.th}>To merchant</th>
+					<th class={mc.th}>Stock</th>
+					<th class={mc.thRight}>Quantity</th>
+					<th class={mc.th}>Date</th>
+				</tr>
+			</thead>
+			<tbody>
+				{#if filteredTransfers.length === 0}
+					<tr>
+						<td colspan="8" class={mc.emptyCell}>No transfers found for current filters.</td>
+					</tr>
+				{:else}
+					{#each pagedTransfers as t, i}
+						{@const linkId = stockLinkId(t)}
+						<tr
+							class={linkId ? mc.rowClickable : ""}
+							onclick={() => onTransferRowClick(t)}
+							onkeydown={(e) => onTransferRowKeydown(e, t)}
+							tabindex={linkId ? 0 : undefined}
+							role={linkId ? "button" : undefined}
+						>
+							<td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
+							<td class={mc.td}>{branchName(t.from)}</td>
+							<td class={mc.td}>{branchName(t.to)}</td>
+							<td class={mc.td}>{merchantName(t.created_by)}</td>
+							<td class={mc.td}>{merchantName(t.destination_merchant)}</td>
+							<td class={mc.td}>
+								{#if linkId}
+									{t.stock_display_name ?? "—"}
+								{:else}
+									<span class="text-gray-400">Unavailable</span>
+								{/if}
+							</td>
+							<td class={mc.tdRight}>{quantityLabel(t.quantity)}</td>
+							<td class={mc.td}>{formatDate(t.created_at)}</td>
+						</tr>
+					{/each}
+				{/if}
+			</tbody>
+		</table>
+	</div>
+	<TablePagination
+		bind:page={tablePage}
+		bind:pageSize={tablePageSize}
+		total={filteredTransfers.length}
+		resetKey={paginationResetKey}
+	/>
 </section>
-
-<style>
-  h1 {
-    margin: 0 0 0.25rem;
-  }
-  .muted {
-    color: #94a3b8;
-    margin: 0;
-  }
-  .header {
-    margin-bottom: 1rem;
-  }
-  .filters {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(180px, 1fr)) auto;
-    gap: 0.75rem;
-    margin-bottom: 1rem;
-    align-items: end;
-  }
-  .filters label {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-  }
-  .filters span {
-    color: #94a3b8;
-    font-size: 0.85rem;
-    font-weight: 600;
-  }
-  .filters select {
-    background: color-mix(in oklab, var(--surface-2), white 2%);
-    color: #e5e7eb;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 12%);
-    border-radius: 0.6rem;
-    padding: 0.55rem 0.7rem;
-    font-weight: 600;
-  }
-  .filter-actions {
-    display: flex;
-    gap: 0.55rem;
-  }
-  .ghost {
-    appearance: none;
-    background: transparent;
-    color: #e5e7eb;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-    padding: 0.5rem 0.9rem;
-    border-radius: 0.6rem;
-    cursor: pointer;
-  }
-  .table-wrap {
-    overflow: auto;
-    border-radius: 0.75rem;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  thead tr {
-    background: color-mix(in oklab, var(--surface-2), white 4%);
-  }
-  th,
-  td {
-    padding: 0.75rem;
-    text-align: left;
-  }
-  th {
-    color: #94a3b8;
-    font-size: 0.9rem;
-    font-weight: 700;
-  }
-  td {
-    border-top: 1px solid color-mix(in oklab, var(--surface-2), white 8%);
-    vertical-align: middle;
-  }
-  .right {
-    text-align: right;
-  }
-  tr.row-clickable {
-    cursor: pointer;
-  }
-  tr.row-clickable:hover td {
-    background: color-mix(in oklab, var(--surface-2), white 6%);
-  }
-  tr.row-clickable:focus-visible {
-    outline: 2px solid color-mix(in oklab, var(--brand), white 20%);
-    outline-offset: -2px;
-  }
-  .empty {
-    text-align: center;
-    color: #94a3b8;
-    padding: 1.4rem;
-  }
-  @media (max-width: 1100px) {
-    .filters {
-      grid-template-columns: repeat(2, minmax(180px, 1fr));
-    }
-  }
-</style>
-

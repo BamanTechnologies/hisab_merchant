@@ -1,15 +1,39 @@
 <script lang="ts">
   import { browser } from "$app/environment";
   import { goto } from "$app/navigation";
+  import { enhance } from "$app/forms";
   import { Button } from "$lib/components/ui/button/index.js";
   import Icon from "$lib/components/ui/Icon/index.js";
   import { onMount } from "svelte";
+  import { fade } from "svelte/transition";
   import heroBackground from "$lib/assets/landing/hero-background.png";
   import browserScreenshot from "$lib/assets/landing/browser-screenshot.png";
+  import businessOne from "../assets/landing/business_one.png";
+  import businessTwo from "../assets/landing/business_two.png";
+  import businessThree from "../assets/landing/business_three.png";
+
+  const trustedBusinesses = [
+    { src: businessOne, name: "Awtar Coffee and Machinery" },
+    { src: businessTwo, name: "Lanta Brew Tech" },
+    { src: businessThree, name: "AMI Glass Distributor" },
+  ] as const;
 
   let isAuthenticated = $state(false);
   let faqOpen = $state<Record<number, boolean>>({ 0: true });
   let mobileMenuOpen = $state(false);
+
+  let contactPending = $state(false);
+  let contactSuccess = $state(false);
+  let contactError = $state("");
+  let contactFieldErrors = $state<Record<string, string>>({});
+  let contactSuccessTimer: ReturnType<typeof setTimeout> | undefined;
+  let contactForm = $state({
+    fullName: "",
+    email: "",
+    phone: "",
+    subject: "",
+    message: "",
+  });
 
   onMount(() => {
     if (!browser) return;
@@ -133,11 +157,11 @@
         </p>
         <div class="flex flex-col sm:flex-row gap-4 justify-center items-center pt-4">
           <Button
-            href="/sign-in"
+            href={isAuthenticated ? "/stocks" : "/sign-in"}
             size="lg"
             class="bg-info text-info-foreground hover:bg-info/90 min-w-[200px]"
           >
-            Get Started Now
+            {isAuthenticated ? "Open Dashboard" : "Get Started Now"}
             <Icon iconName="icon/arrow-right" size={20} />
           </Button>
           <Button variant="outline" size="lg" href="#features" onclick={(e) => smoothScrollToHash(e, '#features')} class="min-w-[200px]">
@@ -164,12 +188,28 @@
     <h2 class="text-3xl lg:text-4xl font-bold text-foreground mb-10" style="font-family: 'Sora', sans-serif;">
       Trusted by Leading Businesses
     </h2>
-    <div class="flex flex-wrap justify-center items-center gap-8 lg:gap-12">
-      <span class="text-2xl font-semibold text-foreground flex items-center gap-2"><span class="text-indigo-500">◎</span> Ephemeral</span>
-      <span class="text-2xl font-semibold text-foreground flex items-center gap-2"><span class="text-indigo-500">◣</span> Wildcrafted</span>
-      <span class="text-2xl font-semibold text-foreground flex items-center gap-2"><span class="text-indigo-500">▦</span> Codecraft_</span>
-      <span class="text-2xl font-semibold text-foreground flex items-center gap-2"><span class="text-indigo-500">✶</span> Convergence</span>
-      <span class="text-2xl font-semibold text-foreground flex items-center gap-2"><span class="text-indigo-500">✦</span> ImgCompress</span>
+    <div
+      class="mx-auto flex max-w-5xl flex-wrap items-start justify-center gap-x-12 gap-y-10 px-6 lg:gap-x-16"
+    >
+      {#each trustedBusinesses as business}
+        <figure class="flex w-48 flex-col items-center gap-3 sm:w-56">
+          <div
+            class="flex h-20 w-full items-center justify-center sm:h-24"
+            aria-hidden="true"
+          >
+            <img
+              src={business.src}
+              alt=""
+              class="h-full w-full object-contain object-center"
+              loading="lazy"
+              decoding="async"
+            />
+          </div>
+          <figcaption class="text-center text-sm font-medium leading-snug text-muted-foreground">
+            {business.name}
+          </figcaption>
+        </figure>
+      {/each}
     </div>
   </section>
 
@@ -348,8 +388,8 @@
           Simplify stock tracking, empower your merchants, and gain real-time
           insights across all locations, all in one clean interface.
         </p>
-        <Button href="/sign-in" size="lg" class="bg-info text-info-foreground hover:bg-info/90 min-w-[200px]">
-          Get Started Now
+        <Button href={isAuthenticated ? "/stocks" : "/sign-in"} size="lg" class="bg-info text-info-foreground hover:bg-info/90 min-w-[200px]">
+          {isAuthenticated ? "Open Dashboard" : "Get Started Now"}
           <Icon iconName="icon/arrow-right" size={20} />
         </Button>
       </div>
@@ -408,24 +448,93 @@
           </h2>
         </div>
 
-        <form class="space-y-6">
+        {#if contactSuccess}
+          <div
+            role="status"
+            aria-live="polite"
+            transition:fade={{ duration: 500 }}
+            class="mx-auto flex max-w-xl flex-col items-center gap-4 rounded-2xl border border-green-200 bg-green-50/70 px-8 py-12 text-center"
+          >
+            <div class="flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
+              <Icon iconName="icon/check-circle" size={36} class="text-green-600" />
+            </div>
+            <h3 class="text-2xl font-bold text-foreground" style="font-family: 'Sora', sans-serif;">
+              We have received your message
+            </h3>
+            <p class="text-muted-foreground">
+              Thanks for reaching out! Our team will get back to you shortly.
+            </p>
+          </div>
+        {:else}
+        <form
+          class="space-y-6"
+          method="POST"
+          action="?/sendContactMessage"
+          use:enhance={() => {
+            contactPending = true;
+            contactError = "";
+            return async ({ result, update }) => {
+              contactPending = false;
+              if (result.type === "success" && result.data) {
+                const data = result.data as {
+                  success?: boolean;
+                  message?: string;
+                  fieldErrors?: Record<string, string>;
+                };
+                contactFieldErrors = data.fieldErrors ?? {};
+                if (data.success) {
+                  contactForm = { fullName: "", email: "", phone: "", subject: "", message: "" };
+                  contactFieldErrors = {};
+                  contactSuccess = true;
+                  clearTimeout(contactSuccessTimer);
+                  contactSuccessTimer = setTimeout(() => {
+                    contactSuccess = false;
+                  }, 5000);
+                } else {
+                  contactError = data.message ?? "Please correct the highlighted fields.";
+                }
+              } else if (result.type === "failure") {
+                contactError = "Something went wrong. Please try again.";
+              } else if (result.type === "error") {
+                contactError = "Network error. Please try again.";
+              }
+              await update({ reset: false });
+            };
+          }}
+        >
+          {#if contactError}
+            <div
+              role="alert"
+              aria-live="assertive"
+              class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+            >
+              {contactError}
+            </div>
+          {/if}
+
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
             <div class="space-y-6">
               <div>
                 <label for="fullName" class="block text-sm font-medium text-foreground mb-2">Your full name*</label>
                 <div class="relative">
-                  <input type="text" id="fullName" placeholder="What's your name?"
+                  <input type="text" id="fullName" name="full_name" required bind:value={contactForm.fullName} placeholder="What's your name?"
                     class="w-full px-4 py-3 pr-12 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info focus:border-transparent bg-white text-foreground" />
                   <Icon iconName="icon/smile" size={20} class="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                 </div>
+                {#if contactFieldErrors.fullName}
+                  <p class="mt-1.5 text-sm text-red-600">{contactFieldErrors.fullName}</p>
+                {/if}
               </div>
               <div>
-                <label for="phone" class="block text-sm font-medium text-foreground mb-2">Your phone number</label>
+                <label for="phone" class="block text-sm font-medium text-foreground mb-2">Your phone number*</label>
                 <div class="relative">
-                  <input type="tel" id="phone" placeholder="Enter your phone number"
+                  <input type="tel" id="phone" name="phone" required bind:value={contactForm.phone} placeholder="Enter your phone number"
                     class="w-full px-4 py-3 pr-12 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info focus:border-transparent bg-white text-foreground" />
                   <Icon iconName="icon/phone" size={20} class="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                 </div>
+                {#if contactFieldErrors.phone}
+                  <p class="mt-1.5 text-sm text-red-600">{contactFieldErrors.phone}</p>
+                {/if}
               </div>
             </div>
 
@@ -433,15 +542,18 @@
               <div>
                 <label for="email" class="block text-sm font-medium text-foreground mb-2">Your email address*</label>
                 <div class="relative">
-                  <input type="email" id="email" placeholder="Enter your email address"
+                  <input type="email" id="email" name="email" required bind:value={contactForm.email} placeholder="Enter your email address"
                     class="w-full px-4 py-3 pr-12 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info focus:border-transparent bg-white text-foreground" />
                   <Icon iconName="icon/mail" size={20} class="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                 </div>
+                {#if contactFieldErrors.email}
+                  <p class="mt-1.5 text-sm text-red-600">{contactFieldErrors.email}</p>
+                {/if}
               </div>
               <div>
                 <label for="subject" class="block text-sm font-medium text-foreground mb-2">Your subject</label>
                 <div class="relative">
-                  <input type="text" id="subject" placeholder="How can we help you?"
+                  <input type="text" id="subject" name="subject" bind:value={contactForm.subject} placeholder="How can we help you?"
                     class="w-full px-4 py-3 pr-12 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info focus:border-transparent bg-white text-foreground" />
                   <Icon iconName="icon/file-text" size={20} class="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                 </div>
@@ -450,12 +562,15 @@
           </div>
 
           <div>
-            <label for="message" class="block text-sm font-medium text-foreground mb-2">Your message</label>
+            <label for="message" class="block text-sm font-medium text-foreground mb-2">Your message*</label>
             <div class="relative">
-              <textarea id="message" rows={6} placeholder="Describe about your project"
+              <textarea id="message" name="message" required bind:value={contactForm.message} rows={6} placeholder="Describe about your project"
                 class="w-full min-h-[150px] px-4 py-3 pr-12 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info focus:border-transparent resize-none bg-white text-foreground"></textarea>
               <Icon iconName="icon/message-circle" size={20} class="absolute right-4 top-4 text-muted-foreground pointer-events-none" />
             </div>
+            {#if contactFieldErrors.message}
+              <p class="mt-1.5 text-sm text-red-600">{contactFieldErrors.message}</p>
+            {/if}
           </div>
 
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center border-t border-border pt-6">
@@ -463,12 +578,13 @@
               We are committed to protecting your privacy. We will never collect information about you without your explicit consent.
             </p>
             <div class="flex justify-end">
-              <Button type="submit" class="bg-info text-info-foreground hover:bg-info/90 px-8 py-3">
-                Send Message
+              <Button type="submit" disabled={contactPending} class="bg-info text-info-foreground hover:bg-info/90 px-8 py-3">
+                {contactPending ? "Sending…" : "Send Message"}
               </Button>
             </div>
           </div>
         </form>
+        {/if}
       </div>
     </div>
   </section>

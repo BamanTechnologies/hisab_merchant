@@ -6,6 +6,9 @@
     buildStockLabel,
     formatCoffeeCapacityWithUnit,
   } from "$lib/stockLabel";
+  import TablePagination from "$lib/components/TablePagination.svelte";
+  import { mc, smsStatusChipClass } from "$lib/merchant-styles.js";
+  import { paginateSlice } from "$lib/pagination.js";
   import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
 
   type Report = {
@@ -83,7 +86,7 @@
   };
 
   let { data }: { data: PageData } = $props();
-  const reports = data.reports;
+  const reports = (data.reports ?? []) as Report[];
   const investors = data.investors;
 
   let selectedReport = $state<Report | null>(null);
@@ -97,6 +100,10 @@
   let generateReportPending = $state(false);
   let sendReportPending = $state(false);
   let resendReportPending = $state(false);
+  let tablePage = $state(1);
+  let tablePageSize = $state(10);
+
+  const pagedReports = $derived(paginateSlice(reports, tablePage, tablePageSize));
 
   function formatDate(dateString: string) {
     try {
@@ -247,19 +254,9 @@
     return map;
   });
 
-  function getStatusClass(status: string) {
-    switch (status.toLowerCase()) {
-      case "sent":
-      case "delivered":
-        return "ok";
-      case "failed":
-      case "error":
-        return "bad";
-      case "pending":
-        return "warn";
-      default:
-        return "bad";
-    }
+  function isFailedSmsStatus(status: string) {
+    const s = status.toLowerCase();
+    return s === "failed" || s === "error";
   }
 
   function openModal(report: Report) {
@@ -306,56 +303,60 @@
 
 </script>
 
-<section>
-  <div class="header-actions">
-    <h1>Reports</h1>
-    <button class="primary" onclick={openGenerateModal}>
-      Generate Report
-    </button>
+<section class={mc.pageHeader}>
+  <div>
+    <h1 class={mc.pageTitle}>Reports</h1>
+    <p class={mc.pageSubtitle}>Investor SMS reports and delivery status.</p>
   </div>
+  <button type="button" class={mc.primaryBtn} onclick={openGenerateModal}>
+    Generate Report
+  </button>
+</section>
 
-  {#if errorMessage}
-    <div class="alert error">
-      <p>{errorMessage}</p>
-    </div>
-  {/if}
+{#if errorMessage}
+  <div class={mc.alertError}>
+    <p>{errorMessage}</p>
+  </div>
+{/if}
 
-  {#if successMessage}
-    <div class="alert success">
-      <p>{successMessage}</p>
-    </div>
-  {/if}
+{#if successMessage}
+  <div class={mc.alertSuccess}>
+    <p>{successMessage}</p>
+  </div>
+{/if}
 
-  {#if reports.length === 0}
-    <div class="empty-state">
-      <p>No reports found.</p>
-    </div>
-  {:else}
-    <div class="table-container">
-      <table>
+{#if reports.length === 0}
+  <p class="rounded-xl bg-white px-6 py-10 text-center text-sm text-gray-500">
+    No reports found.
+  </p>
+{:else}
+  <section class={mc.tableSection}>
+    <div class="overflow-x-auto">
+      <table class={mc.table}>
         <thead>
           <tr>
-            <th class="col-num">#</th>
-            <th>Date</th>
-            <th>Investor Phone</th>
-            <th>SMS Status</th>
-            <th>Actions</th>
+            <th class={mc.colNumHead}>#</th>
+            <th class={mc.th}>Date</th>
+            <th class={mc.th}>Investor Phone</th>
+            <th class={mc.th}>SMS Status</th>
+            <th class={mc.th}>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {#each reports as report, i (report.id)}
-            <tr onclick={() => openModal(report)}>
-              <td class="col-num">{i + 1}</td>
-              <td>{formatDate(report.updated_at)}</td>
-              <td>{report.investor_phone}</td>
-              <td>
-                <span class="chip {getStatusClass(report.sms_status)}">
+          {#each pagedReports as report, i (report.id)}
+            <tr class={mc.rowClickable} onclick={() => openModal(report)}>
+              <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
+              <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{formatDate(report.updated_at)}</td>
+              <td class={mc.td}>{report.investor_phone}</td>
+              <td class={mc.td}>
+                <span class={smsStatusChipClass(report.sms_status)}>
                   {report.sms_status}
                 </span>
               </td>
-              <td>
+              <td class={mc.td} onclick={(e) => e.stopPropagation()}>
                 <button
-                  class="ghost small"
+                  type="button"
+                  class={mc.tableBtn}
                   onclick={(e) => {
                     e.stopPropagation();
                     openModal(report);
@@ -369,8 +370,9 @@
         </tbody>
       </table>
     </div>
-  {/if}
-</section>
+    <TablePagination bind:page={tablePage} bind:pageSize={tablePageSize} total={reports.length} />
+  </section>
+{/if}
 
 {#if showModal && selectedReport}
   <div
@@ -409,7 +411,7 @@
             </div>
             <div class="info-item">
               <span class="label">Status:</span>
-              <span class="chip {getStatusClass(selectedReport.sms_status)}">
+              <span class={smsStatusChipClass(selectedReport.sms_status)}>
                 {selectedReport.sms_status}
               </span>
             </div>
@@ -428,7 +430,7 @@
         </div>
       </div>
       <footer class="message-footer">
-        {#if getStatusClass(selectedReport.sms_status) === "bad"}
+        {#if isFailedSmsStatus(selectedReport.sms_status)}
           <form
             method="POST"
             action="?/resendReport"
@@ -544,18 +546,25 @@
         }}
       >
         <div class="investor-selection">
-          <h3>Select Investor:</h3>
-          <div class="investor-list">
+          <span class="investor-selection-label">Select investor</span>
+          <div class="investor-list" role="radiogroup" aria-label="Select investor">
             {#each investors as investor (investor.id)}
-              <label class="investor-item">
+              <label
+                class="investor-item"
+                class:investor-item-selected={selectedInvestor?.id === investor.id}
+              >
                 <input
                   type="radio"
+                  class="investor-radio"
                   name="investor_id"
                   value={investor.id}
                   checked={selectedInvestor?.id === investor.id}
                   disabled={generateReportPending}
                   onchange={() => selectInvestor(investor)}
                 />
+                <span class="investor-avatar" aria-hidden="true">
+                  {(investor.first_name?.[0] ?? "").toUpperCase()}{(investor.last_name?.[0] ?? "").toUpperCase()}
+                </span>
                 <div class="investor-info">
                   <span class="investor-name"
                     >{investor.first_name} {investor.last_name}</span
@@ -829,116 +838,16 @@
 {/if}
 
 <style>
-  section {
-    padding: 1.5rem;
-  }
-
-  h1 {
-    font-size: 1.875rem;
-    font-weight: 700;
-    color: #f8fafc;
-    margin-bottom: 1.5rem;
-  }
-
-  .empty-state {
-    text-align: center;
-    padding: 3rem 1rem;
-    color: #94a3b8;
-  }
-
-  .table-container {
-    background: var(--surface-1);
-    border-radius: 0.75rem;
-    overflow: hidden;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  thead {
-    background: var(--surface-2);
-  }
-
-  th {
-    padding: 0.75rem 1rem;
-    text-align: left;
-    font-weight: 600;
-    color: #e2e8f0;
-    border-bottom: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-  }
-
-  tbody tr {
-    cursor: pointer;
-    transition: background-color 0.2s;
-  }
-
-  tbody tr:hover {
-    background: color-mix(in oklab, var(--surface-1), white 5%);
-  }
-
-  td {
-    padding: 0.75rem 1rem;
-    color: #cbd5e1;
-    border-bottom: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-  }
-
-  .chip {
-    display: inline-block;
-    padding: 0.25rem 0.5rem;
-    border-radius: 999px;
-    font-size: 0.75rem;
-    font-weight: 500;
-    text-transform: capitalize;
-  }
-
-  .chip.ok {
-    background: rgba(34, 197, 94, 0.2);
-    color: #86efac;
-  }
-
-  .chip.warn {
-    background: rgba(234, 179, 8, 0.2);
-    color: #fde047;
-  }
-
-  .chip.bad {
-    background: rgba(239, 68, 68, 0.2);
-    color: #fca5a5;
-  }
-
-  .ghost {
-    appearance: none;
-    background: transparent;
-    color: #e5e7eb;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-    padding: 0.5rem 0.9rem;
-    border-radius: 0.6rem;
-    cursor: pointer;
-    font-size: 0.875rem;
-  }
-
-  .ghost.small {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
-  }
-
-  .ghost:hover {
-    background: color-mix(in oklab, var(--surface-2), white 10%);
-  }
-
+  /* Modal-only styles (list page uses Tailwind via mc.*) */
   .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(2, 6, 23, 0.6);
-    backdrop-filter: blur(2px);
     z-index: 30;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 1rem;
+    background: rgba(15, 23, 42, 0.45);
   }
 
   .modal {
@@ -1049,29 +958,15 @@
     border-top: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
   }
 
-  .header-actions {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1.5rem;
-  }
-
   .primary {
     appearance: none;
     border: 1px solid color-mix(in oklab, var(--brand), black 35%);
-    background: linear-gradient(
-      180deg,
-      color-mix(in oklab, var(--brand), white 10%),
-      var(--brand)
-    );
+    background: var(--brand);
     color: #0b1220;
     font-weight: 700;
     padding: 0.5rem 0.9rem;
     border-radius: 0.6rem;
     cursor: pointer;
-    box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.2) inset,
-      0 8px 20px rgba(59, 130, 246, 0.2);
   }
   .primary.small {
     padding: 0.35rem 0.7rem;
@@ -1081,57 +976,6 @@
   .primary:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-  }
-
-  .investor-selection {
-    padding: 1rem;
-  }
-
-  .investor-selection h3 {
-    margin-bottom: 1rem;
-    color: #f8fafc;
-    font-size: 1.1rem;
-  }
-
-  .investor-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .investor-item {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-    border-radius: 0.5rem;
-    cursor: pointer;
-    transition: background-color 0.2s;
-  }
-
-  .investor-item:hover {
-    background: color-mix(in oklab, var(--surface-2), white 10%);
-  }
-
-  .investor-item input[type="radio"] {
-    margin: 0;
-  }
-
-  .investor-info {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .investor-name {
-    font-weight: 600;
-    color: #f8fafc;
-  }
-
-  .investor-phone {
-    font-size: 0.875rem;
-    color: #94a3b8;
   }
 
   .modal.large {
@@ -1224,23 +1068,9 @@
   }
 
   @media (max-width: 720px) {
-    .table-container {
-      overflow-x: auto;
-    }
-
-    table {
-      min-width: 500px;
-    }
-
     .modal {
       margin: 0.5rem;
       max-height: 90vh;
-    }
-
-    .header-actions {
-      flex-direction: column;
-      gap: 1rem;
-      align-items: stretch;
     }
 
     .data-table {
