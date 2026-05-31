@@ -9,6 +9,7 @@
   import { mc, statusChipClass } from "$lib/merchant-styles.js";
   import { paginateSlice } from "$lib/pagination.js";
   import { buildStockLabel, formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
+  import { Trash2 } from "@lucide/svelte";
   import type { PageData } from "./$types";
 
   type StockPanelPos = {
@@ -1134,10 +1135,13 @@
             <button
               type="button"
               class="icon-rm"
-              aria-label="Remove line"
+              aria-label="Remove this stock from the order"
+              title="Remove this stock from the order"
               disabled={createSubmitting}
-              onclick={() => removeOrderLine(row.rowId)}>−</button
+              onclick={() => removeOrderLine(row.rowId)}
             >
+              <Trash2 size={16} strokeWidth={2} />
+            </button>
             {#if lineQuantityError(row)}
               <p class="line-err">{lineQuantityError(row)}</p>
             {:else if lineUnitPriceError(row)}
@@ -1710,7 +1714,11 @@
   }
   .line-row {
     display: grid;
-    grid-template-columns: 1fr 5.5rem 7rem 6.75rem 2.25rem;
+    grid-template-columns: 1fr 1fr auto;
+    grid-template-areas:
+      "stock stock stock"
+      "qty price remove"
+      "unit unit unit";
     gap: 0.5rem;
     align-items: start;
     padding: 0.5rem;
@@ -1718,12 +1726,35 @@
     border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
     background: color-mix(in oklab, var(--surface-2), white 2%);
   }
+  @media (min-width: 600px) {
+    .line-row {
+      grid-template-columns: 1fr 5.5rem 7rem 6.75rem 2.25rem;
+      grid-template-areas: "stock qty unit price remove";
+      align-items: end;
+    }
+  }
   .line-row.line-invalid {
     border-color: #f87171;
     box-shadow: 0 0 0 1px color-mix(in oklab, #ef4444, transparent 40%);
   }
   .line-row .grow {
-    grid-column: 1;
+    grid-area: stock;
+    min-width: 0;
+  }
+  .line-row .qty {
+    grid-area: qty;
+    min-width: 0;
+  }
+  .line-row .unit-readonly {
+    grid-area: unit;
+  }
+  .line-row .line-price {
+    grid-area: price;
+    min-width: 0;
+  }
+  .line-row .icon-rm {
+    grid-area: remove;
+    align-self: center;
   }
   .line-row .qty input,
   .line-row .line-price input {
@@ -1769,17 +1800,30 @@
   }
   .icon-rm {
     appearance: none;
-    background: transparent;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 15%);
-    color: #e5e7eb;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #dc2626;
     border-radius: 0.45rem;
     cursor: pointer;
-    font-size: 1.1rem;
     line-height: 1;
-    padding: 0.35rem 0;
+    width: 100%;
+    min-width: 2.25rem;
+    height: 2.35rem;
+    transition:
+      background-color 0.15s ease,
+      border-color 0.15s ease,
+      color 0.15s ease;
+  }
+  .icon-rm:hover:not(:disabled) {
+    background: #dc2626;
+    border-color: #dc2626;
+    color: #ffffff;
   }
   .icon-rm:disabled {
-    opacity: 0.35;
+    opacity: 0.45;
     cursor: not-allowed;
   }
   .line-actions {

@@ -32,7 +32,7 @@ export const mc = {
 	tableToolbarFilter: "flex h-[30px] shrink-0 flex-row items-center gap-2",
 	tableToolbarFilterLabel:
 		"shrink-0 whitespace-nowrap text-sm font-medium leading-none text-gray-500",
-	table: "w-full border-collapse text-sm",
+	table: "w-full min-w-[640px] border-collapse text-sm",
 	/** Table header row — #f2f2f2, 30px height */
 	th: "h-[30px] border-b border-[#e6eaed] bg-[#f2f2f2] px-4 text-left text-sm font-medium text-[#1a1a1a]",
 	thCenter:

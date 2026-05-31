@@ -11,11 +11,13 @@
 		ArrowLeftRight,
 		BarChart3,
 		LogOut,
+		Menu,
 		Package,
 		Receipt,
 		ShoppingCart,
 		Users,
 		Wallet,
+		X,
 	} from "@lucide/svelte";
 	import { cn } from "$lib/utils.js";
 
@@ -29,6 +31,7 @@
 	}
 
 	let isAuthenticated = $state(shellVisible());
+	let sidebarOpen = $state(false);
 
 	const APP_PREFIXES = [
 		"/stocks",
@@ -70,6 +73,21 @@
 		return () => document.body.classList.remove("merchant-app-active");
 	});
 
+	// Close the mobile drawer whenever the route changes.
+	$effect(() => {
+		void $page.url.pathname;
+		sidebarOpen = false;
+	});
+
+	// Lock body scroll while the mobile drawer is open.
+	$effect(() => {
+		if (!browser) return;
+		document.body.style.overflow = sidebarOpen ? "hidden" : "";
+		return () => {
+			document.body.style.overflow = "";
+		};
+	});
+
 	onMount(() => {
 		const token = localStorage.getItem("authToken");
 		if (token) {
@@ -105,25 +123,53 @@
 
 <ToastHost />
 
+<svelte:window
+	onkeydown={(e) => {
+		if (e.key === "Escape") sidebarOpen = false;
+	}}
+/>
+
 {#if isAppShellRoute}
 	<div class="merchant-app flex min-h-screen bg-[#F8F9FA] font-[Raleway,sans-serif] text-gray-900">
+		{#if sidebarOpen}
+			<button
+				type="button"
+				class="fixed inset-0 z-40 bg-black/40 lg:hidden"
+				aria-label="Close navigation"
+				onclick={() => (sidebarOpen = false)}
+			></button>
+		{/if}
+
 		<aside
-			class="sticky top-0 flex h-screen w-[260px] shrink-0 flex-col border-r border-gray-200 bg-white px-3 pb-5 pt-5"
+			class={cn(
+				"fixed inset-y-0 left-0 z-50 flex h-screen w-[260px] shrink-0 flex-col border-r border-gray-200 bg-white px-3 pb-5 pt-5 transition-transform duration-300 ease-in-out lg:sticky lg:top-0 lg:z-auto lg:translate-x-0",
+				sidebarOpen ? "translate-x-0" : "-translate-x-full",
+			)}
 			aria-label="Main navigation"
 		>
-			<a
-				href="/"
-				class="-mt-4 mb-6 flex shrink-0 items-center px-2"
-				aria-label="Go to landing page"
-			>
-				<img
-					src="/logonew.png"
-					alt="Bamanstock"
-					class="h-14 w-auto max-w-full object-cover md:h-20"
-				/>
-			</a>
+			<div class="-mt-4 mb-6 flex shrink-0 items-center justify-between gap-2 px-2">
+				<a
+					href="/"
+					class="flex items-center"
+					aria-label="Go to landing page"
+				>
+					<img
+						src="/logonew.png"
+						alt="Bamanstock"
+						class="h-14 w-auto max-w-full object-cover md:h-20"
+					/>
+				</a>
+				<button
+					type="button"
+					class="-mr-1 flex size-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 lg:hidden"
+					aria-label="Close menu"
+					onclick={() => (sidebarOpen = false)}
+				>
+					<X size={20} strokeWidth={2} />
+				</button>
+			</div>
 
-			<nav class="flex flex-1 flex-col gap-0.5 overflow-y-auto">
+			<nav class="flex flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain">
 				{#each navItems as item}
 					{@const Icon = item.icon}
 					{@const active = $page.url.pathname.startsWith(item.match)}
@@ -160,23 +206,46 @@
 			</div>
 		</aside>
 
-		<main class="relative min-w-0 flex-1 p-6 pb-16">
-			{@render children?.()}
-			{#if $navigating}
-				<div
-					class="absolute inset-0 z-50 flex items-center justify-center bg-[#F8F9FA]/70 backdrop-blur-sm"
-					aria-busy="true"
-					aria-live="polite"
-					role="status"
+		<div class="flex min-w-0 flex-1 flex-col">
+			<header
+				class="sticky top-0 z-30 flex items-center gap-3 border-b border-gray-200 bg-white/95 px-4 py-2.5 backdrop-blur-sm lg:hidden"
+			>
+				<button
+					type="button"
+					class="flex size-10 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100"
+					aria-label="Open menu"
+					aria-expanded={sidebarOpen}
+					onclick={() => (sidebarOpen = true)}
 				>
+					<Menu size={22} strokeWidth={2} />
+				</button>
+				<a href="/" class="flex items-center" aria-label="Go to landing page">
+					<img
+						src="/logonew.png"
+						alt="Bamanstock"
+						class="h-10 w-auto max-w-full object-cover"
+					/>
+				</a>
+			</header>
+
+			<main class="relative min-w-0 flex-1 p-4 pb-16 sm:p-6">
+				{@render children?.()}
+				{#if $navigating}
 					<div
-						class="size-10 animate-spin rounded-full border-[3px] border-[#4DA0E6]/25 border-t-[#4DA0E6]"
-						aria-hidden="true"
-					></div>
-					<span class="sr-only">Loading page</span>
-				</div>
-			{/if}
-		</main>
+						class="absolute inset-0 z-50 flex items-center justify-center bg-[#F8F9FA]/70 backdrop-blur-sm"
+						aria-busy="true"
+						aria-live="polite"
+						role="status"
+					>
+						<div
+							class="size-10 animate-spin rounded-full border-[3px] border-[#4DA0E6]/25 border-t-[#4DA0E6]"
+							aria-hidden="true"
+						></div>
+						<span class="sr-only">Loading page</span>
+					</div>
+				{/if}
+			</main>
+		</div>
 	</div>
 {:else}
 	{@render children?.()}
