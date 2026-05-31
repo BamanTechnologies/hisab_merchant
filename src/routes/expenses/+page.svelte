@@ -1,6 +1,11 @@
 <script lang="ts">
   import { deserialize } from "$app/forms";
   import { onMount } from "svelte";
+  import TablePagination from "$lib/components/TablePagination.svelte";
+  import TableSortHeader from "$lib/components/TableSortHeader.svelte";
+  import SummaryMetricCard from "$lib/components/SummaryMetricCard.svelte";
+  import { mc } from "$lib/merchant-styles.js";
+  import { paginateSlice } from "$lib/pagination.js";
   import { afterToast, showToast, TOAST_MS } from "$lib/toast";
   import type { PageData } from "./$types";
 
@@ -19,6 +24,8 @@
   let categoryFilter = $state<string>("all");
   let sortColumn = $state<string>("none");
   let sortDirection = $state<"asc" | "desc">("asc");
+  let tablePage = $state(1);
+  let tablePageSize = $state(10);
   let listStateReady = $state(false);
 
   $effect(() => {
@@ -171,6 +178,13 @@
       return sortDirection === "asc" ? cmp : -cmp;
     });
   });
+
+  const expensesPaginationResetKey = $derived(
+    `${typeFilter}|${dateRangePreset}|${customDateFrom}|${customDateTo}|${categoryFilter}|${sortColumn}|${sortDirection}`,
+  );
+  const pagedExpenses = $derived(
+    paginateSlice(sortedExpenses, tablePage, tablePageSize),
+  );
 
   function paymentLabel(p: string) {
     if (p === "bank transfer") return "Bank transfer";
@@ -445,36 +459,24 @@
   });
 </script>
 
-<section class="header">
+<section class={mc.pageHeader}>
   <div>
-    <h1>Expenses</h1>
-    <p class="muted">Branch expenses for your assigned location.</p>
+    <h1 class={mc.pageTitle}>Expenses</h1>
+    <p class={mc.pageSubtitle}>Branch expenses for your assigned location.</p>
   </div>
-  <div class="header-right">
-    <label class="filter-field">
-      <span class="filter-label">Type</span>
-      <select class="native-select" bind:value={typeFilter}>
+  <div class="flex flex-wrap items-end gap-3">
+    <label>
+      <span class={mc.filterLabel}>Type</span>
+      <select class={mc.filterSelect} bind:value={typeFilter}>
         <option value="all">All</option>
         {#each expenseTypes as t}
           <option value={t}>{expenseTypeLabel(t)}</option>
         {/each}
       </select>
     </label>
-    <div class="total-pill" aria-live="polite">
-      <span class="total-label">Total Operational Expenses</span>
-      <span class="total-value operational"
-        >{formatMoney(displayOperationalTotal)}</span
-      >
-    </div>
-    <div class="total-pill" aria-live="polite">
-      <span class="total-label">Total Major Expenses</span>
-      <span class="total-value major"
-        >{formatMoney(displayMajorTotal)}</span
-      >
-    </div>
     <button
       type="button"
-      class="primary"
+      class={mc.primaryBtn}
       onclick={openModal}
       disabled={!data.merchantBranchId}
       title={!data.merchantBranchId
@@ -487,22 +489,34 @@
 </section>
 
 {#if !data.merchantBranchId}
-  <p class="warn">
-    Your account has no branch assigned, so expenses cannot be loaded or
-    created.
+  <p class="mb-4 text-sm text-amber-800">
+    Your account has no branch assigned, so expenses cannot be loaded or created.
   </p>
 {/if}
 
 {#if formError && !showModal}
-  <div class="alert error">
+  <div class={mc.alertError}>
     <p>{formError}</p>
   </div>
 {/if}
 
-<section class="expenses-filters" aria-label="Filter expenses">
-  <label class="filter-field">
-    <span class="filter-label">Date range</span>
-    <select class="native-select" bind:value={dateRangePreset}>
+<section class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2" aria-label="Expense totals">
+  <SummaryMetricCard
+    value={formatMoney(displayOperationalTotal)}
+    label="Total operational expenses"
+    icon="four"
+  />
+  <SummaryMetricCard
+    value={formatMoney(displayMajorTotal)}
+    label="Total major expenses"
+    icon="six"
+  />
+</section>
+
+<section class={mc.filterSection} aria-label="Filter expenses">
+  <label>
+    <span class={mc.filterLabel}>Date range</span>
+    <select class={mc.filterSelect} bind:value={dateRangePreset}>
       <option value="all">All time</option>
       <option value="today">Today</option>
       <option value="last7">Last 7 days</option>
@@ -511,26 +525,26 @@
     </select>
   </label>
   {#if dateRangePreset === "custom"}
-    <label class="filter-field">
-      <span class="filter-label">From</span>
+    <label>
+      <span class={mc.filterLabel}>From</span>
       <input
         type="date"
-        class="native-select date-clickable"
+        class="{mc.filterDate} cursor-pointer"
         bind:value={customDateFrom}
       />
     </label>
-    <label class="filter-field">
-      <span class="filter-label">To</span>
+    <label>
+      <span class={mc.filterLabel}>To</span>
       <input
         type="date"
-        class="native-select date-clickable"
+        class="{mc.filterDate} cursor-pointer"
         bind:value={customDateTo}
       />
     </label>
   {/if}
-  <label class="filter-field">
-    <span class="filter-label">Category</span>
-    <select class="native-select" bind:value={categoryFilter}>
+  <label>
+    <span class={mc.filterLabel}>Category</span>
+    <select class={mc.filterSelect} bind:value={categoryFilter}>
       <option value="all">All categories</option>
       {#each categories as c}
         <option value={c}>{categoryLabel(c)}</option>
@@ -539,265 +553,72 @@
   </label>
 </section>
 
-<section class="table-wrap">
-  <table class="data-table">
+<section class={mc.tableSection}>
+  <div class="overflow-x-auto">
+  <table class={mc.table}>
     <thead>
       {#if isMajorOnly}
         <tr>
-          <th class="col-num">#</th>
-          <th class="th-sort"
-            ><button
-              type="button"
-              class="sort-header-btn"
-              onclick={() => cycleSort("date")}
-              >Date <span class="sort-arrows"
-                ><span class:sort-arrow-on={isSortActive("date", "asc")}>▲</span
-                ><span class:sort-arrow-on={isSortActive("date", "desc")}
-                  >▼</span
-                ></span
-              ></button
-            ></th
-          >
-          <th class="th-sort"
-            ><button
-              type="button"
-              class="sort-header-btn"
-              onclick={() => cycleSort("amount")}
-              >Amount <span class="sort-arrows"
-                ><span class:sort-arrow-on={isSortActive("amount", "asc")}
-                  >▲</span
-                ><span class:sort-arrow-on={isSortActive("amount", "desc")}
-                  >▼</span
-                ></span
-              ></button
-            ></th
-          >
-          <th class="th-sort"
-            ><button
-              type="button"
-              class="sort-header-btn"
-              onclick={() => cycleSort("paid_by")}
-              >Paid by <span class="sort-arrows"
-                ><span class:sort-arrow-on={isSortActive("paid_by", "asc")}
-                  >▲</span
-                ><span class:sort-arrow-on={isSortActive("paid_by", "desc")}
-                  >▼</span
-                ></span
-              ></button
-            ></th
-          >
-          <th class="th-sort"
-            ><button
-              type="button"
-              class="sort-header-btn"
-              onclick={() => cycleSort("from_account")}
-              >From account <span class="sort-arrows"
-                ><span class:sort-arrow-on={isSortActive("from_account", "asc")}
-                  >▲</span
-                ><span
-                  class:sort-arrow-on={isSortActive("from_account", "desc")}
-                  >▼</span
-                ></span
-              ></button
-            ></th
-          >
-          <th class="th-sort"
-            ><button
-              type="button"
-              class="sort-header-btn"
-              onclick={() => cycleSort("sent_to")}
-              >Sent to <span class="sort-arrows"
-                ><span class:sort-arrow-on={isSortActive("sent_to", "asc")}
-                  >▲</span
-                ><span class:sort-arrow-on={isSortActive("sent_to", "desc")}
-                  >▼</span
-                ></span
-              ></button
-            ></th
-          >
-          <th class="th-sort"
-            ><button
-              type="button"
-              class="sort-header-btn"
-              onclick={() => cycleSort("to_account")}
-              >To account <span class="sort-arrows"
-                ><span class:sort-arrow-on={isSortActive("to_account", "asc")}
-                  >▲</span
-                ><span class:sort-arrow-on={isSortActive("to_account", "desc")}
-                  >▼</span
-                ></span
-              ></button
-            ></th
-          >
+          <th class={mc.colNumHead}>#</th>
+          <th class={mc.th}><TableSortHeader label="Date" onclick={() => cycleSort("date")} ascActive={isSortActive("date", "asc")} descActive={isSortActive("date", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label="Amount" onclick={() => cycleSort("amount")} ascActive={isSortActive("amount", "asc")} descActive={isSortActive("amount", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label="Paid by" onclick={() => cycleSort("paid_by")} ascActive={isSortActive("paid_by", "asc")} descActive={isSortActive("paid_by", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label="From account" onclick={() => cycleSort("from_account")} ascActive={isSortActive("from_account", "asc")} descActive={isSortActive("from_account", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label="Sent to" onclick={() => cycleSort("sent_to")} ascActive={isSortActive("sent_to", "asc")} descActive={isSortActive("sent_to", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label="To account" onclick={() => cycleSort("to_account")} ascActive={isSortActive("to_account", "asc")} descActive={isSortActive("to_account", "desc")} /></th>
         </tr>
       {:else if isOperationOnly}
         <tr>
-          <th class="col-num">#</th>
-          <th class="th-sort"
-            ><button
-              type="button"
-              class="sort-header-btn"
-              onclick={() => cycleSort("date")}
-              >Date <span class="sort-arrows"
-                ><span class:sort-arrow-on={isSortActive("date", "asc")}>▲</span
-                ><span class:sort-arrow-on={isSortActive("date", "desc")}
-                  >▼</span
-                ></span
-              ></button
-            ></th
-          >
-          <th class="th-sort"
-            ><button
-              type="button"
-              class="sort-header-btn"
-              onclick={() => cycleSort("amount")}
-              >Amount <span class="sort-arrows"
-                ><span class:sort-arrow-on={isSortActive("amount", "asc")}
-                  >▲</span
-                ><span class:sort-arrow-on={isSortActive("amount", "desc")}
-                  >▼</span
-                ></span
-              ></button
-            ></th
-          >
-          <th class="th-sort"
-            ><button
-              type="button"
-              class="sort-header-btn"
-              onclick={() => cycleSort("paid_by")}
-              >Paid by <span class="sort-arrows"
-                ><span class:sort-arrow-on={isSortActive("paid_by", "asc")}
-                  >▲</span
-                ><span class:sort-arrow-on={isSortActive("paid_by", "desc")}
-                  >▼</span
-                ></span
-              ></button
-            ></th
-          >
-          <th class="th-sort"
-            ><button
-              type="button"
-              class="sort-header-btn"
-              onclick={() => cycleSort("sent_to")}
-              >Sent to <span class="sort-arrows"
-                ><span class:sort-arrow-on={isSortActive("sent_to", "asc")}
-                  >▲</span
-                ><span class:sort-arrow-on={isSortActive("sent_to", "desc")}
-                  >▼</span
-                ></span
-              ></button
-            ></th
-          >
-          <th class="th-sort"
-            ><button
-              type="button"
-              class="sort-header-btn"
-              onclick={() => cycleSort("category")}
-              >Category <span class="sort-arrows"
-                ><span class:sort-arrow-on={isSortActive("category", "asc")}
-                  >▲</span
-                ><span class:sort-arrow-on={isSortActive("category", "desc")}
-                  >▼</span
-                ></span
-              ></button
-            ></th
-          >
-          <th class="th-sort"
-            ><button
-              type="button"
-              class="sort-header-btn"
-              onclick={() => cycleSort("payment")}
-              >Payment <span class="sort-arrows"
-                ><span class:sort-arrow-on={isSortActive("payment", "asc")}
-                  >▲</span
-                ><span class:sort-arrow-on={isSortActive("payment", "desc")}
-                  >▼</span
-                ></span
-              ></button
-            ></th
-          >
-          <th>Note</th>
-          <th>Receipt</th>
+          <th class={mc.colNumHead}>#</th>
+          <th class={mc.th}><TableSortHeader label="Date" onclick={() => cycleSort("date")} ascActive={isSortActive("date", "asc")} descActive={isSortActive("date", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label="Amount" onclick={() => cycleSort("amount")} ascActive={isSortActive("amount", "asc")} descActive={isSortActive("amount", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label="Paid by" onclick={() => cycleSort("paid_by")} ascActive={isSortActive("paid_by", "asc")} descActive={isSortActive("paid_by", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label="Sent to" onclick={() => cycleSort("sent_to")} ascActive={isSortActive("sent_to", "asc")} descActive={isSortActive("sent_to", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label="Category" onclick={() => cycleSort("category")} ascActive={isSortActive("category", "asc")} descActive={isSortActive("category", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label="Payment" onclick={() => cycleSort("payment")} ascActive={isSortActive("payment", "asc")} descActive={isSortActive("payment", "desc")} /></th>
+          <th class={mc.th}>Note</th>
+          <th class={mc.th}>Receipt</th>
         </tr>
       {:else}
         <tr>
-          <th class="col-num">#</th>
-          <th class="th-sort"
-            ><button
-              type="button"
-              class="sort-header-btn"
-              onclick={() => cycleSort("date")}
-              >Date <span class="sort-arrows"
-                ><span class:sort-arrow-on={isSortActive("date", "asc")}>▲</span
-                ><span class:sort-arrow-on={isSortActive("date", "desc")}
-                  >▼</span
-                ></span
-              ></button
-            ></th
-          >
-          <th class="th-sort"
-            ><button
-              type="button"
-              class="sort-header-btn"
-              onclick={() => cycleSort("type")}
-              >Type <span class="sort-arrows"
-                ><span class:sort-arrow-on={isSortActive("type", "asc")}>▲</span
-                ><span class:sort-arrow-on={isSortActive("type", "desc")}
-                  >▼</span
-                ></span
-              ></button
-            ></th
-          >
-          <th class="th-sort"
-            ><button
-              type="button"
-              class="sort-header-btn"
-              onclick={() => cycleSort("amount")}
-              >Amount <span class="sort-arrows"
-                ><span class:sort-arrow-on={isSortActive("amount", "asc")}
-                  >▲</span
-                ><span class:sort-arrow-on={isSortActive("amount", "desc")}
-                  >▼</span
-                ></span
-              ></button
-            ></th
-          >
-          <th>Details</th>
+          <th class={mc.colNumHead}>#</th>
+          <th class={mc.th}><TableSortHeader label="Date" onclick={() => cycleSort("date")} ascActive={isSortActive("date", "asc")} descActive={isSortActive("date", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label="Type" onclick={() => cycleSort("type")} ascActive={isSortActive("type", "asc")} descActive={isSortActive("type", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label="Amount" onclick={() => cycleSort("amount")} ascActive={isSortActive("amount", "asc")} descActive={isSortActive("amount", "desc")} /></th>
+          <th class={mc.th}>Details</th>
         </tr>
       {/if}
     </thead>
     <tbody>
-      {#each sortedExpenses as ex, i}
+      {#each pagedExpenses as ex, i}
         {#if isMajorOnly}
-          <tr class="row">
-            <td class="col-num">{i + 1}</td>
-            <td class="nowrap">{formatDate(ex.created_at)}</td>
-            <td class="amount">{formatMoney(ex.amount)}</td>
-            <td>{ex.from_person || "—"}</td>
-            <td>{ex.from_account || "—"}</td>
-            <td>{ex.sent_to || "—"}</td>
-            <td>{ex.to_account || "—"}</td>
+          <tr class="hover:bg-gray-50">
+            <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
+            <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{formatDate(ex.created_at)}</td>
+            <td class="{mc.td} font-semibold">{formatMoney(ex.amount)}</td>
+            <td class={mc.td}>{ex.from_person || "—"}</td>
+            <td class={mc.td}>{ex.from_account || "—"}</td>
+            <td class={mc.td}>{ex.sent_to || "—"}</td>
+            <td class={mc.td}>{ex.to_account || "—"}</td>
           </tr>
         {:else if isOperationOnly}
-          <tr class="row">
-            <td class="col-num">{i + 1}</td>
-            <td class="nowrap">{formatDate(ex.created_at)}</td>
-            <td class="amount">{formatMoney(ex.amount)}</td>
-            <td>{ex.from_person || "—"}</td>
-            <td>{ex.sent_to}</td>
-            <td>{categoryLabel(ex.category)}</td>
-            <td>{paymentLabel(ex.payment_type)}</td>
-            <td class="note-cell">{ex.note?.trim() ? ex.note : "—"}</td>
-            <td class="receipt-cell" title={ex.receipt ?? ""}
-              >{receiptPreview(ex.receipt)}</td
-            >
+          <tr class="hover:bg-gray-50">
+            <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
+            <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{formatDate(ex.created_at)}</td>
+            <td class="{mc.td} font-semibold">{formatMoney(ex.amount)}</td>
+            <td class={mc.td}>{ex.from_person || "—"}</td>
+            <td class={mc.td}>{ex.sent_to}</td>
+            <td class={mc.td}>{categoryLabel(ex.category)}</td>
+            <td class={mc.td}>{paymentLabel(ex.payment_type)}</td>
+            <td class={mc.td}>{ex.note?.trim() ? ex.note : "—"}</td>
+            <td class={mc.td} title={ex.receipt ?? ""}>{receiptPreview(ex.receipt)}</td>
           </tr>
         {:else}
-          <tr class="row">
-            <td class="col-num">{i + 1}</td>
-            <td class="nowrap">{formatDate(ex.created_at)}</td>
-            <td>{expenseTypeLabel(ex.expense_type ?? "operation")}</td>
-            <td class="amount">{formatMoney(ex.amount)}</td>
+          <tr class="hover:bg-gray-50">
+            <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
+            <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{formatDate(ex.created_at)}</td>
+            <td class={mc.td}>{expenseTypeLabel(ex.expense_type ?? "operation")}</td>
+            <td class="{mc.td} font-semibold">{formatMoney(ex.amount)}</td>
             <td>
               <div class="attr-stack">
                 {#each detailsEntries(ex) as [k, v]}
@@ -816,15 +637,13 @@
         <tr>
           <td
             colspan={typeFilter === "all" ? 5 : typeFilter === "major" ? 7 : 9}
-            class="empty-state"
+            class={mc.emptyCell}
           >
-            <p class="muted">
               {#if expenses.length > 0}
                 No expenses match your current filters.
               {:else}
                 No expenses yet. Create one to get started.
               {/if}
-            </p>
           </td>
         </tr>
       {/if}
@@ -832,16 +651,21 @@
         <tr>
           <td
             colspan={typeFilter === "all" ? 5 : typeFilter === "major" ? 7 : 9}
-            class="empty-state"
+            class={mc.emptyCell}
           >
-            <p class="muted">
               Assign a branch to your account to see expenses.
-            </p>
           </td>
         </tr>
       {/if}
     </tbody>
   </table>
+  </div>
+  <TablePagination
+    bind:page={tablePage}
+    bind:pageSize={tablePageSize}
+    total={sortedExpenses.length}
+    resetKey={expensesPaginationResetKey}
+  />
 </section>
 
 {#if showModal}
@@ -855,7 +679,7 @@
   ></div>
   <dialog
     open
-    class="modal"
+    class="modal modal-compact"
     onclick={(e) => e.stopPropagation()}
     oncancel={(e) => submitting && e.preventDefault()}
   >
@@ -1000,9 +824,6 @@
 {/if}
 
 <style>
-  h1 {
-    margin: 0 0 0.25rem;
-  }
   fieldset.expense-form-fields {
     border: none;
     padding: 0;
@@ -1012,185 +833,6 @@
   h2 {
     margin: 0;
     font-size: 1.15rem;
-  }
-  .muted {
-    color: #94a3b8;
-    margin: 0;
-  }
-  .warn {
-    color: #fca5a5;
-    margin: 0 0 1rem;
-  }
-  .header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 1rem;
-    flex-wrap: wrap;
-    margin-bottom: 1rem;
-  }
-  .header-right {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-  }
-  .expenses-filters {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    gap: 0.75rem 1rem;
-    margin-bottom: 1rem;
-    padding: 0.85rem 1rem;
-    border-radius: 0.75rem;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-    background: color-mix(in oklab, var(--surface-2), white 3%);
-  }
-  .expenses-filters .filter-field {
-    min-width: 9rem;
-  }
-  .date-clickable {
-    min-height: 2.25rem;
-    box-sizing: border-box;
-  }
-  .filter-field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-  .filter-label {
-    font-size: 0.75rem;
-    color: #94a3b8;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    font-weight: 700;
-  }
-  .total-pill {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    padding: 0.42rem 0.72rem;
-    border-radius: 0.65rem;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 12%);
-    background: color-mix(in oklab, var(--surface-2), white 4%);
-    min-width: 11.5rem;
-  }
-  .total-label {
-    font-size: 0.62rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #94a3b8;
-    font-weight: 700;
-  }
-  .total-value {
-    font-size: 0.98rem;
-    font-weight: 750;
-    font-variant-numeric: tabular-nums;
-  }
-  .total-value.operational {
-    color: #93c5fd;
-  }
-  .total-value.major {
-    color: #fca5a5;
-  }
-  .primary {
-    appearance: none;
-    background: var(--brand, #3b82f6);
-    color: #0b1220;
-    border: none;
-    font-weight: 700;
-    padding: 0.5rem 0.9rem;
-    border-radius: 0.6rem;
-    cursor: pointer;
-  }
-  .primary:hover:not(:disabled) {
-    filter: brightness(1.06);
-  }
-  .primary:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
-  .ghost {
-    appearance: none;
-    background: transparent;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 18%);
-    color: #e2e8f0;
-    padding: 0.45rem 0.85rem;
-    border-radius: 0.5rem;
-    cursor: pointer;
-    font-weight: 600;
-  }
-  .table-wrap {
-    overflow: auto;
-    border-radius: 0.75rem;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  thead tr {
-    background: color-mix(in oklab, var(--surface-2), white 4%);
-  }
-  th,
-  td {
-    padding: 0.75rem 0.75rem;
-  }
-  th {
-    text-align: left;
-    color: #94a3b8;
-    font-weight: 700;
-    font-size: 0.9rem;
-  }
-  .nowrap {
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
-  .col-num {
-    width: 2.25rem;
-    white-space: nowrap;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-  }
-  .th-sort {
-    padding: 0.35rem 0.5rem;
-    vertical-align: middle;
-  }
-  .sort-header-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    width: 100%;
-    margin: 0;
-    padding: 0.35rem 0.4rem;
-    border: none;
-    border-radius: 0.45rem;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    font-weight: 700;
-    cursor: pointer;
-    text-align: left;
-  }
-  .sort-arrows {
-    display: inline-flex;
-    flex-direction: column;
-    line-height: 0.8;
-    font-size: 0.6rem;
-    opacity: 0.45;
-  }
-  .sort-arrow-on {
-    opacity: 1;
-    color: #cbd5e1;
-  }
-  .amount {
-    font-weight: 600;
-  }
-  .note-cell,
-  .receipt-cell {
-    max-width: 12rem;
-    font-size: 0.88rem;
-    color: #cbd5e1;
   }
   .attr-stack {
     display: inline-flex;
@@ -1212,116 +854,5 @@
   }
   .attr-val {
     font-size: 0.88em;
-  }
-  td {
-    border-top: 1px solid color-mix(in oklab, var(--surface-2), white 8%);
-  }
-  .row:hover {
-    background: color-mix(in oklab, var(--surface-2), white 6%);
-  }
-  .empty-state {
-    text-align: center;
-    padding: 2rem;
-  }
-  .empty-state p {
-    margin: 0;
-    font-style: italic;
-  }
-  .alert.error {
-    margin-bottom: 1rem;
-    padding: 0.75rem 1rem;
-    border-radius: 0.5rem;
-    border: 1px solid #f87171;
-    background: color-mix(in oklab, #ef4444, transparent 88%);
-    color: #fecaca;
-  }
-  .alert p {
-    margin: 0;
-  }
-  .modal-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 40;
-    background: rgba(0, 0, 0, 0.55);
-  }
-  .modal {
-    position: fixed;
-    z-index: 50;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    width: min(26rem, calc(100vw - 2rem));
-    max-height: min(90vh, 640px);
-    overflow: auto;
-    margin: 0;
-    padding: 0;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 12%);
-    border-radius: 0.75rem;
-    background: var(--surface-1, #0f172a);
-    color: #e5e7eb;
-  }
-  .modal-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.85rem 1rem;
-    border-bottom: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-  }
-  .modal-head h2 {
-    color: #f8fafc;
-    font-weight: 600;
-  }
-  .icon-close {
-    appearance: none;
-    border: none;
-    background: transparent;
-    color: #94a3b8;
-    font-size: 1.25rem;
-    cursor: pointer;
-    line-height: 1;
-  }
-  .modal-body {
-    padding: 1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-  .field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    font-size: 0.85rem;
-    color: #cbd5e1;
-  }
-  .field input,
-  .field textarea {
-    padding: 0.5rem 0.6rem;
-    border-radius: 0.5rem;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 12%);
-    background: color-mix(in oklab, var(--surface-2), white 2%);
-    color: #e5e7eb;
-    font: inherit;
-  }
-  .native-select {
-    padding: 0.5rem 0.6rem;
-    border-radius: 0.5rem;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 12%);
-    background: color-mix(in oklab, var(--surface-2), white 2%);
-    color: #e5e7eb;
-    font: inherit;
-    cursor: pointer;
-  }
-  .inline-error {
-    color: #fca5a5;
-    font-size: 0.9rem;
-    margin: 0;
-  }
-  .modal-foot {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    margin-top: 0.25rem;
-    padding-top: 0.75rem;
-    border-top: 1px solid color-mix(in oklab, var(--surface-2), white 8%);
   }
 </style>

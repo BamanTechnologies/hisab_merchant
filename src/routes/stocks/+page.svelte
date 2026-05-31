@@ -8,7 +8,13 @@
     TOAST_MS,
   } from "$lib/toast";
   import { onMount, tick } from "svelte";
-  import { formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
+  import { Pencil, Trash2 } from "@lucide/svelte";
+  import TablePagination from "$lib/components/TablePagination.svelte";
+  import TableSearchInput from "$lib/components/TableSearchInput.svelte";
+  import TableSortHeader from "$lib/components/TableSortHeader.svelte";
+  import { mc } from "$lib/merchant-styles.js";
+  import { paginateSlice } from "$lib/pagination.js";
+  import { buildStockLabel, formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
   import type { PageData } from "./$types";
 
   type Investor = {
@@ -67,6 +73,9 @@
   };
 
   let typeFilter = $state<string>("all");
+  let searchQuery = $state("");
+  let tablePage = $state(1);
+  let tablePageSize = $state(10);
 
   let sortColumn = $state<string>("none");
   let sortDirection = $state<"asc" | "desc">("asc");
@@ -221,8 +230,8 @@
     }
   }
 
-  function cycleSort(col: string, e: Event) {
-    e.stopPropagation();
+  function cycleSort(col: string, e?: Event) {
+    e?.stopPropagation();
     if (sortColumn !== col) {
       sortColumn = col;
       sortDirection = "asc";
@@ -235,10 +244,27 @@
     }
   }
 
+  function stockSearchText(s: Stock): string {
+    const parts = [
+      buildStockLabel(s),
+      productTypeLabel(s),
+      branchLabel(s.branch),
+      s.origin ? branchLabel(s.origin) : "",
+    ];
+    for (const [, v] of attributeEntriesForList(s)) {
+      parts.push(String(v ?? ""));
+    }
+    return parts.join(" ").toLowerCase();
+  }
+
   const filteredStocks = $derived.by(() => {
     let list = stocks;
     if (typeFilter !== "all") {
       list = list.filter((s: Stock) => typeFromStock(s) === typeFilter);
+    }
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      list = list.filter((s: Stock) => stockSearchText(s).includes(q));
     }
     if (sortColumn !== "none") {
       const col = sortColumn;
@@ -267,6 +293,13 @@
     }
     return list;
   });
+
+  const stocksPaginationResetKey = $derived(
+    `${typeFilter}|${searchQuery}|${sortColumn}|${sortDirection}`,
+  );
+  const pagedStocks = $derived(
+    paginateSlice<Stock>(filteredStocks, tablePage, tablePageSize),
+  );
 
   // Create form state
   let purchasedPrice = $state<number | undefined>(undefined);
@@ -676,37 +709,22 @@
   }
 </script>
 
-<section class="header">
+<section class={mc.pageHeader}>
   <div>
-    <h1>Stocks</h1>
-    <p class="muted">Inventory overview. Click a row to view details.</p>
+    <h1 class={mc.pageTitle}>Stocks</h1>
+    <p class={mc.pageSubtitle}>Inventory overview. Click a row to view details.</p>
   </div>
-  <div class="header-actions">
-    <label class="filter-field">
-      <span class="filter-label">Type</span>
-      <select class="filter-select" bind:value={typeFilter}>
-        <option value="all">All</option>
-        {#each productTypes as pt}
-          {#if pt.name}
-            <option value={String(pt.name).trim().toLowerCase()}>
-              {typeDisplay(pt.name)}
-            </option>
-          {/if}
-        {/each}
-      </select>
-    </label>
-    <button class="primary" onclick={openCreateModal}>New Stock</button>
-  </div>
+  <button type="button" class={mc.primaryBtn} onclick={openCreateModal}>New Stock</button>
 </section>
 
 {#if errorMessage && !showCreateModal}
-  <div class="alert error">
+  <div class={mc.alertError}>
     <p>{errorMessage}</p>
   </div>
 {/if}
 
 {#if successMessage}
-  <div class="alert success">
+  <div class={mc.alertSuccess}>
     <p>{successMessage}</p>
   </div>
 {/if}
@@ -729,7 +747,7 @@
     oncancel={(e) => stockFormPending && e.preventDefault()}
   >
     <header>
-      <h2 style="color: white;">
+      <h2>
         {editingStockId ? "Edit Stock" : "Create New Stock"}
       </h2>
       <button
@@ -841,7 +859,7 @@
             />
           </label>
           <div class="field">
-            <span style="color: white;">Branch</span>
+            <span>Branch</span>
             <input type="hidden" name="branch" bind:value={selectedBranchId} />
             <div class="multiselect" bind:this={branchMultiselectEl}>
               <button
@@ -857,7 +875,6 @@
                     <button
                       type="button"
                       class="option option-btn"
-                      style="color: white;"
                       class:option-active={selectedBranchId === br.id}
                       onclick={() => selectBranch(br.id)}
                     >
@@ -1011,7 +1028,7 @@
     oncancel={(e) => deleteSubmitting && e.preventDefault()}
   >
     <header>
-      <h2 style="color: white;">Delete Stock</h2>
+      <h2>Delete Stock</h2>
       <button
         class="icon"
         aria-label="Close"
@@ -1058,205 +1075,153 @@
   </dialog>
 {/if}
 
-<section class="table-wrap">
-  <table class="data-table">
+<section class={mc.tableSection}>
+  <div class={mc.tableToolbar}>
+    <TableSearchInput
+      bind:value={searchQuery}
+      placeholder="Search by stock name…"
+      ariaLabel="Search stocks"
+      class="flex-1"
+    />
+    <div class={mc.tableToolbarFilter}>
+      <span class={mc.tableToolbarFilterLabel}>Type</span>
+      <select class={mc.filterSelectCompact} bind:value={typeFilter} aria-label="Filter by type">
+        <option value="all">All</option>
+        {#each productTypes as pt}
+          {#if pt.name}
+            <option value={String(pt.name).trim().toLowerCase()}>
+              {typeDisplay(pt.name)}
+            </option>
+          {/if}
+        {/each}
+      </select>
+    </div>
+  </div>
+  <div class="overflow-x-auto">
+  <table class={mc.table}>
     <thead>
       <tr>
-        <th class="col-num">#</th>
+        <th class={mc.colNumHead}>#</th>
         <th
-          class="th-sort"
+          class={mc.th}
           aria-sort={sortColumn === "type"
             ? sortDirection === "asc"
               ? "ascending"
               : "descending"
             : "none"}
         >
-          <button
-            type="button"
-            class="sort-header-btn"
-            onclick={(e) => cycleSort("type", e)}
-            aria-label="Sort by type. Cycles default, A to Z, Z to A, then clear."
-            title="Sort by type: default → A–Z → Z–A → default"
-          >
-            <span class="sort-header-label">Type</span>
-            <span class="sort-arrows" aria-hidden="true">
-              <span
-                class="sort-arrow"
-                class:sort-arrow-on={sortColumn === "type" &&
-                  sortDirection === "asc"}>▲</span
-              >
-              <span
-                class="sort-arrow"
-                class:sort-arrow-on={sortColumn === "type" &&
-                  sortDirection === "desc"}>▼</span
-              >
-            </span>
-          </button>
+          <TableSortHeader
+            label="Type"
+            onclick={() => cycleSort("type")}
+            ascActive={isSortActive("type", "asc")}
+            descActive={isSortActive("type", "desc")}
+          />
         </th>
         <th
-          class="th-sort"
+          class={mc.th}
           aria-sort={sortColumn === "branch"
             ? sortDirection === "asc"
               ? "ascending"
               : "descending"
             : "none"}
         >
-          <button
-            type="button"
-            class="sort-header-btn"
-            onclick={(e) => cycleSort("branch", e)}
-            aria-label="Sort by branch. Cycles default, A to Z, Z to A, then clear."
-          >
-            <span class="sort-header-label">Branch</span>
-            <span class="sort-arrows" aria-hidden="true">
-              <span
-                class="sort-arrow"
-                class:sort-arrow-on={isSortActive("branch", "asc")}>▲</span
-              >
-              <span
-                class="sort-arrow"
-                class:sort-arrow-on={isSortActive("branch", "desc")}>▼</span
-              >
-            </span>
-          </button>
+          <TableSortHeader
+            label="Branch"
+            onclick={() => cycleSort("branch")}
+            ascActive={isSortActive("branch", "asc")}
+            descActive={isSortActive("branch", "desc")}
+          />
         </th>
         <th
-          class="th-sort"
+          class={mc.th}
           aria-sort={sortColumn === "origin"
             ? sortDirection === "asc"
               ? "ascending"
               : "descending"
             : "none"}
         >
-          <button
-            type="button"
-            class="sort-header-btn"
-            onclick={(e) => cycleSort("origin", e)}
-            aria-label="Sort by origin. Cycles default, A to Z, Z to A, then clear."
-          >
-            <span class="sort-header-label">Origin</span>
-            <span class="sort-arrows" aria-hidden="true">
-              <span
-                class="sort-arrow"
-                class:sort-arrow-on={isSortActive("origin", "asc")}>▲</span
-              >
-              <span
-                class="sort-arrow"
-                class:sort-arrow-on={isSortActive("origin", "desc")}>▼</span
-              >
-            </span>
-          </button>
+          <TableSortHeader
+            label="Origin"
+            onclick={() => cycleSort("origin")}
+            ascActive={isSortActive("origin", "asc")}
+            descActive={isSortActive("origin", "desc")}
+          />
         </th>
         {#if isSingleTypeFilter}
           {#each activeFields as field}
             <th
-              class="th-sort"
+              class={mc.th}
               aria-sort={sortColumn === field
                 ? sortDirection === "asc"
                   ? "ascending"
                   : "descending"
                 : "none"}
             >
-              <button
-                type="button"
-                class="sort-header-btn"
-                onclick={(e) => cycleSort(field, e)}
-                aria-label={`Sort by ${attributeLabel(field)}. Cycles default, A to Z, Z to A, then clear.`}
-              >
-                <span class="sort-header-label">{attributeLabel(field)}</span>
-                <span class="sort-arrows" aria-hidden="true">
-                  <span
-                    class="sort-arrow"
-                    class:sort-arrow-on={isSortActive(field, "asc")}>▲</span
-                  >
-                  <span
-                    class="sort-arrow"
-                    class:sort-arrow-on={isSortActive(field, "desc")}>▼</span
-                  >
-                </span>
-              </button>
+              <TableSortHeader
+                label={attributeLabel(field)}
+                onclick={() => cycleSort(field)}
+                ascActive={isSortActive(field, "asc")}
+                descActive={isSortActive(field, "desc")}
+              />
             </th>
           {/each}
         {:else}
-          <th>Attributes</th>
+          <th class={mc.th}>Attributes</th>
         {/if}
         <th
-          class="th-sort"
+          class={mc.th}
           aria-sort={sortColumn === "price"
             ? sortDirection === "asc"
               ? "ascending"
               : "descending"
             : "none"}
         >
-          <button
-            type="button"
-            class="sort-header-btn"
-            onclick={(e) => cycleSort("price", e)}
-            aria-label="Sort by price. Cycles default, low to high, high to low, then clear."
-          >
-            <span class="sort-header-label">Price</span>
-            <span class="sort-arrows" aria-hidden="true">
-              <span
-                class="sort-arrow"
-                class:sort-arrow-on={isSortActive("price", "asc")}>▲</span
-              >
-              <span
-                class="sort-arrow"
-                class:sort-arrow-on={isSortActive("price", "desc")}>▼</span
-              >
-            </span>
-          </button>
+          <TableSortHeader
+            label="Price"
+            onclick={() => cycleSort("price")}
+            ascActive={isSortActive("price", "asc")}
+            descActive={isSortActive("price", "desc")}
+          />
         </th>
         <th
-          class="right th-sort"
+          class={mc.thRight}
           aria-sort={sortColumn === "quantity"
             ? sortDirection === "asc"
               ? "ascending"
               : "descending"
             : "none"}
         >
-          <button
-            type="button"
-            class="sort-header-btn"
-            onclick={(e) => cycleSort("quantity", e)}
-            aria-label="Sort by quantity. Cycles default, low to high, high to low, then clear."
-          >
-            <span class="sort-header-label">Quantity</span>
-            <span class="sort-arrows" aria-hidden="true">
-              <span
-                class="sort-arrow"
-                class:sort-arrow-on={isSortActive("quantity", "asc")}>▲</span
-              >
-              <span
-                class="sort-arrow"
-                class:sort-arrow-on={isSortActive("quantity", "desc")}>▼</span
-              >
-            </span>
-          </button>
+          <TableSortHeader
+            label="Quantity"
+            align="center"
+            onclick={() => cycleSort("quantity")}
+            ascActive={isSortActive("quantity", "asc")}
+            descActive={isSortActive("quantity", "desc")}
+          />
         </th>
-        <th class="center">Actions</th>
+        <th class={mc.thCenter}>Actions</th>
       </tr>
     </thead>
     <tbody>
-      {#each filteredStocks as s, i}
+      {#each pagedStocks as s, i}
         <tr
-          class="row"
+          class={mc.rowClickable}
           onclick={() => goto(`/stocks/${s.id}${currentListQueryString()}`)}
           tabindex="0"
           role="button"
         >
-          <td class="col-num">{i + 1}</td>
-          <td>{productTypeLabel(s)}</td>
-          <td>{branchLabel(s.branch)}</td>
-          <td>{s.origin ? branchLabel(s.origin) : "-"}</td>
+          <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
+          <td class={mc.td}>{productTypeLabel(s)}</td>
+          <td class={mc.td}>{branchLabel(s.branch)}</td>
+          <td class={mc.td}>{s.origin ? branchLabel(s.origin) : "-"}</td>
           {#if isSingleTypeFilter}
             {#each activeFields as field}
-              <td>{attrValue(s, field)}</td>
+              <td class={mc.td}>{attrValue(s, field)}</td>
             {/each}
           {:else}
-            <td>
+            <td class={mc.td}>
               {#if s.attributes && Object.keys(s.attributes).length > 0}
-                <div class="attr-stack">
+                <div class="flex flex-col gap-0.5 text-sm">
                   {#each attributeEntriesForList(s) as [k, v]}
                     <div class="attr-row">
                       <span class="attr-key">{attributeLabel(k)}</span>
@@ -1270,25 +1235,29 @@
               {/if}
             </td>
           {/if}
-          <td>{formatMoneyValue(s.selling_price)}</td>
-          <td class="right">{quantityWithUnit(s)}</td>
-          <td class="center">
-            <button
-              class="edit-btn"
-              onclick={(e) => openEditModal(s, e)}
-              aria-label="Edit stock"
-              title="Edit stock"
-            >
-              ✏️
-            </button>
-            <button
-              class="delete-btn"
-              onclick={(e) => openDeleteModal(s, e)}
-              aria-label="Delete stock"
-              title="Delete stock"
-            >
-              🗑️
-            </button>
+          <td class={mc.td}>{formatMoneyValue(s.selling_price)}</td>
+          <td class={mc.tdRight}>{quantityWithUnit(s)}</td>
+          <td class={mc.tdCenter}>
+            <div class="flex items-center justify-center gap-1.5">
+              <button
+                type="button"
+                class={mc.actionBtn}
+                onclick={(e) => openEditModal(s, e)}
+                aria-label="Edit stock"
+                title="Edit stock"
+              >
+                <Pencil size={14} strokeWidth={2} />
+              </button>
+              <button
+                type="button"
+                class={mc.actionBtnDanger}
+                onclick={(e) => openDeleteModal(s, e)}
+                aria-label="Delete stock"
+                title="Delete stock"
+              >
+                <Trash2 size={14} strokeWidth={2} />
+              </button>
+            </div>
           </td>
         </tr>
       {/each}
@@ -1296,26 +1265,28 @@
         <tr>
           <td
             colspan={isSingleTypeFilter ? 8 + activeFields.length : 10}
-            class="empty-state"
+            class={mc.emptyCell}
           >
-            <p class="muted">
               {#if stocks.length === 0}
                 No stocks found. Create your first stock to get started.
               {:else}
-                No stocks match the selected type filter.
+                No stocks match your search or type filter.
               {/if}
-            </p>
           </td>
         </tr>
       {/if}
     </tbody>
   </table>
+  </div>
+  <TablePagination
+    bind:page={tablePage}
+    bind:pageSize={tablePageSize}
+    total={filteredStocks.length}
+    resetKey={stocksPaginationResetKey}
+  />
 </section>
 
 <style>
-  h1 {
-    margin: 0 0 0.25rem;
-  }
   fieldset.stock-form-fields {
     border: none;
     padding: 0;
@@ -1340,190 +1311,6 @@
     pointer-events: none;
     background: transparent;
     box-shadow: none;
-  }
-  .muted {
-    color: #94a3b8;
-    margin: 0;
-  }
-  .header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 1rem;
-    margin-bottom: 1rem;
-    flex-wrap: wrap;
-  }
-  .header-actions {
-    display: flex;
-    align-items: flex-end;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-  }
-  .filter-field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-  }
-  .filter-label {
-    color: #94a3b8;
-    font-weight: 600;
-    font-size: 0.85rem;
-  }
-  .filter-select {
-    min-width: 10rem;
-    background: color-mix(in oklab, var(--surface-2), white 2%);
-    color: #e5e7eb;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 12%);
-    border-radius: 0.6rem;
-    padding: 0.55rem 0.7rem;
-    font-weight: 600;
-  }
-
-  .primary {
-    appearance: none;
-    border: 1px solid color-mix(in oklab, var(--brand), black 35%);
-    background: linear-gradient(
-      180deg,
-      color-mix(in oklab, var(--brand), white 10%),
-      var(--brand)
-    );
-    color: #0b1220;
-    font-weight: 700;
-    padding: 0.5rem 0.9rem;
-    border-radius: 0.6rem;
-    cursor: pointer;
-    box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.2) inset,
-      0 8px 20px rgba(59, 130, 246, 0.2);
-  }
-  .ghost {
-    appearance: none;
-    background: transparent;
-    color: #e5e7eb;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-    padding: 0.5rem 0.9rem;
-    border-radius: 0.6rem;
-    cursor: pointer;
-  }
-
-  .table-wrap {
-    overflow: auto;
-    border-radius: 0.75rem;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  thead tr {
-    background: color-mix(in oklab, var(--surface-2), white 4%);
-  }
-  th,
-  td {
-    padding: 0.75rem 0.75rem;
-  }
-  th {
-    text-align: left;
-    color: #94a3b8;
-    font-weight: 700;
-    font-size: 0.9rem;
-  }
-  .col-num {
-    width: 2.25rem;
-    white-space: nowrap;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-  }
-  .th-sort {
-    vertical-align: middle;
-    padding: 0.35rem 0.5rem;
-  }
-  .sort-header-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    width: 100%;
-    margin: 0;
-    padding: 0.35rem 0.4rem;
-    border: none;
-    border-radius: 0.45rem;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    font-weight: 700;
-    cursor: pointer;
-    text-align: left;
-  }
-  .sort-header-btn:hover {
-    background: color-mix(in oklab, var(--surface-2), white 8%);
-    color: #e5e7eb;
-  }
-  .sort-header-btn:focus-visible {
-    outline: 2px solid var(--ring);
-    outline-offset: 2px;
-  }
-  .sort-header-label {
-    flex: 1;
-    min-width: 0;
-  }
-  .sort-arrows {
-    display: inline-flex;
-    flex-direction: column;
-    gap: 0;
-    line-height: 0.85;
-    font-size: 0.55rem;
-    flex-shrink: 0;
-  }
-  .sort-arrow {
-    color: color-mix(in oklab, var(--muted), transparent 55%);
-    transition: color 120ms ease;
-  }
-  .sort-arrow.sort-arrow-on {
-    color: var(--brand);
-  }
-  td {
-    border-top: 1px solid color-mix(in oklab, var(--surface-2), white 8%);
-  }
-  .right {
-    text-align: right;
-  }
-  .center {
-    text-align: center;
-  }
-  .row {
-    cursor: pointer;
-  }
-  .empty-state {
-    text-align: center;
-    padding: 2rem;
-  }
-  .empty-state p {
-    margin: 0;
-    font-style: italic;
-  }
-  .row:focus {
-    outline: none;
-    box-shadow: inset 0 0 0 2px var(--ring);
-  }
-  .alert {
-    margin: 1rem 0;
-    padding: 1rem;
-    border-radius: 0.5rem;
-    border: 1px solid;
-  }
-  .alert.error {
-    background: color-mix(in oklab, #ef4444, white 90%);
-    border-color: #ef4444;
-    color: #991b1b;
-  }
-  .alert.success {
-    background: color-mix(in oklab, #10b981, white 90%);
-    border-color: #10b981;
-    color: #064e3b;
-  }
-  .alert p {
-    margin: 0;
-    font-weight: 500;
   }
 
   /* Modal */

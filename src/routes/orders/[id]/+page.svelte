@@ -1,5 +1,8 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import TablePagination from "$lib/components/TablePagination.svelte";
+  import { mc, statusChipClass } from "$lib/merchant-styles.js";
+  import { paginateSlice } from "$lib/pagination.js";
   import { formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
   import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
   import type { PageData } from "./$types";
@@ -191,12 +194,11 @@
       .join(", ");
   }
 
-  function statusClass(status: string) {
-    if (status === "cancelled") return "muted";
-    if (status === "paid") return "ok";
-    if (status === "partially_paid") return "warn";
-    return "bad";
-  }
+  let lineItemsPage = $state(1);
+  let lineItemsPageSize = $state(10);
+  const pagedOrderItems = $derived(
+    paginateSlice(orderItems, lineItemsPage, lineItemsPageSize),
+  );
 
   // Define bank list once as the single source of truth
   const banks = [
@@ -237,103 +239,103 @@
 
 </script>
 
-<section>
-  <h1>Order Details</h1>
-
-  {#if errorMessage}
-    <div class="alert error">
-      <p>{errorMessage}</p>
-    </div>
-  {/if}
-
-  {#if successMessage}
-    <div class="alert success">
-      <p>{successMessage}</p>
-    </div>
-  {/if}
-
+<section class={mc.pageHeader}>
+  <div>
+    <h1 class={mc.pageTitle}>Order Details</h1>
+  </div>
   {#if order}
-    <div class="header-actions">
-      <button
-        class="primary"
-        disabled={order.status === "paid" || order.status === "cancelled"}
-        onclick={() => (showPay = true)}>Pay</button
-      >
-    </div>
-    <div class="detail meta-block">
-      <div><span class="sect">Order information</span></div>
-      <div class="grid">
-        <div>
-          <span class="label">Customer:</span><span>{order.customer_name}</span>
+    <button
+      type="button"
+      class={mc.primaryBtn}
+      disabled={order.status === "paid" || order.status === "cancelled"}
+      onclick={() => (showPay = true)}>Pay</button
+    >
+  {/if}
+</section>
+
+{#if errorMessage}
+  <div class={mc.alertError}>
+    <p>{errorMessage}</p>
+  </div>
+{/if}
+
+{#if successMessage}
+  <div class={mc.alertSuccess}>
+    <p>{successMessage}</p>
+  </div>
+{/if}
+
+{#if order}
+    <div class="mb-6 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <h2 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500">Order information</h2>
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div class="text-sm">
+          <span class="font-medium text-gray-500">Customer:</span>
+          <span class="ml-1 text-gray-900">{order.customer_name}</span>
         </div>
-        <div>
-          <span class="label">Phone:</span><span
-            >{order.customer_phone || "-"}</span
-          >
+        <div class="text-sm">
+          <span class="font-medium text-gray-500">Phone:</span>
+          <span class="ml-1 text-gray-900">{order.customer_phone || "—"}</span>
         </div>
-        <div>
-          <span class="label">Address:</span><span
-            >{order.customer_address || "-"}</span
-          >
+        <div class="text-sm">
+          <span class="font-medium text-gray-500">Address:</span>
+          <span class="ml-1 text-gray-900">{order.customer_address || "—"}</span>
         </div>
-        <div>
-          <span class="label">Quantity:</span><span
-            >{orderQuantityLabel(order)}</span
-          >
+        <div class="text-sm">
+          <span class="font-medium text-gray-500">Quantity:</span>
+          <span class="ml-1 text-gray-900">{orderQuantityLabel(order)}</span>
         </div>
-        <div>
-          <span class="label">Status:</span><span
-            class="chip {statusClass(order.status)}">{order.status}</span
-          >
+        <div class="text-sm">
+          <span class="font-medium text-gray-500">Status:</span>
+          <span class="ml-2"><span class={statusChipClass(order.status)}>{order.status}</span></span>
         </div>
-        <div>
-          <span class="label">Total amount:</span><span
-            >{formatMoney(order.total_amount)}</span
-          >
+        <div class="text-sm">
+          <span class="font-medium text-gray-500">Total amount:</span>
+          <span class="ml-1 font-semibold text-gray-900">{formatMoney(order.total_amount)}</span>
         </div>
-        <div>
-          <span class="label">Outstanding:</span><span
-            >{formatMoney(order.outstanding_amount)}</span
-          >
+        <div class="text-sm">
+          <span class="font-medium text-gray-500">Outstanding:</span>
+          <span class="ml-1 font-semibold text-gray-900">{formatMoney(order.outstanding_amount)}</span>
         </div>
       </div>
     </div>
 
-    <div class="detail stocks-section">
-      <div><span class="sect">Stocks ({orderStocks.length})</span></div>
+    <div class="mb-6">
+      <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Stocks ({orderStocks.length})</h2>
       {#if orderStocks.length > 0}
-        <div class="data-table">
-          <table>
+        <section class={mc.tableSection}>
+          <div class="overflow-x-auto">
+          <table class={mc.table}>
             <thead>
               <tr>
-                <th class="col-num">#</th>
-                <th>Type</th>
+                <th class={mc.colNumHead}>#</th>
+                <th class={mc.th}>Type</th>
                 {#if dynamicFields.length > 0}
                   {#each dynamicFields as f}
-                    <th>{attrLabel(f)}</th>
+                    <th class={mc.th}>{attrLabel(f)}</th>
                   {/each}
                 {:else}
-                  <th>Attributes</th>
+                  <th class={mc.th}>Attributes</th>
                 {/if}
-                <th>Quantity</th>
-                <th>Price</th>
-                <th>Total amount</th>
-                <th>Investors</th>
-                <th></th>
+                <th class={mc.th}>Quantity</th>
+                <th class={mc.th}>Price</th>
+                <th class={mc.th}>Total amount</th>
+                <th class={mc.th}>Investors</th>
+                <th class={mc.th}></th>
               </tr>
             </thead>
             <tbody>
-              {#each orderItems as item, i (`${item.stock_id}-${i}`)}
+              {#each pagedOrderItems as item, i (`${item.stock_id}-${(lineItemsPage - 1) * lineItemsPageSize + i}`)}
                 {@const s = item.stock}
-                <tr>
-                  <td class="col-num">{i + 1}</td>
-                  <td>{s ? reportStockTypeLabel(stockTypeKey(s)) : "—"}</td>
+                <tr class="hover:bg-gray-50">
+                  <td class={mc.colNum}>{(lineItemsPage - 1) * lineItemsPageSize + i + 1}</td>
+                  <td class={mc.td}>{s ? reportStockTypeLabel(stockTypeKey(s)) : "—"}</td>
                   {#if dynamicFields.length > 0}
                     {#each dynamicFields as f}
-                      <td>{s ? stockAttr(s, f) : "—"}</td>
+                      <td class={mc.td}>{s ? stockAttr(s, f) : "—"}</td>
                     {/each}
                   {:else}
-                    <td>
+                    <td class={mc.td}>
                       {#if s && s.attributes && Object.keys(s.attributes).length > 0}
                         {orderStockAttrEntries(s)
                           .map(([k, v]) => `${attrLabel(k)}: ${v}`)
@@ -343,22 +345,22 @@
                       {/if}
                     </td>
                   {/if}
-                  <td>
+                  <td class={mc.td}>
                     {((item.unit ?? s?.unit ?? "").trim())
                       ? `${item.quantity} ${(item.unit ?? s?.unit ?? "").trim()}`
                       : String(item.quantity)}
                   </td>
-                  <td>{formatMoney(item.unit_price ?? s?.selling_price)}</td>
-                  <td>
+                  <td class={mc.td}>{formatMoney(item.unit_price ?? s?.selling_price)}</td>
+                  <td class="{mc.td} font-semibold">
                     {formatMoney(
                       item.line_total ??
                         Number(item.quantity ?? 0) * Number(item.unit_price ?? s?.selling_price ?? 0),
                     )}
                   </td>
-                  <td class="investors-cell">{s ? stockInvestorLabels(s) : "—"}</td>
-                  <td class="actions-cell">
+                  <td class="{mc.td} text-gray-500">{s ? stockInvestorLabels(s) : "—"}</td>
+                  <td class={mc.td}>
                     {#if s}
-                      <a class="stock-link" href="/stocks/{s.id}">View stock</a>
+                      <a class={mc.link} href="/stocks/{s.id}">View stock</a>
                     {:else}
                       —
                     {/if}
@@ -367,14 +369,20 @@
               {/each}
             </tbody>
           </table>
-        </div>
+          </div>
+          <TablePagination
+            bind:page={lineItemsPage}
+            bind:pageSize={lineItemsPageSize}
+            total={orderItems.length}
+          />
+        </section>
       {:else}
-        <p class="no-data">No stock details loaded for this order.</p>
+        <p class="text-sm text-gray-500">No stock details loaded for this order.</p>
       {/if}
     </div>
-  {:else}
-    <p class="muted">Order not found.</p>
-  {/if}
+{:else}
+    <p class="text-sm text-gray-500">Order not found.</p>
+{/if}
 
   {#if showPay}
     <div
@@ -480,82 +488,13 @@
       </form>
     </dialog>
   {/if}
-</section>
 
 <style>
-  h1 {
-    margin: 0 0 0.5rem;
-  }
-  .muted {
-    color: #94a3b8;
-  }
-  .header-actions {
-    margin: 0 0 0.75rem;
-  }
-  .detail {
-    display: grid;
-    gap: 0.75rem;
-  }
-  .meta-block {
-    margin-bottom: 0.25rem;
-  }
-  .stocks-section {
-    margin-top: 1.25rem;
-  }
-  .data-table {
-    background: var(--surface-2);
-    border-radius: 0.5rem;
-    overflow-x: auto;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-  }
-  .data-table table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  .col-num {
-    width: 2.25rem;
-    white-space: nowrap;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-  }
-  .data-table th {
-    background: var(--surface-1);
-    padding: 0.5rem 0.75rem;
-    text-align: left;
-    font-weight: 600;
-    color: #e2e8f0;
-    font-size: 0.875rem;
-  }
-  .data-table td {
-    padding: 0.5rem 0.75rem;
-    color: #cbd5e1;
-    font-size: 0.875rem;
-    border-bottom: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
-  }
-  .data-table .investors-cell {
-    max-width: 12rem;
-    white-space: normal;
-    word-break: break-word;
-  }
-  .data-table .actions-cell {
-    white-space: nowrap;
-  }
-  .stock-link {
-    color: var(--brand);
-    font-weight: 700;
-    text-decoration: none;
-  }
-  .stock-link:hover {
-    text-decoration: underline;
-  }
-  .no-data {
-    color: #94a3b8;
-    font-style: italic;
-    padding: 1rem 0;
-  }
-  .sect {
-    color: #e5e7eb;
-    font-weight: 800;
+  fieldset.pay-form-fields {
+    border: none;
+    padding: 0;
+    margin: 0;
+    min-width: 0;
   }
   .grid {
     display: grid;
