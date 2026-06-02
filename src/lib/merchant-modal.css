@@ -865,3 +865,150 @@ body.merchant-app-active .modal .select-trigger {
 		grid-template-columns: 1fr;
 	}
 }
+
+/* =========================================================
+   Dark mode overrides (dashboard only — html.dark is set on
+   app shell routes when the user opts into dark mode)
+   ========================================================= */
+html.dark body.merchant-app-active dialog.modal,
+html.dark body.merchant-app-active .modal-overlay > .modal {
+	background: #0f172a;
+	border-color: rgba(255, 255, 255, 0.1);
+	box-shadow: 0 20px 45px rgba(0, 0, 0, 0.55);
+}
+
+html.dark body.merchant-app-active .modal header,
+html.dark body.merchant-app-active .modal-head,
+html.dark body.merchant-app-active .modal footer,
+html.dark body.merchant-app-active .modal-foot,
+html.dark body.merchant-app-active .message-footer {
+	background: #0f172a;
+	border-color: rgba(255, 255, 255, 0.1);
+}
+
+html.dark body.merchant-app-active .modal h2,
+html.dark body.merchant-app-active .modal-head h2 {
+	color: #f8fafc;
+}
+
+html.dark body.merchant-app-active .modal .icon,
+html.dark body.merchant-app-active .icon-close {
+	color: #9ca3af;
+}
+
+html.dark body.merchant-app-active .modal .icon:hover:not(:disabled),
+html.dark body.merchant-app-active .icon-close:hover:not(:disabled) {
+	background: rgba(255, 255, 255, 0.06);
+	color: #e5e7eb;
+}
+
+html.dark body.merchant-app-active .modal-body,
+html.dark body.merchant-app-active .modal-content,
+html.dark body.merchant-app-active .modal .form {
+	color: #cbd5e1;
+}
+
+html.dark body.merchant-app-active .modal input:not([type="hidden"]):not([type="radio"]):not([type="checkbox"]),
+html.dark body.merchant-app-active .modal textarea,
+html.dark body.merchant-app-active .modal select,
+html.dark body.merchant-app-active .native-select,
+html.dark body.merchant-app-active .modal .select-trigger {
+	background: #111827;
+	color: #e5e7eb;
+	border-color: rgba(255, 255, 255, 0.12);
+}
+
+html.dark body.merchant-app-active .modal input::placeholder,
+html.dark body.merchant-app-active .modal textarea::placeholder {
+	color: #6b7280;
+}
+
+html.dark body.merchant-app-active .block-label,
+html.dark body.merchant-app-active .modal .field,
+html.dark body.merchant-app-active .modal label:not(.investor-item),
+html.dark body.merchant-app-active .block-label > span:first-child,
+html.dark body.merchant-app-active .modal .field > span,
+html.dark body.merchant-app-active .modal label:not(.investor-item) > span,
+html.dark body.merchant-app-active .modal .label_text,
+html.dark body.merchant-app-active .transfer-note {
+	color: #9ca3af;
+}
+
+html.dark body.merchant-app-active .modal .ghost,
+html.dark body.merchant-app-active .modal .secondary {
+	background: rgba(255, 255, 255, 0.05);
+	color: #ffffff;
+	border-color: rgba(255, 255, 255, 0.1);
+}
+
+html.dark body.merchant-app-active .modal .ghost:hover:not(:disabled),
+html.dark body.merchant-app-active .modal .secondary:hover:not(:disabled) {
+	background: rgba(255, 255, 255, 0.06);
+}
+
+html.dark body.merchant-app-active .investor-selection-label {
+	color: #9ca3af;
+}
+
+html.dark body.merchant-app-active .investor-list {
+	background: #0b1220;
+	border-color: rgba(255, 255, 255, 0.1);
+}
+
+html.dark body.merchant-app-active .modal label.investor-item {
+	background: #111827;
+	border-color: rgba(255, 255, 255, 0.1);
+	color: #e5e7eb;
+}
+
+html.dark body.merchant-app-active .investor-item:hover {
+	border-color: rgba(255, 255, 255, 0.2);
+}
+
+html.dark body.merchant-app-active .investor-name {
+	color: #f3f4f6;
+}
+
+html.dark body.merchant-app-active .investor-phone {
+	color: #9ca3af;
+}
+
+html.dark body.merchant-app-active .select-menu.investor-menu-portal {
+	background: #0f172a;
+	border-color: rgba(255, 255, 255, 0.12);
+	color: #e5e7eb;
+}
+
+html.dark body.merchant-app-active .select-menu.investor-menu-portal .option:hover {
+	background: rgba(255, 255, 255, 0.06);
+}
+
+html.dark body.merchant-app-active .summary {
+	background: #0b1220;
+	color: #e5e7eb;
+	border-color: rgba(255, 255, 255, 0.1);
+}
+
+html.dark body.merchant-app-active .order-details,
+html.dark body.merchant-app-active .stock-details {
+	background: #0b1220;
+	border-color: rgba(255, 255, 255, 0.1);
+}
+
+html.dark body.merchant-app-active .order-details p,
+html.dark body.merchant-app-active .stock-details p {
+	color: #e5e7eb;
+}
+
+html.dark body.merchant-app-active .cancel-refund-fieldset {
+	background: #0b1220;
+	border-color: rgba(255, 255, 255, 0.1);
+}
+
+html.dark body.merchant-app-active .info-item .label {
+	color: #9ca3af;
+}
+
+html.dark body.merchant-app-active .no-data {
+	color: #6b7280;
+}

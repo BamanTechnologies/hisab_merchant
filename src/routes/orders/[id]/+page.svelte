@@ -266,42 +266,42 @@
 {/if}
 
 {#if order}
-    <div class="mb-6 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-      <h2 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500">Order information</h2>
+    <div class="mb-6 rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-[#0f172a] dark:shadow-none">
+      <h2 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Order information</h2>
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <div class="text-sm">
-          <span class="font-medium text-gray-500">Customer:</span>
-          <span class="ml-1 text-gray-900">{order.customer_name}</span>
+          <span class="font-medium text-gray-500 dark:text-gray-400">Customer:</span>
+          <span class="ml-1 text-gray-900 dark:text-gray-100">{order.customer_name}</span>
         </div>
         <div class="text-sm">
-          <span class="font-medium text-gray-500">Phone:</span>
-          <span class="ml-1 text-gray-900">{order.customer_phone || "—"}</span>
+          <span class="font-medium text-gray-500 dark:text-gray-400">Phone:</span>
+          <span class="ml-1 text-gray-900 dark:text-gray-100">{order.customer_phone || "—"}</span>
         </div>
         <div class="text-sm">
-          <span class="font-medium text-gray-500">Address:</span>
-          <span class="ml-1 text-gray-900">{order.customer_address || "—"}</span>
+          <span class="font-medium text-gray-500 dark:text-gray-400">Address:</span>
+          <span class="ml-1 text-gray-900 dark:text-gray-100">{order.customer_address || "—"}</span>
         </div>
         <div class="text-sm">
-          <span class="font-medium text-gray-500">Quantity:</span>
-          <span class="ml-1 text-gray-900">{orderQuantityLabel(order)}</span>
+          <span class="font-medium text-gray-500 dark:text-gray-400">Quantity:</span>
+          <span class="ml-1 text-gray-900 dark:text-gray-100">{orderQuantityLabel(order)}</span>
         </div>
         <div class="text-sm">
-          <span class="font-medium text-gray-500">Status:</span>
+          <span class="font-medium text-gray-500 dark:text-gray-400">Status:</span>
           <span class="ml-2"><span class={statusChipClass(order.status)}>{order.status}</span></span>
         </div>
         <div class="text-sm">
-          <span class="font-medium text-gray-500">Total amount:</span>
-          <span class="ml-1 font-semibold text-gray-900">{formatMoney(order.total_amount)}</span>
+          <span class="font-medium text-gray-500 dark:text-gray-400">Total amount:</span>
+          <span class="ml-1 font-semibold text-gray-900 dark:text-gray-100">{formatMoney(order.total_amount)}</span>
         </div>
         <div class="text-sm">
-          <span class="font-medium text-gray-500">Outstanding:</span>
-          <span class="ml-1 font-semibold text-gray-900">{formatMoney(order.outstanding_amount)}</span>
+          <span class="font-medium text-gray-500 dark:text-gray-400">Outstanding:</span>
+          <span class="ml-1 font-semibold text-gray-900 dark:text-gray-100">{formatMoney(order.outstanding_amount)}</span>
         </div>
       </div>
     </div>
 
     <div class="mb-6">
-      <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Stocks ({orderStocks.length})</h2>
+      <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Stocks ({orderStocks.length})</h2>
       {#if orderStocks.length > 0}
         <section class={mc.tableSection}>
           <div class="overflow-x-auto">
@@ -327,7 +327,7 @@
             <tbody>
               {#each pagedOrderItems as item, i (`${item.stock_id}-${(lineItemsPage - 1) * lineItemsPageSize + i}`)}
                 {@const s = item.stock}
-                <tr class="hover:bg-gray-50">
+                <tr class="hover:bg-gray-50 dark:hover:bg-white/5">
                   <td class={mc.colNum}>{(lineItemsPage - 1) * lineItemsPageSize + i + 1}</td>
                   <td class={mc.td}>{s ? reportStockTypeLabel(stockTypeKey(s)) : "—"}</td>
                   {#if dynamicFields.length > 0}
@@ -357,7 +357,7 @@
                         Number(item.quantity ?? 0) * Number(item.unit_price ?? s?.selling_price ?? 0),
                     )}
                   </td>
-                  <td class="{mc.td} text-gray-500">{s ? stockInvestorLabels(s) : "—"}</td>
+                  <td class="{mc.td} text-gray-500 dark:text-gray-400">{s ? stockInvestorLabels(s) : "—"}</td>
                   <td class={mc.td}>
                     {#if s}
                       <a class={mc.link} href="/stocks/{s.id}">View stock</a>
@@ -377,11 +377,11 @@
           />
         </section>
       {:else}
-        <p class="text-sm text-gray-500">No stock details loaded for this order.</p>
+        <p class="text-sm text-gray-500 dark:text-gray-400">No stock details loaded for this order.</p>
       {/if}
     </div>
 {:else}
-    <p class="text-sm text-gray-500">Order not found.</p>
+    <p class="text-sm text-gray-500 dark:text-gray-400">Order not found.</p>
 {/if}
 
   {#if showPay}

@@ -289,26 +289,26 @@
 
 {#if stock}
   <div class={mc.tableSection}>
-    <div class="border-b border-[#e6eaed] bg-[#f2f2f2] px-5 py-4">
+    <div class="border-b border-[#e6eaed] bg-[#f2f2f2] px-5 py-4 dark:border-white/10 dark:bg-[#111827]">
       <div class="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p class="text-xs font-medium uppercase tracking-wide text-gray-500">
+          <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
             Product type
           </p>
-          <p class="mt-1 text-lg font-semibold text-[#1a1a1a]">
+          <p class="mt-1 text-lg font-semibold text-[#1a1a1a] dark:text-gray-100">
             {typeDisplay(productTypeName())}
           </p>
         </div>
         <div class="flex flex-wrap gap-8 sm:gap-10">
           <div>
-            <p class="text-xs font-medium text-gray-500">Selling price</p>
-            <p class="mt-1 text-lg font-bold tabular-nums text-[#1a1a1a]">
+            <p class="text-xs font-medium text-gray-500 dark:text-gray-400">Selling price</p>
+            <p class="mt-1 text-lg font-bold tabular-nums text-[#1a1a1a] dark:text-gray-100">
               {formatMoney(stock.selling_price)}
             </p>
           </div>
           <div>
-            <p class="text-xs font-medium text-gray-500">Quantity on hand</p>
-            <p class="mt-1 text-lg font-bold tabular-nums text-[#1a1a1a]">
+            <p class="text-xs font-medium text-gray-500 dark:text-gray-400">Quantity on hand</p>
+            <p class="mt-1 text-lg font-bold tabular-nums text-[#1a1a1a] dark:text-gray-100">
               {quantityDisplay}
             </p>
           </div>
@@ -316,11 +316,11 @@
       </div>
     </div>
 
-    <dl class="grid divide-x divide-y divide-[#e6eaed] sm:grid-cols-2 lg:grid-cols-3">
+    <dl class="grid divide-x divide-y divide-[#e6eaed] dark:divide-white/10 sm:grid-cols-2 lg:grid-cols-3">
       {#each stockDetailRows as row}
-        <div class="bg-white px-5 py-3.5">
-          <dt class="text-xs font-medium text-gray-500">{row.label}</dt>
-          <dd class="mt-1 text-sm font-medium leading-snug text-[#1a1a1a]">
+        <div class="bg-white px-5 py-3.5 dark:bg-[#0f172a]">
+          <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">{row.label}</dt>
+          <dd class="mt-1 text-sm font-medium leading-snug text-[#1a1a1a] dark:text-gray-100">
             {row.value}
           </dd>
         </div>
@@ -329,19 +329,19 @@
   </div>
 {:else if stockHeldAtBranch}
   <div
-    class="rounded-[5px] border border-[#e6eaed] bg-white px-5 py-4"
+    class="rounded-[5px] border border-[#e6eaed] bg-white px-5 py-4 dark:border-white/10 dark:bg-[#0f172a]"
     role="status"
   >
-    <p class="text-base font-semibold text-[#1a1a1a]">View this stock in its branch</p>
-    <p class="mt-2 text-sm leading-relaxed text-gray-600">
+    <p class="text-base font-semibold text-[#1a1a1a] dark:text-gray-100">View this stock in its branch</p>
+    <p class="mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-300">
       Full stock details are available in the sender branch
-      <strong class="font-semibold text-[#1a1a1a]">{stockHeldAtBranch.name}</strong>.
+      <strong class="font-semibold text-[#1a1a1a] dark:text-gray-100">{stockHeldAtBranch.name}</strong>.
       Switch your workspace to that branch (or ask a teammate there) to open this
       record.
     </p>
   </div>
 {:else}
-  <p class="text-sm text-gray-500">Stock not found.</p>
+  <p class="text-sm text-gray-500 dark:text-gray-400">Stock not found.</p>
 {/if}
 
   {#if showTransferModal && stock}

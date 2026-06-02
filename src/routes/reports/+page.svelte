@@ -587,7 +587,7 @@
         <footer>
           <button
             type="button"
-            class="ghost"
+            class="inline-flex h-[30px] shrink-0 items-center justify-center rounded-[5px] border border-[#e6eaed] bg-white px-3 text-sm font-medium text-[#1a1a1a] transition hover:bg-gray-50 dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
             onclick={closeGenerateModal}
             disabled={generateReportPending}
           >
@@ -822,7 +822,7 @@
           />
           <button
             type="button"
-            class="ghost"
+            class="inline-flex h-[30px] shrink-0 items-center justify-center rounded-[5px] border border-[#e6eaed] bg-white px-3 text-sm font-medium text-[#1a1a1a] transition hover:bg-gray-50 dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
             onclick={closePreviewModal}
             disabled={sendReportPending}
           >
@@ -924,27 +924,27 @@
 
   .info-item .label {
     font-weight: 600;
-    color: #e2e8f0;
+    color: #374151;
     min-width: 60px;
   }
 
   .info-item span:not(.label) {
-    color: #cbd5e1;
+    color: #111827;
   }
 
   .message-body h3 {
     font-size: 1rem;
     font-weight: 600;
-    color: #f8fafc;
+    color: #111827;
     margin-bottom: 0.75rem;
   }
 
   .message-text {
-    background: var(--surface-2);
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
+    background: #f9fafb;
+    border: 1px solid #e6eaed;
     border-radius: 0.5rem;
     padding: 1rem;
-    color: #e2e8f0;
+    color: #111827;
     line-height: 1.6;
     white-space: pre-wrap;
     word-wrap: break-word;
@@ -998,12 +998,12 @@
   .report-header h3 {
     font-size: 1.25rem;
     font-weight: 600;
-    color: #f8fafc;
+    color: #111827;
     margin-bottom: 0.5rem;
   }
 
   .report-header p {
-    color: #cbd5e1;
+    color: #4b5563;
     margin: 0.25rem 0;
   }
 
@@ -1014,15 +1014,15 @@
   .report-section h4 {
     font-size: 1.1rem;
     font-weight: 600;
-    color: #f8fafc;
+    color: #111827;
     margin-bottom: 1rem;
   }
 
   .data-table {
-    background: var(--surface-2);
+    background: #ffffff;
     border-radius: 0.5rem;
     overflow-x: auto;
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
+    border: 1px solid #e6eaed;
     margin-bottom: 1rem;
   }
 
@@ -1032,19 +1032,19 @@
   }
 
   .data-table th {
-    background: var(--surface-1);
+    background: #f2f2f2;
     padding: 0.5rem 0.75rem;
     text-align: left;
     font-weight: 600;
-    color: #e2e8f0;
+    color: #374151;
     font-size: 0.875rem;
   }
 
   .data-table td {
     padding: 0.5rem 0.75rem;
-    color: #cbd5e1;
+    color: #374151;
     font-size: 0.875rem;
-    border-bottom: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
+    border-bottom: 1px solid #eef0f2;
   }
   .col-num {
     width: 2.25rem;
@@ -1065,6 +1065,44 @@
     font-style: italic;
     text-align: center;
     padding: 2rem;
+  }
+
+  /* Dark mode (dashboard): white-ish text on dark surfaces */
+  :global(html.dark) .report-header {
+    border-bottom-color: rgba(255, 255, 255, 0.1);
+  }
+
+  :global(html.dark) .report-header h3,
+  :global(html.dark) .report-section h4,
+  :global(html.dark) .message-body h3,
+  :global(html.dark) .info-item span:not(.label) {
+    color: #f8fafc;
+  }
+
+  :global(html.dark) .report-header p,
+  :global(html.dark) .info-item .label {
+    color: #e5e7eb;
+  }
+
+  :global(html.dark) .data-table {
+    background: #0b1220;
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  :global(html.dark) .data-table th {
+    background: #111827;
+    color: #e5e7eb;
+  }
+
+  :global(html.dark) .data-table td {
+    color: #cbd5e1;
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+  }
+
+  :global(html.dark) .message-text {
+    background: #0b1220;
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #e5e7eb;
   }
 
   @media (max-width: 720px) {

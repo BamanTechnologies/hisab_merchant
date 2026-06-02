@@ -161,6 +161,31 @@
   }
 }
 
+/* Slightly larger base type across the merchant dashboard for readability. */
+html.merchant-zoom {
+	font-size: 110%;
+}
+
+/* Legacy dashboard modals reference --surface / --surface-2 / --brand, which were
+   never defined. Provide them per-theme so those backgrounds follow light/dark. */
+body.merchant-app-active .modal-overlay,
+body.merchant-app-active dialog.modal,
+body.merchant-app-active .modal,
+body.merchant-app-active .stock-combobox-panel {
+	--surface: #ffffff;
+	--surface-2: #eef1f4;
+	--brand: #4da0e6;
+}
+
+html.dark body.merchant-app-active .modal-overlay,
+html.dark body.merchant-app-active dialog.modal,
+html.dark body.merchant-app-active .modal,
+html.dark body.merchant-app-active .stock-combobox-panel {
+	--surface: #0f172a;
+	--surface-2: #1e293b;
+	--brand: #4da0e6;
+}
+
 /* Merchant dashboard filter dropdowns: hide native arrow, show chevron on the right */
 body.merchant-app-active .merchant-filter-select {
 	appearance: none;

@@ -225,7 +225,7 @@
     </thead>
     <tbody>
       {#each pagedPayments as p, i}
-        <tr class="hover:bg-gray-50">
+        <tr class="hover:bg-gray-50 dark:hover:bg-white/5">
           <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
           <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{p.created_at ? formatDate(p.created_at) : "—"}</td>
           <td class="{mc.td} font-semibold">{formatMoney(p.amount)}</td>

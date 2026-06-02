@@ -39,13 +39,13 @@
 </script>
 
 <nav
-	class="flex flex-wrap items-center justify-between gap-4 border-t border-[#e6eaed] bg-white px-4 py-3"
+	class="flex flex-wrap items-center justify-between gap-4 border-t border-[#e6eaed] bg-white px-4 py-3 dark:border-white/10 dark:bg-[#0f172a]"
 	aria-label="Table pagination"
 >
-	<div class="flex items-center gap-2 text-sm text-gray-500">
+	<div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
 		<span>Row Per Page</span>
 		<select
-			class="merchant-filter-select h-[30px] rounded-[5px] border border-[#e6eaed] bg-white py-0 pl-2 pr-8 text-sm text-gray-800"
+			class="merchant-filter-select h-[30px] rounded-[5px] border border-[#e6eaed] bg-white py-0 pl-2 pr-8 text-sm text-gray-800 dark:border-white/10 dark:bg-[#111827] dark:text-gray-200"
 			aria-label="Rows per page"
 			value={pageSize}
 			onchange={(e) => {
@@ -63,7 +63,7 @@
 	<div class="flex items-center gap-1">
 		<button
 			type="button"
-			class="inline-flex size-[30px] items-center justify-center rounded-full text-gray-500 hover:bg-gray-50 disabled:opacity-40"
+			class="inline-flex size-[30px] items-center justify-center rounded-full text-gray-500 hover:bg-gray-50 disabled:opacity-40 dark:text-gray-400 dark:hover:bg-white/5"
 			aria-label="Previous page"
 			disabled={page <= 1}
 			onclick={() => goTo(page - 1)}
@@ -80,7 +80,7 @@
 					class="inline-flex size-[30px] items-center justify-center rounded-full text-sm font-medium transition
 						{item === page
 						? 'bg-[#4DA0E6] text-white'
-						: 'border border-[#e6eaed] text-gray-600 hover:bg-gray-50'}"
+						: 'border border-[#e6eaed] text-gray-600 hover:bg-gray-50 dark:border-white/10 dark:text-gray-300 dark:hover:bg-white/5'}"
 					aria-label="Page {item}"
 					aria-current={item === page ? "page" : undefined}
 					onclick={() => goTo(item)}
@@ -92,7 +92,7 @@
 
 		<button
 			type="button"
-			class="inline-flex size-[30px] items-center justify-center rounded-full text-gray-500 hover:bg-gray-50 disabled:opacity-40"
+			class="inline-flex size-[30px] items-center justify-center rounded-full text-gray-500 hover:bg-gray-50 disabled:opacity-40 dark:text-gray-400 dark:hover:bg-white/5"
 			aria-label="Next page"
 			disabled={page >= totalPages}
 			onclick={() => goTo(page + 1)}

@@ -303,7 +303,7 @@
     <p class={mc.pageSubtitle}>{data.customer.phone_number}</p>
   {/if}
   {#if data.customer.address}
-    <p class="mt-1 text-sm text-gray-500">{data.customer.address}</p>
+    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{data.customer.address}</p>
   {/if}
 </header>
 
@@ -326,7 +326,7 @@
 </section>
 
 <div
-  class="mb-4 flex gap-1 rounded-lg border border-gray-200 bg-white p-1 shadow-sm"
+  class="mb-4 flex gap-1 rounded-lg border border-gray-200 bg-white p-1 shadow-sm dark:border-white/10 dark:bg-[#0f172a] dark:shadow-none"
   role="tablist"
   aria-label="Customer activity"
 >
@@ -335,7 +335,7 @@
     role="tab"
     class="rounded-md px-4 py-2 text-sm font-semibold transition {tab === 'orders'
       ? 'bg-[#4DA0E6] text-white'
-      : 'text-gray-600 hover:bg-gray-50'}"
+      : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-white/5'}"
     aria-selected={tab === "orders"}
     onclick={() => (tab = "orders")}>Total orders</button
   >
@@ -344,7 +344,7 @@
     role="tab"
     class="rounded-md px-4 py-2 text-sm font-semibold transition {tab === 'payments'
       ? 'bg-[#4DA0E6] text-white'
-      : 'text-gray-600 hover:bg-gray-50'}"
+      : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-white/5'}"
     aria-selected={tab === "payments"}
     onclick={() => (tab = "payments")}>Total payments</button
   >
@@ -410,7 +410,7 @@
             role="button"
           >
             <td class={mc.colNum}>{(ordersTablePage - 1) * ordersTablePageSize + i + 1}</td>
-            <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{formatOrderDate(o.created_at)}</td>
+            <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500 dark:text-gray-400">{formatOrderDate(o.created_at)}</td>
             <td class={mc.td}>
               {stockNameBase(stockName(o))}
               {#if stockNameMore(stockName(o))}
@@ -457,12 +457,12 @@
       </thead>
       <tbody>
         {#each pagedPayments as p, i}
-          <tr class="hover:bg-gray-50">
+          <tr class="hover:bg-gray-50 dark:hover:bg-white/5">
             <td class={mc.colNum}>{(paymentsTablePage - 1) * paymentsTablePageSize + i + 1}</td>
-            <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{p.created_at ? formatOrderDate(p.created_at) : "—"}</td>
+            <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500 dark:text-gray-400">{p.created_at ? formatOrderDate(p.created_at) : "—"}</td>
             <td class="{mc.td} font-semibold">{formatMoney(p.amount)}</td>
             <td class={mc.td}>{p.payment_method}</td>
-            <td class="{mc.td} text-gray-500">{p.created_by_name || "—"}</td>
+            <td class="{mc.td} text-gray-500 dark:text-gray-400">{p.created_by_name || "—"}</td>
             <td class={mc.td}>
               <a class={mc.link} href={`/orders/${p.order_id}`}>View order</a>
             </td>

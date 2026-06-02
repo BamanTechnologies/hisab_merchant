@@ -592,7 +592,7 @@
     <tbody>
       {#each pagedExpenses as ex, i}
         {#if isMajorOnly}
-          <tr class="hover:bg-gray-50">
+          <tr class="hover:bg-gray-50 dark:hover:bg-white/5">
             <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
             <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{formatDate(ex.created_at)}</td>
             <td class="{mc.td} font-semibold">{formatMoney(ex.amount)}</td>
@@ -602,7 +602,7 @@
             <td class={mc.td}>{ex.to_account || "—"}</td>
           </tr>
         {:else if isOperationOnly}
-          <tr class="hover:bg-gray-50">
+          <tr class="hover:bg-gray-50 dark:hover:bg-white/5">
             <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
             <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{formatDate(ex.created_at)}</td>
             <td class="{mc.td} font-semibold">{formatMoney(ex.amount)}</td>
@@ -614,12 +614,12 @@
             <td class={mc.td} title={ex.receipt ?? ""}>{receiptPreview(ex.receipt)}</td>
           </tr>
         {:else}
-          <tr class="hover:bg-gray-50">
+          <tr class="hover:bg-gray-50 dark:hover:bg-white/5">
             <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
             <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{formatDate(ex.created_at)}</td>
             <td class={mc.td}>{expenseTypeLabel(ex.expense_type ?? "operation")}</td>
             <td class="{mc.td} font-semibold">{formatMoney(ex.amount)}</td>
-            <td>
+            <td class={mc.td}>
               <div class="attr-stack">
                 {#each detailsEntries(ex) as [k, v]}
                   <div class="attr-row">
@@ -846,13 +846,9 @@
   }
   .attr-key {
     font-weight: 600;
-    font-size: 0.88em;
   }
   .attr-sep {
     opacity: 0.75;
     margin: 0 0.15rem;
-  }
-  .attr-val {
-    font-size: 0.88em;
   }
 </style>

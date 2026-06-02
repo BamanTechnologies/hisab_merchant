@@ -11,13 +11,13 @@
 	let { value, label, icon }: Props = $props();
 </script>
 
-<article class="rounded-xl border border-gray-200 bg-white p-5">
+<article class="rounded-xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-[#0f172a]">
 	<div class="flex items-start justify-between gap-4">
 		<div class="min-w-0 flex-1">
-			<p class="text-lg font-bold leading-tight tracking-tight text-gray-900 tabular-nums">
+			<p class="text-lg font-bold leading-tight tracking-tight text-gray-900 tabular-nums dark:text-gray-50">
 				{value}
 			</p>
-			<p class="mt-1.5 text-sm font-medium text-gray-500">{label}</p>
+			<p class="mt-1.5 text-sm font-medium text-gray-500 dark:text-gray-400">{label}</p>
 		</div>
 		<img
 			src={METRIC_ICONS[icon]}

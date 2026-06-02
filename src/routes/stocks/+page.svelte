@@ -1041,18 +1041,13 @@
       <div class="stock-details">
         <p><strong>Type:</strong> {productTypeLabel(stockToDelete)}</p>
         <p><strong>Branch:</strong> {branchLabel(stockToDelete.branch)}</p>
-        <p>
-          <strong>Attributes:</strong>
-          {#if stockToDelete.attributes && Object.keys(stockToDelete.attributes).length > 0}
-            <span class="attr-stack">
-              {#each attributeEntriesForList(stockToDelete) as [k, v]}
-                <span>{attributeLabel(k)}: {v}</span>
-              {/each}
-            </span>
-          {:else}
-            —
-          {/if}
-        </p>
+        {#if stockToDelete.attributes && Object.keys(stockToDelete.attributes).length > 0}
+          {#each attributeEntriesForList(stockToDelete) as [k, v]}
+            <p><strong>{attributeLabel(k)}:</strong> {v}</p>
+          {/each}
+        {:else}
+          <p><strong>Attributes:</strong> —</p>
+        {/if}
         <p><strong>Quantity:</strong> {quantityWithUnit(stockToDelete)}</p>
       </div>
       <p class="warning">This action cannot be undone.</p>
@@ -1060,7 +1055,7 @@
     <footer>
       <button
         type="button"
-        class="ghost"
+        class="inline-flex h-[30px] shrink-0 items-center justify-center rounded-[5px] border border-[#e6eaed] bg-white px-3 text-sm font-medium text-[#1a1a1a] transition hover:bg-gray-50 dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
         onclick={() => closeDeleteModal()}
         disabled={deleteSubmitting}>Cancel</button
       >
@@ -1536,8 +1531,8 @@
   }
 
   .stock-details {
-    background: color-mix(in oklab, var(--surface-2), white 2%);
-    border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
+    background: #f9fafb;
+    border: 1px solid #e6eaed;
     border-radius: 0.5rem;
     padding: 0.75rem;
     margin: 0.75rem 0;
@@ -1546,6 +1541,7 @@
   .stock-details p {
     margin: 0.25rem 0;
     font-size: 0.9rem;
+    color: #374151;
   }
   .attr-stack {
     display: inline-flex;
@@ -1560,14 +1556,10 @@
   }
   .attr-key {
     font-weight: 600;
-    font-size: 0.88em;
   }
   .attr-sep {
     opacity: 0.75;
     margin: 0 0.15rem;
-  }
-  .attr-val {
-    font-size: 0.88em;
   }
 
   .warning {
@@ -1580,6 +1572,14 @@
   .req-mark {
     color: #f97373;
     font-weight: 700;
+  }
+
+  :global(html.dark) .stock-details {
+    background: #0b1220;
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+  :global(html.dark) .stock-details p {
+    color: #e5e7eb;
   }
 
   @media (max-width: 720px) {

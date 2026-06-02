@@ -11,6 +11,8 @@ const SEND_SINGLE_SMS_MUTATION = `
 `;
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const GENERIC_SEND_ERROR =
+  "We couldn't send your message right now. Please try again in a moment, or contact us directly.";
 
 function buildContactMessage(input: {
   fullName: string;
@@ -95,9 +97,11 @@ export const actions: Actions = {
       const smsResult = await sendSingleSms(content);
 
       if (smsResult && smsResult.status_code >= 400) {
+        // Log the real provider response server-side; never surface it to the visitor.
+        console.error('[contact] send_single_sms returned error status', smsResult);
         return {
           success: false,
-          message: smsResult.message || 'We could not send your message. Please try again.',
+          message: GENERIC_SEND_ERROR,
           values,
         };
       }
@@ -107,9 +111,11 @@ export const actions: Actions = {
         message: "Thanks for reaching out! Your message has been sent — we'll get back to you soon.",
       };
     } catch (error) {
+      // Log full detail for debugging, but show the visitor a friendly, generic message.
+      console.error('[contact] Failed to send contact message:', error);
       return {
         success: false,
-        message: `Failed to send your message: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: GENERIC_SEND_ERROR,
         values,
       };
     }
