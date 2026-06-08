@@ -8,6 +8,10 @@
   } from "$lib/stockLabel";
   import TablePagination from "$lib/components/TablePagination.svelte";
   import { mc, smsStatusChipClass } from "$lib/merchant-styles.js";
+  import {
+    SUBSCRIPTION_BLOCKED_MESSAGE,
+    subscriptionBlocksMutations,
+  } from "$lib/subscription/client";
   import { paginateSlice } from "$lib/pagination.js";
   import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
 
@@ -100,6 +104,7 @@
   let generateReportPending = $state(false);
   let sendReportPending = $state(false);
   let resendReportPending = $state(false);
+  const subscriptionLocked = $derived($subscriptionBlocksMutations);
   let tablePage = $state(1);
   let tablePageSize = $state(10);
 
@@ -271,6 +276,7 @@
   }
 
   function openGenerateModal() {
+    if (subscriptionLocked) return;
     showGenerateModal = true;
     selectedInvestor = null;
   }
@@ -308,7 +314,13 @@
     <h1 class={mc.pageTitle}>Reports</h1>
     <p class={mc.pageSubtitle}>Investor SMS reports and delivery status.</p>
   </div>
-  <button type="button" class={mc.primaryBtn} onclick={openGenerateModal}>
+  <button
+    type="button"
+    class={mc.primaryBtn}
+    onclick={openGenerateModal}
+    disabled={subscriptionLocked}
+    title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : undefined}
+  >
     Generate Report
   </button>
 </section>
@@ -467,7 +479,8 @@
             <button
               type="submit"
               class="primary small"
-              disabled={resendReportPending}
+              disabled={resendReportPending || subscriptionLocked}
+              title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : undefined}
             >
               {resendReportPending ? "Sending…" : "Resend"}
             </button>
@@ -596,7 +609,8 @@
           <button
             type="submit"
             class="primary"
-            disabled={!selectedInvestor || generateReportPending}
+            disabled={!selectedInvestor || generateReportPending || subscriptionLocked}
+            title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : undefined}
           >
             {generateReportPending ? "Generating…" : "Generate Report"}
           </button>
@@ -828,7 +842,12 @@
           >
             Close
           </button>
-          <button type="submit" class="primary" disabled={sendReportPending}>
+          <button
+            type="submit"
+            class="primary"
+            disabled={sendReportPending || subscriptionLocked}
+            title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : undefined}
+          >
             {sendReportPending ? "Sending…" : "Send Report"}
           </button>
         </form>

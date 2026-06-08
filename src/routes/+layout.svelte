@@ -2,6 +2,8 @@
 	import "../app.css";
 	import favicon from "$lib/assets/favicon.svg";
 	import ToastHost from "$lib/ToastHost.svelte";
+	import SubscriptionWarningBar from "$lib/components/SubscriptionWarningBar.svelte";
+	import { subscriptionStore } from "$lib/subscription/client";
 	import { browser } from "$app/environment";
 	import { navigating, page } from "$app/state";
 	import { goto } from "$app/navigation";
@@ -69,6 +71,14 @@
 		isAuthenticated = serverOk || !!localStorage.getItem("authToken");
 	});
 
+	$effect.pre(() => {
+		if (data.merchantContext) {
+			subscriptionStore.setFromServer(data.subscriptionLoad);
+			return;
+		}
+		subscriptionStore.reset();
+	});
+
 	$effect(() => {
 		if (!browser) return;
 		document.body.classList.toggle("merchant-app-active", isAppShellRoute);
@@ -128,6 +138,7 @@
 	}
 
 	function handleLogout() {
+		subscriptionStore.reset();
 		localStorage.removeItem("authToken");
 		localStorage.removeItem("merchantBranchId");
 		document.cookie =
@@ -243,9 +254,10 @@
 		</aside>
 
 		<div class="flex min-w-0 flex-1 flex-col">
-			<header
-				class="sticky top-0 z-30 flex items-center gap-3 border-b border-gray-200 bg-white/95 px-4 py-2.5 backdrop-blur-sm dark:border-white/10 dark:bg-[#0f172a]/95 lg:hidden"
-			>
+			<div class="sticky top-0 z-30 shrink-0">
+				<header
+					class="flex items-center gap-3 border-b border-gray-200 bg-white/95 px-4 py-2.5 backdrop-blur-sm dark:border-white/10 dark:bg-[#0f172a]/95 lg:hidden"
+				>
 				<button
 					type="button"
 					class="flex size-10 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/5"
@@ -276,6 +288,11 @@
 					{/if}
 				</button>
 			</header>
+
+				{#if isAuthenticated}
+					<SubscriptionWarningBar />
+				{/if}
+			</div>
 
 			<main class="relative min-w-0 flex-1 p-4 pb-16 sm:p-6">
 				{@render children?.()}

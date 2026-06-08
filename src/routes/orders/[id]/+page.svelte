@@ -2,6 +2,10 @@
   import { enhance } from "$app/forms";
   import TablePagination from "$lib/components/TablePagination.svelte";
   import { mc, statusChipClass } from "$lib/merchant-styles.js";
+  import {
+    SUBSCRIPTION_BLOCKED_MESSAGE,
+    subscriptionBlocksMutations,
+  } from "$lib/subscription/client";
   import { paginateSlice } from "$lib/pagination.js";
   import { formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
   import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
@@ -226,6 +230,7 @@
   ] as const;
 
   let showPay = $state(false);
+  const subscriptionLocked = $derived($subscriptionBlocksMutations);
   let paymentFormPending = $state(false);
   let payAmount = $state<number | undefined>(undefined);
   let payMethod = $state<(typeof banks)[number] | "">("");
@@ -247,8 +252,12 @@
     <button
       type="button"
       class={mc.primaryBtn}
-      disabled={order.status === "paid" || order.status === "cancelled"}
-      onclick={() => (showPay = true)}>Pay</button
+      disabled={order.status === "paid" || order.status === "cancelled" || subscriptionLocked}
+      title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : undefined}
+      onclick={() => {
+        if (subscriptionLocked) return;
+        showPay = true;
+      }}>Pay</button
     >
   {/if}
 </section>

@@ -6,6 +6,7 @@ import {
   fetchInvestorsForCompany,
 } from '$lib/companyInvestors.server';
 import { config, getGraphQLHeaders } from '$lib/config';
+import { subscriptionWriteActionBlockedForRequest } from '$lib/subscription/server';
 
 const STOCK_FIELDS = `
       id
@@ -446,6 +447,9 @@ function assertBranchAllowed(branchId: string | null, merchantBranchId: string |
 
 export const actions: Actions = {
   createStock: async ({ request }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
     const formData = await request.formData();
 
     const userId = getUserIdFromRequest(request);
@@ -543,6 +547,9 @@ export const actions: Actions = {
     }
   },
   deleteStock: async ({ request }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
     const formData = await request.formData();
     const stockId = formData.get('stockId') as string;
 
@@ -569,6 +576,9 @@ export const actions: Actions = {
     }
   },
   updateStock: async ({ request }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
     const formData = await request.formData();
 
     const userId = getUserIdFromRequest(request);

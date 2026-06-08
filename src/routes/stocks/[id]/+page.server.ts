@@ -7,6 +7,7 @@ import {
   fetchInvestorsForCompany,
 } from '$lib/companyInvestors.server';
 import { config, getGraphQLHeaders } from '$lib/config';
+import { subscriptionWriteActionBlockedForRequest } from '$lib/subscription/server';
 
 const FETCH_STOCK_BY_PK_QUERY = `
   query GetStockByPk($id: uuid!) {
@@ -679,6 +680,9 @@ async function transferStockPartial(input: {
 
 export const actions: Actions = {
   transferStock: async ({ request, params }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
     const formData = await request.formData();
 
     const userId = getUserIdFromRequest(request);

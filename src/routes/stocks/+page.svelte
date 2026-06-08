@@ -13,6 +13,10 @@
   import TableSearchInput from "$lib/components/TableSearchInput.svelte";
   import TableSortHeader from "$lib/components/TableSortHeader.svelte";
   import { mc } from "$lib/merchant-styles.js";
+  import {
+    SUBSCRIPTION_BLOCKED_MESSAGE,
+    subscriptionBlocksMutations,
+  } from "$lib/subscription/client";
   import { paginateSlice } from "$lib/pagination.js";
   import { buildStockLabel, formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
   import type { PageData } from "./$types";
@@ -60,6 +64,8 @@
   let successMessage = $state("");
   let stockFormPending = $state(false);
   let deleteSubmitting = $state(false);
+
+  const subscriptionLocked = $derived($subscriptionBlocksMutations);
 
   const investors = data.investors;
   const branches = data.branches as Branch[];
@@ -361,6 +367,7 @@
   }
 
   function openCreateModal() {
+    if (subscriptionLocked) return;
     errorMessage = "";
     successMessage = "";
     resetForm();
@@ -369,6 +376,7 @@
   }
 
   function openEditModal(stock: Stock, event: Event) {
+    if (subscriptionLocked) return;
     event.stopPropagation();
     errorMessage = "";
     successMessage = "";
@@ -657,6 +665,7 @@
   }
 
   function openDeleteModal(stock: Stock, event: Event) {
+    if (subscriptionLocked) return;
     event.stopPropagation();
     stockToDelete = stock;
     showDeleteModal = true;
@@ -714,7 +723,13 @@
     <h1 class={mc.pageTitle}>Stocks</h1>
     <p class={mc.pageSubtitle}>Inventory overview. Click a row to view details.</p>
   </div>
-  <button type="button" class={mc.primaryBtn} onclick={openCreateModal}>New Stock</button>
+  <button
+    type="button"
+    class={mc.primaryBtn}
+    onclick={openCreateModal}
+    disabled={subscriptionLocked}
+    title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : undefined}
+  >New Stock</button>
 </section>
 
 {#if errorMessage && !showCreateModal}
@@ -1238,8 +1253,9 @@
                 type="button"
                 class={mc.actionBtn}
                 onclick={(e) => openEditModal(s, e)}
+                disabled={subscriptionLocked}
                 aria-label="Edit stock"
-                title="Edit stock"
+                title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : "Edit stock"}
               >
                 <Pencil size={14} strokeWidth={2} />
               </button>
@@ -1247,8 +1263,9 @@
                 type="button"
                 class={mc.actionBtnDanger}
                 onclick={(e) => openDeleteModal(s, e)}
+                disabled={subscriptionLocked}
                 aria-label="Delete stock"
-                title="Delete stock"
+                title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : "Delete stock"}
               >
                 <Trash2 size={14} strokeWidth={2} />
               </button>

@@ -11,6 +11,7 @@ import {
 } from '$lib/customerTransactions.server';
 import { config, getGraphQLHeaders } from '$lib/config';
 import { buildStockLabel } from '$lib/stockLabel';
+import { subscriptionWriteActionBlockedForRequest } from '$lib/subscription/server';
 
 const FETCH_BRANCH_BY_PK_QUERY = `
   query OrdersBranchByPk($id: uuid!) {
@@ -822,6 +823,9 @@ export const load: PageServerLoad = async ({ request, parent }) => {
 
 export const actions: Actions = {
   createOrders: async ({ request }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
     const userId = getUserIdFromRequest(request);
     if (!userId) {
       return { success: false, message: 'Authentication required' };
@@ -1036,6 +1040,9 @@ export const actions: Actions = {
   },
 
   createCustomer: async ({ request }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
     const userId = getUserIdFromRequest(request);
     if (!userId) {
       return { success: false, message: 'Authentication required' };
@@ -1113,6 +1120,9 @@ export const actions: Actions = {
   },
 
   cancelOrder: async ({ request }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
     const formData = await request.formData();
     const orderId = formData.get('orderId') as string;
     const partialRefundRaw = String(formData.get('partialCancelRefund') ?? '').trim();

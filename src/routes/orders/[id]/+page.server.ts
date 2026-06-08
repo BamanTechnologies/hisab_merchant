@@ -9,6 +9,7 @@ import {
 import { config, getGraphQLHeaders } from '$lib/config';
 import { createPaymentRecord } from '$lib/payments.server';
 import { insertCustomerTransaction } from '$lib/customerTransactions.server';
+import { subscriptionWriteActionBlockedForRequest } from '$lib/subscription/server';
 
 const FETCH_ORDER_FOR_MERCHANT_QUERY = `
   query GetOrderForMerchant($id: uuid!, $merchantId: uuid!) {
@@ -146,6 +147,9 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
 
 export const actions: Actions = {
   createPayment: async ({ request, params }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
     const formData = await request.formData();
 
     // Get authenticated user ID

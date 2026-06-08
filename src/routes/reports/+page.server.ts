@@ -8,6 +8,7 @@ import {
 import { config, getGraphQLHeaders } from '$lib/config';
 import { soldUnitPriceForReportOrder } from '$lib/reportSoldPrice';
 import { buildStockLabel } from '$lib/stockLabel';
+import { subscriptionWriteActionBlockedForRequest } from '$lib/subscription/server';
 
 const FETCH_REPORTS_QUERY = `
   query GetReports($merchantId: uuid!) {
@@ -120,7 +121,7 @@ const SEND_REPORT_MUTATION = `
     send_sms(data: $data) {
       success_count
       status_code
-      message
+      messaged
       failure_count
       error
     }
@@ -340,6 +341,9 @@ export const load: PageServerLoad = async ({ request, parent }) => {
 
 export const actions: Actions = {
   generateReport: async ({ request }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
     const formData = await request.formData();
 
     // Get authenticated user ID
@@ -376,6 +380,9 @@ export const actions: Actions = {
     }
   },
   sendReport: async ({ request }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
     const formData = await request.formData();
     
     // Extract form data
@@ -399,6 +406,9 @@ export const actions: Actions = {
     }
   },
   resendReport: async ({ request }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
     const formData = await request.formData();
     const reportId = formData.get('report_id') as string;
 

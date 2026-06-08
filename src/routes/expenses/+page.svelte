@@ -5,6 +5,10 @@
   import TableSortHeader from "$lib/components/TableSortHeader.svelte";
   import SummaryMetricCard from "$lib/components/SummaryMetricCard.svelte";
   import { mc } from "$lib/merchant-styles.js";
+  import {
+    SUBSCRIPTION_BLOCKED_MESSAGE,
+    subscriptionBlocksMutations,
+  } from "$lib/subscription/client";
   import { paginateSlice } from "$lib/pagination.js";
   import { afterToast, showToast, TOAST_MS } from "$lib/toast";
   import type { PageData } from "./$types";
@@ -34,6 +38,7 @@
 
   let showModal = $state(false);
   let submitting = $state(false);
+  const subscriptionLocked = $derived($subscriptionBlocksMutations);
   let formError = $state("");
   let sentTo = $state("");
   let expenseType = $state<"operation" | "major">("operation");
@@ -274,6 +279,7 @@
   }
 
   function openModal() {
+    if (subscriptionLocked) return;
     formError = "";
     expenseType = "operation";
     fromPerson = "";
@@ -478,8 +484,10 @@
       type="button"
       class={mc.primaryBtn}
       onclick={openModal}
-      disabled={!data.merchantBranchId}
-      title={!data.merchantBranchId
+      disabled={!data.merchantBranchId || subscriptionLocked}
+      title={subscriptionLocked
+        ? SUBSCRIPTION_BLOCKED_MESSAGE
+        : !data.merchantBranchId
         ? "Assign a branch to your account to record expenses"
         : ""}
     >

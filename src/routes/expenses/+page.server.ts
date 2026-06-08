@@ -2,6 +2,7 @@ import type { PageServerLoad, Actions } from './$types';
 import { getUserIdFromRequest } from '$lib/auth';
 import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
 import { config, getGraphQLHeaders } from '$lib/config';
+import { subscriptionWriteActionBlockedForRequest } from '$lib/subscription/server';
 
 const FETCH_EXPENSES_BY_BRANCH_QUERY = `
   query ExpensesByBranch($branchId: uuid!) {
@@ -243,6 +244,9 @@ export const load: PageServerLoad = async ({ request, parent }) => {
 
 export const actions: Actions = {
   createExpense: async ({ request }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
     const userId = getUserIdFromRequest(request);
     if (!userId) {
       return { success: false, message: 'Authentication required' };

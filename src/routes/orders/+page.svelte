@@ -7,6 +7,10 @@
   import TableSortHeader from "$lib/components/TableSortHeader.svelte";
   import SummaryMetricCard from "$lib/components/SummaryMetricCard.svelte";
   import { mc, statusChipClass } from "$lib/merchant-styles.js";
+  import {
+    SUBSCRIPTION_BLOCKED_MESSAGE,
+    subscriptionBlocksMutations,
+  } from "$lib/subscription/client";
   import { paginateSlice } from "$lib/pagination.js";
   import {
     buildStockLabel,
@@ -124,6 +128,8 @@
   /** For partially_paid cancellations: keep credit on balance vs neutralize after cash refund */
   let cancelPartialRefundChoice = $state<"balance" | "cash">("balance");
   let createError = $state("");
+
+  const subscriptionLocked = $derived($subscriptionBlocksMutations);
 
   let showAddCustomerModal = $state(false);
   let newFirstName = $state("");
@@ -567,6 +573,7 @@
   }
 
   function openCreateModal() {
+    if (subscriptionLocked) return;
     resetCreateModal();
     showCreateModal = true;
   }
@@ -595,6 +602,7 @@
   }
 
   function openAddCustomerModal() {
+    if (subscriptionLocked) return;
     newFirstName = "";
     newLastName = "";
     newAddress = "";
@@ -845,6 +853,7 @@
   });
 
   function openCancelModal(order: OrderSummary, event: Event) {
+    if (subscriptionLocked) return;
     event.stopPropagation();
     cancelPartialRefundChoice = "balance";
     orderToCancel = order;
@@ -926,7 +935,13 @@
     <h1 class={mc.pageTitle}>Orders</h1>
     <p class={mc.pageSubtitle}>Click a row to view full order details.</p>
   </div>
-  <button type="button" class={mc.primaryBtn} onclick={openCreateModal}>
+  <button
+    type="button"
+    class={mc.primaryBtn}
+    onclick={openCreateModal}
+    disabled={subscriptionLocked}
+    title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : undefined}
+  >
     Create Order
   </button>
 </section>
@@ -1087,7 +1102,8 @@
         type="button"
         class="linkish"
         onclick={openAddCustomerModal}
-        disabled={!data.companyId || createSubmitting}
+        disabled={!data.companyId || createSubmitting || subscriptionLocked}
+        title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : undefined}
       >
         + Add New Customer
       </button>
@@ -1546,10 +1562,11 @@
               {#if o.status !== "cancelled" && o.status !== "paid"}
                 <button
                   type="button"
-                  class="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
+                  class="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
                   onclick={(e) => openCancelModal(o, e)}
+                  disabled={subscriptionLocked}
                   aria-label="Cancel order"
-                  title="Cancel order"
+                  title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : "Cancel order"}
                 >
                   Cancel
                 </button>

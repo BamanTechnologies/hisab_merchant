@@ -2,6 +2,10 @@
   import { enhance } from "$app/forms";
   import { invalidateAll } from "$app/navigation";
   import { mc } from "$lib/merchant-styles.js";
+  import {
+    SUBSCRIPTION_BLOCKED_MESSAGE,
+    subscriptionBlocksMutations,
+  } from "$lib/subscription/client";
   import { formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
   import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
   import type { PageData } from "./$types";
@@ -117,6 +121,8 @@
       transferTargetBranches.length > 0
   );
 
+  const subscriptionLocked = $derived($subscriptionBlocksMutations);
+
   function merchantOptionLabel(m: TransferMerchant) {
     const name = [m.first_name, m.last_name].filter(Boolean).join(" ").trim();
     return name || m.id;
@@ -205,6 +211,7 @@
   });
 
   function openTransferModal() {
+    if (subscriptionLocked) return;
     errorMessage = "";
     successMessage = "";
     transferQuantity = Number(stock?.quantity ?? 0);
@@ -259,8 +266,10 @@
       type="button"
       class={mc.primaryBtn}
       onclick={openTransferModal}
-      disabled={!canTransferStock}
-      title={!canTransferStock
+      disabled={!canTransferStock || subscriptionLocked}
+      title={subscriptionLocked
+        ? SUBSCRIPTION_BLOCKED_MESSAGE
+        : !canTransferStock
         ? !stock?.branch
           ? "Stock has no branch"
           : transferTargetBranches.length === 0
