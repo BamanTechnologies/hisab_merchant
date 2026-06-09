@@ -121,7 +121,7 @@ const SEND_REPORT_MUTATION = `
     send_sms(data: $data) {
       success_count
       status_code
-      messaged
+      message
       failure_count
       error
     }
