@@ -2,6 +2,7 @@
 	import { goto } from "$app/navigation";
 	import TablePagination from "$lib/components/TablePagination.svelte";
 	import { mc } from "$lib/merchant-styles.js";
+	import { _ } from "svelte-i18n";
 	import { paginateSlice } from "$lib/pagination.js";
 	import type { PageData } from "./$types";
 	import type { CustomerListRow } from "./+page.server";
@@ -49,15 +50,15 @@
 
 <section class={mc.pageHeader}>
 	<div>
-		<h1 class={mc.pageTitle}>Customers</h1>
-		<p class={mc.pageSubtitle}>Company customers. Select a row for orders and payments.</p>
+		<h1 class={mc.pageTitle}>{$_('pageCustomersTitle')}</h1>
+		<p class={mc.pageSubtitle}>{$_('pageCustomersSubtitle')}</p>
 	</div>
 </section>
 
 {#if !data.companyId}
-	<p class="mb-4 text-sm text-red-700">Your branch has no company linked, so customers cannot be loaded.</p>
+	<p class="mb-4 text-sm text-red-700">{$_('noBranchLinkedCustomers')}</p>
 {:else if customers.length === 0}
-	<p class="mb-4 text-sm text-gray-500">No customers registered for this company yet.</p>
+	<p class="mb-4 text-sm text-gray-500">{$_('noCustomersRegistered')}</p>
 {/if}
 
 <section class={mc.tableSection}>
@@ -65,11 +66,11 @@
 		<table class={mc.table}>
 			<thead>
 				<tr>
-					<th class={mc.colNumHead}>#</th>
-					<th class={mc.th}>Name</th>
-					<th class={mc.th}>Address</th>
-					<th class={mc.th}>Registered</th>
-					<th class={mc.th}>Phone</th>
+					<th class={mc.colNumHead}>{$_('number')}</th>
+					<th class={mc.th}>{$_('name')}</th>
+					<th class={mc.th}>{$_('address')}</th>
+					<th class={mc.th}>{$_('registered')}</th>
+					<th class={mc.th}>{$_('phone')}</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -89,7 +90,7 @@
 				{/each}
 				{#if customers.length === 0 && data.companyId}
 					<tr>
-						<td colspan="5" class={mc.emptyCell}>No customers to display.</td>
+						<td colspan="5" class={mc.emptyCell}>{$_('noCustomersDisplay')}</td>
 					</tr>
 				{/if}
 			</tbody>

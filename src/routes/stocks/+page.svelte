@@ -9,6 +9,7 @@
   } from "$lib/toast";
   import { onMount, tick } from "svelte";
   import { Pencil, Trash2 } from "@lucide/svelte";
+  import { _ } from "svelte-i18n";
   import TablePagination from "$lib/components/TablePagination.svelte";
   import TableSearchInput from "$lib/components/TableSearchInput.svelte";
   import TableSortHeader from "$lib/components/TableSortHeader.svelte";
@@ -417,17 +418,15 @@
     const el = investorsValidityProxyEl;
     const n = selectedInvestorIds.length;
     if (investors.length === 0) {
-      el.setCustomValidity(
-        "Add at least one investor to your company before creating stock.",
-      );
+      el.setCustomValidity($_('noInvestorsMsg'));
     } else if (n === 0) {
-      el.setCustomValidity("Please select at least one investor.");
+      el.setCustomValidity($_('selectInvestorRequired'));
     } else {
       el.setCustomValidity("");
     }
   });
-  function investorLabel(ids: string[]) {
-    if (ids.length === 0) return "Select investors";
+  function investorLabel(ids: string[], fallback: string = "Select investors") {
+    if (ids.length === 0) return fallback;
     const names = investors
       .filter((i: Investor) => ids.includes(i.id))
       .map((i: Investor) => `${i.first_name} ${i.last_name}`);
@@ -519,8 +518,8 @@
     return branchId.slice(0, 8) + "…";
   }
 
-  function branchPickerLabel(id: string) {
-    if (!id) return "Select branch";
+  function branchPickerLabel(id: string, fallback: string = "Select branch") {
+    if (!id) return fallback;
     return branchLabel(id);
   }
 
@@ -711,10 +710,10 @@
 
 <section class={mc.pageHeader}>
   <div>
-    <h1 class={mc.pageTitle}>Stocks</h1>
-    <p class={mc.pageSubtitle}>Inventory overview. Click a row to view details.</p>
+    <h1 class={mc.pageTitle}>{$_('pageStocksTitle')}</h1>
+    <p class={mc.pageSubtitle}>{$_('pageStocksSubtitle')}</p>
   </div>
-  <button type="button" class={mc.primaryBtn} onclick={openCreateModal}>New Stock</button>
+  <button type="button" class={mc.primaryBtn} onclick={openCreateModal}>{$_('newStock')}</button>
 </section>
 
 {#if errorMessage && !showCreateModal}
@@ -748,11 +747,11 @@
   >
     <header>
       <h2>
-        {editingStockId ? "Edit Stock" : "Create New Stock"}
+        {editingStockId ? $_('editStock') : $_('createNewStock')}
       </h2>
       <button
         class="icon"
-        aria-label="Close"
+        aria-label={$_('close')}
         disabled={stockFormPending}
         onclick={closeCreateModal}>✕</button
       >
@@ -814,7 +813,7 @@
       <fieldset class="stock-form-fields" disabled={stockFormPending}>
         <div class="grid">
           <label>
-            <span>Product type</span>
+            <span>{$_('productType')}</span>
             <select
               name="product_type"
               bind:value={selectedProductTypeId}
@@ -840,14 +839,14 @@
                 }
               }}
             >
-              <option value="">Select product type</option>
+              <option value="">{$_('selectProductType')}</option>
               {#each productTypes as pt}
                 <option value={pt.id}>{typeDisplay(pt.name ?? "")}</option>
               {/each}
             </select>
           </label>
           <label class="unit-field">
-            <span>Unit of measure</span>
+            <span>{$_('unitOfMeasure')}</span>
             <input
               type="text"
               name="unit"
@@ -855,11 +854,11 @@
               required
               maxlength="64"
               autocomplete="off"
-              placeholder="Pieces, Set, kg, Carton…"
+              placeholder={$_('unitPlaceholder')}
             />
           </label>
           <div class="field">
-            <span>Branch</span>
+            <span>{$_('branch')}</span>
             <input type="hidden" name="branch" bind:value={selectedBranchId} />
             <div class="multiselect" bind:this={branchMultiselectEl}>
               <button
@@ -867,7 +866,7 @@
                 class="select-trigger"
                 onclick={() => (branchDropdownOpen = !branchDropdownOpen)}
               >
-                {branchPickerLabel(selectedBranchId)}
+                {branchPickerLabel(selectedBranchId, $_('selectBranch'))}
               </button>
               {#if branchDropdownOpen}
                 <div class="select-menu">
@@ -902,7 +901,7 @@
             </label>
           {/each}
           <label>
-            <span>Purchased price</span>
+            <span>{$_('purchasedPrice')}</span>
             <input
               type="number"
               min="0"
@@ -913,7 +912,7 @@
             />
           </label>
           <label>
-            <span>Selling price</span>
+            <span>{$_('sellingPrice')}</span>
             <input
               type="number"
               min="0"
@@ -924,7 +923,7 @@
             />
           </label>
           <label>
-            <span>Quantity</span>
+            <span>{$_('quantity')}</span>
             <input
               type="number"
               min="0"
@@ -937,7 +936,7 @@
           {#if !editingStockId}
             <div class="field">
               <span
-                >Investors <span class="req-mark" aria-hidden="true">*</span
+                >{$_('investors')} <span class="req-mark" aria-hidden="true">*</span
                 ></span
               >
               <input
@@ -963,7 +962,7 @@
                     onclick={() =>
                       (investorDropdownOpen = !investorDropdownOpen)}
                   >
-                    {investorLabel(selectedInvestorIds)}
+                    {investorLabel(selectedInvestorIds, $_('selectInvestors'))}
                   </button>
                 </div>
               {/if}
@@ -976,16 +975,16 @@
           type="button"
           class="ghost"
           onclick={closeCreateModal}
-          disabled={stockFormPending}>Cancel</button
+          disabled={stockFormPending}>{$_('cancel')}</button
         >
         <button type="submit" class="primary" disabled={stockFormPending}>
           {stockFormPending
             ? editingStockId
-              ? "Updating…"
-              : "Creating…"
+              ? $_('updating')
+              : $_('creating')
             : editingStockId
-              ? "Update"
-              : "Create"}
+              ? $_('update')
+              : $_('create')}
         </button>
       </footer>
     </form>
@@ -1028,21 +1027,21 @@
     oncancel={(e) => deleteSubmitting && e.preventDefault()}
   >
     <header>
-      <h2>Delete Stock</h2>
+      <h2>{$_('deleteStock')}</h2>
       <button
         class="icon"
-        aria-label="Close"
+        aria-label={$_('close')}
         disabled={deleteSubmitting}
         onclick={() => closeDeleteModal()}>✕</button
       >
     </header>
     <div class="modal-content">
-      <p>Are you sure you want to delete this stock?</p>
+      <p>{$_('deleteStockConfirm')}</p>
       <div class="stock-details">
-        <p><strong>Type:</strong> {productTypeLabel(stockToDelete)}</p>
-        <p><strong>Branch:</strong> {branchLabel(stockToDelete.branch)}</p>
+        <p><strong>{$_('typeLabel')}</strong> {productTypeLabel(stockToDelete)}</p>
+        <p><strong>{$_('branchLabel')}</strong> {branchLabel(stockToDelete.branch)}</p>
         <p>
-          <strong>Attributes:</strong>
+          <strong>{$_('attributesLabel')}</strong>
           {#if stockToDelete.attributes && Object.keys(stockToDelete.attributes).length > 0}
             <span class="attr-stack">
               {#each attributeEntriesForList(stockToDelete) as [k, v]}
@@ -1053,23 +1052,23 @@
             —
           {/if}
         </p>
-        <p><strong>Quantity:</strong> {quantityWithUnit(stockToDelete)}</p>
+        <p><strong>{$_('quantity')}:</strong> {quantityWithUnit(stockToDelete)}</p>
       </div>
-      <p class="warning">This action cannot be undone.</p>
+      <p class="warning">{$_('thisActionUndone')}</p>
     </div>
     <footer>
       <button
         type="button"
         class="ghost"
         onclick={() => closeDeleteModal()}
-        disabled={deleteSubmitting}>Cancel</button
+        disabled={deleteSubmitting}>{$_('cancel')}</button
       >
       <button
         type="button"
         class="danger"
         onclick={confirmDelete}
         disabled={deleteSubmitting}
-        >{deleteSubmitting ? "Deleting…" : "Delete"}</button
+        >{deleteSubmitting ? $_('deleting') : $_('delete')}</button
       >
     </footer>
   </dialog>
@@ -1079,14 +1078,14 @@
   <div class={mc.tableToolbar}>
     <TableSearchInput
       bind:value={searchQuery}
-      placeholder="Search by stock name…"
-      ariaLabel="Search stocks"
+      placeholder={$_('searchByStockName')}
+      ariaLabel={$_('search')}
       class="flex-1"
     />
     <div class={mc.tableToolbarFilter}>
-      <span class={mc.tableToolbarFilterLabel}>Type</span>
+      <span class={mc.tableToolbarFilterLabel}>{$_('type')}</span>
       <select class={mc.filterSelectCompact} bind:value={typeFilter} aria-label="Filter by type">
-        <option value="all">All</option>
+        <option value="all">{$_('all')}</option>
         {#each productTypes as pt}
           {#if pt.name}
             <option value={String(pt.name).trim().toLowerCase()}>
@@ -1101,7 +1100,7 @@
   <table class={mc.table}>
     <thead>
       <tr>
-        <th class={mc.colNumHead}>#</th>
+        <th class={mc.colNumHead}>{$_('number')}</th>
         <th
           class={mc.th}
           aria-sort={sortColumn === "type"
@@ -1111,7 +1110,7 @@
             : "none"}
         >
           <TableSortHeader
-            label="Type"
+            label={$_('type')}
             onclick={() => cycleSort("type")}
             ascActive={isSortActive("type", "asc")}
             descActive={isSortActive("type", "desc")}
@@ -1126,7 +1125,7 @@
             : "none"}
         >
           <TableSortHeader
-            label="Branch"
+            label={$_('branch')}
             onclick={() => cycleSort("branch")}
             ascActive={isSortActive("branch", "asc")}
             descActive={isSortActive("branch", "desc")}
@@ -1141,7 +1140,7 @@
             : "none"}
         >
           <TableSortHeader
-            label="Origin"
+            label={$_('origin')}
             onclick={() => cycleSort("origin")}
             ascActive={isSortActive("origin", "asc")}
             descActive={isSortActive("origin", "desc")}
@@ -1166,7 +1165,7 @@
             </th>
           {/each}
         {:else}
-          <th class={mc.th}>Attributes</th>
+          <th class={mc.th}>{$_('attributes')}</th>
         {/if}
         <th
           class={mc.th}
@@ -1177,7 +1176,7 @@
             : "none"}
         >
           <TableSortHeader
-            label="Price"
+            label={$_('price')}
             onclick={() => cycleSort("price")}
             ascActive={isSortActive("price", "asc")}
             descActive={isSortActive("price", "desc")}
@@ -1192,14 +1191,14 @@
             : "none"}
         >
           <TableSortHeader
-            label="Quantity"
+            label={$_('quantity')}
             align="center"
             onclick={() => cycleSort("quantity")}
             ascActive={isSortActive("quantity", "asc")}
             descActive={isSortActive("quantity", "desc")}
           />
         </th>
-        <th class={mc.thCenter}>Actions</th>
+        <th class={mc.thCenter}>{$_('actions')}</th>
       </tr>
     </thead>
     <tbody>
@@ -1243,8 +1242,8 @@
                 type="button"
                 class={mc.actionBtn}
                 onclick={(e) => openEditModal(s, e)}
-                aria-label="Edit stock"
-                title="Edit stock"
+                aria-label={$_('editStockAria')}
+                title={$_('editStockAria')}
               >
                 <Pencil size={14} strokeWidth={2} />
               </button>
@@ -1252,8 +1251,8 @@
                 type="button"
                 class={mc.actionBtnDanger}
                 onclick={(e) => openDeleteModal(s, e)}
-                aria-label="Delete stock"
-                title="Delete stock"
+                aria-label={$_('deleteStockAria')}
+                title={$_('deleteStockAria')}
               >
                 <Trash2 size={14} strokeWidth={2} />
               </button>
@@ -1268,9 +1267,9 @@
             class={mc.emptyCell}
           >
               {#if stocks.length === 0}
-                No stocks found. Create your first stock to get started.
+                {$_('noStocksEmpty')}
               {:else}
-                No stocks match your search or type filter.
+                {$_('noStocksSearch')}
               {/if}
           </td>
         </tr>

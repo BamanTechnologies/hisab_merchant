@@ -5,6 +5,7 @@
   import TableSortHeader from "$lib/components/TableSortHeader.svelte";
   import SummaryMetricCard from "$lib/components/SummaryMetricCard.svelte";
   import { mc } from "$lib/merchant-styles.js";
+  import { _ } from "svelte-i18n";
   import { paginateSlice } from "$lib/pagination.js";
   import { afterToast, showToast, TOAST_MS } from "$lib/toast";
   import type { PageData } from "./$types";
@@ -461,14 +462,14 @@
 
 <section class={mc.pageHeader}>
   <div>
-    <h1 class={mc.pageTitle}>Expenses</h1>
-    <p class={mc.pageSubtitle}>Branch expenses for your assigned location.</p>
+    <h1 class={mc.pageTitle}>{$_('pageExpensesTitle')}</h1>
+    <p class={mc.pageSubtitle}>{$_('pageExpensesSubtitle')}</p>
   </div>
   <div class="flex flex-wrap items-end gap-3">
     <label>
-      <span class={mc.filterLabel}>Type</span>
+      <span class={mc.filterLabel}>{$_('type')}</span>
       <select class={mc.filterSelect} bind:value={typeFilter}>
-        <option value="all">All</option>
+        <option value="all">{$_('all')}</option>
         {#each expenseTypes as t}
           <option value={t}>{expenseTypeLabel(t)}</option>
         {/each}
@@ -479,18 +480,16 @@
       class={mc.primaryBtn}
       onclick={openModal}
       disabled={!data.merchantBranchId}
-      title={!data.merchantBranchId
-        ? "Assign a branch to your account to record expenses"
-        : ""}
+      title={!data.merchantBranchId ? $_('noBranchExpensesTitle') : ""}
     >
-      Create expense
+      {$_('createExpense')}
     </button>
   </div>
 </section>
 
 {#if !data.merchantBranchId}
   <p class="mb-4 text-sm text-amber-800">
-    Your account has no branch assigned, so expenses cannot be loaded or created.
+    {$_('noBranchExpensesMsg')}
   </p>
 {/if}
 
@@ -503,30 +502,30 @@
 <section class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2" aria-label="Expense totals">
   <SummaryMetricCard
     value={formatMoney(displayOperationalTotal)}
-    label="Total operational expenses"
+    label={$_('totalOperationalExpenses')}
     icon="four"
   />
   <SummaryMetricCard
     value={formatMoney(displayMajorTotal)}
-    label="Total major expenses"
+    label={$_('totalMajorExpenses')}
     icon="six"
   />
 </section>
 
 <section class={mc.filterSection} aria-label="Filter expenses">
   <label>
-    <span class={mc.filterLabel}>Date range</span>
+    <span class={mc.filterLabel}>{$_('dateRange')}</span>
     <select class={mc.filterSelect} bind:value={dateRangePreset}>
-      <option value="all">All time</option>
-      <option value="today">Today</option>
-      <option value="last7">Last 7 days</option>
-      <option value="last30">Last 30 days</option>
-      <option value="custom">Custom range…</option>
+      <option value="all">{$_('allTime')}</option>
+      <option value="today">{$_('today')}</option>
+      <option value="last7">{$_('last7Days')}</option>
+      <option value="last30">{$_('last30Days')}</option>
+      <option value="custom">{$_('customRange')}…</option>
     </select>
   </label>
   {#if dateRangePreset === "custom"}
     <label>
-      <span class={mc.filterLabel}>From</span>
+      <span class={mc.filterLabel}>{$_('from')}</span>
       <input
         type="date"
         class="{mc.filterDate} cursor-pointer"
@@ -534,7 +533,7 @@
       />
     </label>
     <label>
-      <span class={mc.filterLabel}>To</span>
+      <span class={mc.filterLabel}>{$_('to')}</span>
       <input
         type="date"
         class="{mc.filterDate} cursor-pointer"
@@ -543,9 +542,9 @@
     </label>
   {/if}
   <label>
-    <span class={mc.filterLabel}>Category</span>
+    <span class={mc.filterLabel}>{$_('category')}</span>
     <select class={mc.filterSelect} bind:value={categoryFilter}>
-      <option value="all">All categories</option>
+      <option value="all">{$_('allCategories')}</option>
       {#each categories as c}
         <option value={c}>{categoryLabel(c)}</option>
       {/each}
@@ -559,33 +558,33 @@
     <thead>
       {#if isMajorOnly}
         <tr>
-          <th class={mc.colNumHead}>#</th>
-          <th class={mc.th}><TableSortHeader label="Date" onclick={() => cycleSort("date")} ascActive={isSortActive("date", "asc")} descActive={isSortActive("date", "desc")} /></th>
-          <th class={mc.th}><TableSortHeader label="Amount" onclick={() => cycleSort("amount")} ascActive={isSortActive("amount", "asc")} descActive={isSortActive("amount", "desc")} /></th>
-          <th class={mc.th}><TableSortHeader label="Paid by" onclick={() => cycleSort("paid_by")} ascActive={isSortActive("paid_by", "asc")} descActive={isSortActive("paid_by", "desc")} /></th>
-          <th class={mc.th}><TableSortHeader label="From account" onclick={() => cycleSort("from_account")} ascActive={isSortActive("from_account", "asc")} descActive={isSortActive("from_account", "desc")} /></th>
-          <th class={mc.th}><TableSortHeader label="Sent to" onclick={() => cycleSort("sent_to")} ascActive={isSortActive("sent_to", "asc")} descActive={isSortActive("sent_to", "desc")} /></th>
-          <th class={mc.th}><TableSortHeader label="To account" onclick={() => cycleSort("to_account")} ascActive={isSortActive("to_account", "asc")} descActive={isSortActive("to_account", "desc")} /></th>
+          <th class={mc.colNumHead}>{$_('number')}</th>
+          <th class={mc.th}><TableSortHeader label={$_('date')} onclick={() => cycleSort("date")} ascActive={isSortActive("date", "asc")} descActive={isSortActive("date", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label={$_('amount')} onclick={() => cycleSort("amount")} ascActive={isSortActive("amount", "asc")} descActive={isSortActive("amount", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label={$_('paidBy')} onclick={() => cycleSort("paid_by")} ascActive={isSortActive("paid_by", "asc")} descActive={isSortActive("paid_by", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label={$_('fromAccount')} onclick={() => cycleSort("from_account")} ascActive={isSortActive("from_account", "asc")} descActive={isSortActive("from_account", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label={$_('sentToName')} onclick={() => cycleSort("sent_to")} ascActive={isSortActive("sent_to", "asc")} descActive={isSortActive("sent_to", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label={$_('toAccount')} onclick={() => cycleSort("to_account")} ascActive={isSortActive("to_account", "asc")} descActive={isSortActive("to_account", "desc")} /></th>
         </tr>
       {:else if isOperationOnly}
         <tr>
-          <th class={mc.colNumHead}>#</th>
-          <th class={mc.th}><TableSortHeader label="Date" onclick={() => cycleSort("date")} ascActive={isSortActive("date", "asc")} descActive={isSortActive("date", "desc")} /></th>
-          <th class={mc.th}><TableSortHeader label="Amount" onclick={() => cycleSort("amount")} ascActive={isSortActive("amount", "asc")} descActive={isSortActive("amount", "desc")} /></th>
-          <th class={mc.th}><TableSortHeader label="Paid by" onclick={() => cycleSort("paid_by")} ascActive={isSortActive("paid_by", "asc")} descActive={isSortActive("paid_by", "desc")} /></th>
-          <th class={mc.th}><TableSortHeader label="Sent to" onclick={() => cycleSort("sent_to")} ascActive={isSortActive("sent_to", "asc")} descActive={isSortActive("sent_to", "desc")} /></th>
-          <th class={mc.th}><TableSortHeader label="Category" onclick={() => cycleSort("category")} ascActive={isSortActive("category", "asc")} descActive={isSortActive("category", "desc")} /></th>
-          <th class={mc.th}><TableSortHeader label="Payment" onclick={() => cycleSort("payment")} ascActive={isSortActive("payment", "asc")} descActive={isSortActive("payment", "desc")} /></th>
-          <th class={mc.th}>Note</th>
-          <th class={mc.th}>Receipt</th>
+          <th class={mc.colNumHead}>{$_('number')}</th>
+          <th class={mc.th}><TableSortHeader label={$_('date')} onclick={() => cycleSort("date")} ascActive={isSortActive("date", "asc")} descActive={isSortActive("date", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label={$_('amount')} onclick={() => cycleSort("amount")} ascActive={isSortActive("amount", "asc")} descActive={isSortActive("amount", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label={$_('paidBy')} onclick={() => cycleSort("paid_by")} ascActive={isSortActive("paid_by", "asc")} descActive={isSortActive("paid_by", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label={$_('sentToName')} onclick={() => cycleSort("sent_to")} ascActive={isSortActive("sent_to", "asc")} descActive={isSortActive("sent_to", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label={$_('category')} onclick={() => cycleSort("category")} ascActive={isSortActive("category", "asc")} descActive={isSortActive("category", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label={$_('payment')} onclick={() => cycleSort("payment")} ascActive={isSortActive("payment", "asc")} descActive={isSortActive("payment", "desc")} /></th>
+          <th class={mc.th}>{$_('note')}</th>
+          <th class={mc.th}>{$_('receipt')}</th>
         </tr>
       {:else}
         <tr>
-          <th class={mc.colNumHead}>#</th>
-          <th class={mc.th}><TableSortHeader label="Date" onclick={() => cycleSort("date")} ascActive={isSortActive("date", "asc")} descActive={isSortActive("date", "desc")} /></th>
-          <th class={mc.th}><TableSortHeader label="Type" onclick={() => cycleSort("type")} ascActive={isSortActive("type", "asc")} descActive={isSortActive("type", "desc")} /></th>
-          <th class={mc.th}><TableSortHeader label="Amount" onclick={() => cycleSort("amount")} ascActive={isSortActive("amount", "asc")} descActive={isSortActive("amount", "desc")} /></th>
-          <th class={mc.th}>Details</th>
+          <th class={mc.colNumHead}>{$_('number')}</th>
+          <th class={mc.th}><TableSortHeader label={$_('date')} onclick={() => cycleSort("date")} ascActive={isSortActive("date", "asc")} descActive={isSortActive("date", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label={$_('type')} onclick={() => cycleSort("type")} ascActive={isSortActive("type", "asc")} descActive={isSortActive("type", "desc")} /></th>
+          <th class={mc.th}><TableSortHeader label={$_('amount')} onclick={() => cycleSort("amount")} ascActive={isSortActive("amount", "asc")} descActive={isSortActive("amount", "desc")} /></th>
+          <th class={mc.th}>{$_('details')}</th>
         </tr>
       {/if}
     </thead>
@@ -640,9 +639,9 @@
             class={mc.emptyCell}
           >
               {#if expenses.length > 0}
-                No expenses match your current filters.
+                {$_('noExpensesFiltered')}
               {:else}
-                No expenses yet. Create one to get started.
+                {$_('noExpensesEmpty')}
               {/if}
           </td>
         </tr>
@@ -653,7 +652,7 @@
             colspan={typeFilter === "all" ? 5 : typeFilter === "major" ? 7 : 9}
             class={mc.emptyCell}
           >
-              Assign a branch to your account to see expenses.
+              {$_('noBranchExpensesSee')}
           </td>
         </tr>
       {/if}
@@ -684,13 +683,13 @@
     oncancel={(e) => submitting && e.preventDefault()}
   >
     <header class="modal-head">
-      <h2>Create expense</h2>
+      <h2>{$_('createExpense')}</h2>
       <button
         type="button"
         class="icon-close"
         disabled={submitting}
         onclick={() => closeModal()}
-        aria-label="Close">✕</button
+        aria-label={$_('close')}>✕</button
       >
     </header>
     <form class="modal-body" onsubmit={submitExpense}>
@@ -700,7 +699,7 @@
 
       <fieldset class="expense-form-fields" disabled={submitting}>
         <label class="field">
-          <span>Expense type</span>
+          <span>{$_('expenseType')}</span>
           <select bind:value={expenseType} required class="native-select">
             {#each expenseTypes as t}
               <option value={t}>{expenseTypeLabel(t)}</option>
@@ -709,55 +708,55 @@
         </label>
 
         <label class="field">
-          <span>Paid by</span>
+          <span>{$_('paidBy')}</span>
           <input
             type="text"
             name="from_person"
             bind:value={fromPerson}
             required
             autocomplete="name"
-            placeholder="Who paid"
+            placeholder={$_('paidBy')}
           />
         </label>
 
         {#if expenseType === "major"}
           <label class="field">
-            <span>From account</span>
+            <span>{$_('fromAccount')}</span>
             <input
               type="text"
               name="from_account"
               bind:value={fromAccount}
               required
-              placeholder="Bank or source account"
+              placeholder={$_('bankOrSource')}
             />
           </label>
 
           <label class="field">
-            <span>To account</span>
+            <span>{$_('toAccount')}</span>
             <input
               type="text"
               name="to_account"
               bind:value={toAccount}
               required
-              placeholder="Destination account"
+              placeholder={$_('destAccount')}
             />
           </label>
         {/if}
 
         <label class="field">
-          <span>Sent to (name)</span>
+          <span>{$_('sentToName')}</span>
           <input
             type="text"
             name="sent_to"
             bind:value={sentTo}
             required
             autocomplete="name"
-            placeholder="Who received the payment"
+            placeholder={$_('whoReceived')}
           />
         </label>
 
         <label class="field">
-          <span>Category</span>
+          <span>{$_('category')}</span>
           <select bind:value={category} required class="native-select">
             {#each categories as c}
               <option value={c}>{categoryLabel(c)}</option>
@@ -766,7 +765,7 @@
         </label>
 
         <label class="field">
-          <span>Payment type</span>
+          <span>{$_('paymentType')}</span>
           <select bind:value={paymentType} required class="native-select">
             {#each paymentTypes as p}
               <option value={p}>{paymentLabel(p)}</option>
@@ -775,7 +774,7 @@
         </label>
 
         <label class="field">
-          <span>Amount (ETB)</span>
+          <span>{$_('amountETB')}</span>
           <input
             type="number"
             name="amount"
@@ -788,22 +787,22 @@
         </label>
 
         <label class="field">
-          <span>Note</span>
+          <span>{$_('note')}</span>
           <textarea
             name="note"
             bind:value={note}
             rows="3"
-            placeholder="Optional details"
+            placeholder={$_('optionalDetails')}
           ></textarea>
         </label>
 
         <label class="field">
-          <span>Receipt (optional)</span>
+          <span>{$_('receiptOptional')}</span>
           <textarea
             name="receipt"
             bind:value={receipt}
             rows="2"
-            placeholder="Reference, URL, or short description"
+            placeholder={$_('refUrlDesc')}
           ></textarea>
         </label>
       </fieldset>
@@ -813,10 +812,10 @@
           type="button"
           class="ghost"
           onclick={() => closeModal()}
-          disabled={submitting}>Cancel</button
+          disabled={submitting}>{$_('cancel')}</button
         >
         <button type="submit" class="primary" disabled={submitting}>
-          {submitting ? "Saving…" : "Save expense"}
+          {submitting ? $_('saving') : $_('save')}
         </button>
       </footer>
     </form>

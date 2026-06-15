@@ -10,6 +10,8 @@
 	import {
 		ArrowLeftRight,
 		BarChart3,
+		ChevronDown,
+		Languages,
 		LogOut,
 		Package,
 		Receipt,
@@ -18,6 +20,8 @@
 		Wallet,
 	} from "@lucide/svelte";
 	import { cn } from "$lib/utils.js";
+	import { _, locale } from "svelte-i18n";
+	import { setLocale, localeAbbr } from "$lib/i18n/index.js";
 
 	let { data, children }: { data: LayoutData; children: import("svelte").Snippet } =
 		$props();
@@ -29,6 +33,7 @@
 	}
 
 	let isAuthenticated = $state(shellVisible());
+	let showLangDropdown = $state(false);
 
 	const APP_PREFIXES = [
 		"/stocks",
@@ -45,15 +50,21 @@
 		return APP_PREFIXES.some((prefix) => path.startsWith(prefix));
 	});
 
-	const navItems = [
-		{ href: "/stocks", label: "Stocks", icon: Package, match: "/stocks" },
-		{ href: "/transfers", label: "Transfers", icon: ArrowLeftRight, match: "/transfers" },
-		{ href: "/orders", label: "Orders", icon: ShoppingCart, match: "/orders" },
-		{ href: "/customers", label: "Customers", icon: Users, match: "/customers" },
-		{ href: "/payments", label: "Payments", icon: Wallet, match: "/payments" },
-		{ href: "/expenses", label: "Expenses", icon: Receipt, match: "/expenses" },
-		{ href: "/reports", label: "Reports", icon: BarChart3, match: "/reports" },
-	] as const;
+	const navItems = $derived([
+		{ href: "/stocks",    label: $_('navStocks'),    icon: Package,        match: "/stocks"    },
+		{ href: "/transfers", label: $_('navTransfers'), icon: ArrowLeftRight, match: "/transfers" },
+		{ href: "/orders",    label: $_('navOrders'),    icon: ShoppingCart,   match: "/orders"    },
+		{ href: "/customers", label: $_('navCustomers'), icon: Users,          match: "/customers" },
+		{ href: "/payments",  label: $_('navPayments'),  icon: Wallet,         match: "/payments"  },
+		{ href: "/expenses",  label: $_('navExpenses'),  icon: Receipt,        match: "/expenses"  },
+		{ href: "/reports",   label: $_('navReports'),   icon: BarChart3,      match: "/reports"   },
+	]);
+
+	const langOptions = [
+		{ value: "en", label: "English",      abbr: "ENG" },
+		{ value: "am", label: "አማርኛ",         abbr: "AMH" },
+		{ value: "om", label: "Afaan Oromoo",  abbr: "ORO" },
+	];
 
 	$effect(() => {
 		const serverOk = data.merchantContext != null;
@@ -114,7 +125,7 @@
 			<a
 				href="/"
 				class="-mt-4 mb-6 flex shrink-0 items-center px-2"
-				aria-label="Go to landing page"
+				aria-label={$_('goToLanding')}
 			>
 				<img
 					src="/logonew.png"
@@ -148,14 +159,42 @@
 				{/each}
 			</nav>
 
-			<div class="mt-auto border-t border-gray-100 pt-4">
+			<div class="mt-auto border-t border-gray-100 pt-4 flex flex-col gap-1">
+				<!-- Language switcher -->
+				<div class="relative">
+					<button
+						type="button"
+						class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition hover:bg-gray-50"
+						onclick={() => (showLangDropdown = !showLangDropdown)}
+					>
+						<Languages size={20} strokeWidth={2} class="text-gray-500" />
+						<span class="flex-1 text-left">{localeAbbr($locale)}</span>
+						<ChevronDown size={14} class="text-gray-400 transition-transform {showLangDropdown ? 'rotate-180' : ''}" />
+					</button>
+					{#if showLangDropdown}
+						<div class="absolute bottom-full left-0 right-0 mb-1 rounded-lg border border-gray-200 bg-white py-1 shadow-lg z-50">
+							{#each langOptions as opt}
+								<button
+									type="button"
+									class="flex w-full items-center gap-2 px-3 py-2 text-sm transition hover:bg-gray-50 {$locale === opt.value ? 'font-semibold text-[#4DA0E6]' : 'text-gray-700'}"
+									onclick={() => { setLocale(opt.value); showLangDropdown = false; }}
+								>
+									<span class="w-8 text-xs font-mono text-gray-400">{opt.abbr}</span>
+									{opt.label}
+								</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
+
+				<!-- Logout -->
 				<button
 					type="button"
 					class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[#D15B7A] transition hover:bg-red-50"
 					onclick={handleLogout}
 				>
 					<LogOut size={20} strokeWidth={2} />
-					Logout
+					{$_('logout')}
 				</button>
 			</div>
 		</aside>
@@ -173,7 +212,7 @@
 						class="size-10 animate-spin rounded-full border-[3px] border-[#4DA0E6]/25 border-t-[#4DA0E6]"
 						aria-hidden="true"
 					></div>
-					<span class="sr-only">Loading page</span>
+					<span class="sr-only">{$_('loadingPage')}</span>
 				</div>
 			{/if}
 		</main>

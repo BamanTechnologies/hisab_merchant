@@ -8,6 +8,7 @@
   } from "$lib/stockLabel";
   import TablePagination from "$lib/components/TablePagination.svelte";
   import { mc, smsStatusChipClass } from "$lib/merchant-styles.js";
+  import { _ } from "svelte-i18n";
   import { paginateSlice } from "$lib/pagination.js";
   import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
 
@@ -115,8 +116,8 @@
         hour: "2-digit",
         minute: "2-digit",
       });
-    } catch (error) {
-      return "Invalid Date";
+    } catch {
+      return "—";
     }
   }
 
@@ -305,11 +306,11 @@
 
 <section class={mc.pageHeader}>
   <div>
-    <h1 class={mc.pageTitle}>Reports</h1>
-    <p class={mc.pageSubtitle}>Investor SMS reports and delivery status.</p>
+    <h1 class={mc.pageTitle}>{$_('pageReportsTitle')}</h1>
+    <p class={mc.pageSubtitle}>{$_('pageReportsSubtitle')}</p>
   </div>
   <button type="button" class={mc.primaryBtn} onclick={openGenerateModal}>
-    Generate Report
+    {$_('generateReport')}
   </button>
 </section>
 
@@ -327,7 +328,7 @@
 
 {#if reports.length === 0}
   <p class="rounded-xl bg-white px-6 py-10 text-center text-sm text-gray-500">
-    No reports found.
+    {$_('noReportsFound')}
   </p>
 {:else}
   <section class={mc.tableSection}>
@@ -335,11 +336,11 @@
       <table class={mc.table}>
         <thead>
           <tr>
-            <th class={mc.colNumHead}>#</th>
-            <th class={mc.th}>Date</th>
-            <th class={mc.th}>Investor Phone</th>
-            <th class={mc.th}>SMS Status</th>
-            <th class={mc.th}>Actions</th>
+            <th class={mc.colNumHead}>{$_('number')}</th>
+            <th class={mc.th}>{$_('date')}</th>
+            <th class={mc.th}>{$_('investorPhone')}</th>
+            <th class={mc.th}>{$_('smsStatus')}</th>
+            <th class={mc.th}>{$_('actions')}</th>
           </tr>
         </thead>
         <tbody>
@@ -362,7 +363,7 @@
                     openModal(report);
                   }}
                 >
-                  View Message
+                  {$_('viewMessage')}
                 </button>
               </td>
             </tr>
@@ -393,10 +394,10 @@
         e.key === "Escape" && !resendReportPending && closeModal()}
     >
       <header>
-        <h2>SMS Message Details</h2>
+        <h2>{$_('smsMessageDetails')}</h2>
         <button
           class="icon"
-          aria-label="Close"
+          aria-label={$_('close')}
           disabled={resendReportPending}
           onclick={closeModal}>✕</button
         >
@@ -416,14 +417,14 @@
               </span>
             </div>
             <div class="info-item">
-              <span class="label">Sent:</span>
+              <span class="label">{$_('sentLabel')}</span>
               <span>{formatDate(selectedReport.updated_at)}</span>
             </div>
           </div>
         </div>
 
         <div class="message-body">
-          <h3>Message Content:</h3>
+          <h3>{$_('messageContent')}</h3>
           <div class="message-text">
             {selectedReport.message}
           </div>
@@ -469,7 +470,7 @@
               class="primary small"
               disabled={resendReportPending}
             >
-              {resendReportPending ? "Sending…" : "Resend"}
+              {resendReportPending ? $_('sending') : $_('resend')}
             </button>
           </form>
         {/if}
@@ -497,10 +498,10 @@
         e.key === "Escape" && !generateReportPending && closeGenerateModal()}
     >
       <header>
-        <h2>Generate Investor Report</h2>
+        <h2>{$_('generateInvestorReport')}</h2>
         <button
           class="icon"
-          aria-label="Close"
+          aria-label={$_('close')}
           disabled={generateReportPending}
           onclick={closeGenerateModal}>✕</button
         >
@@ -546,7 +547,7 @@
         }}
       >
         <div class="investor-selection">
-          <span class="investor-selection-label">Select investor</span>
+          <span class="investor-selection-label">{$_('selectInvestor')}</span>
           <div class="investor-list" role="radiogroup" aria-label="Select investor">
             {#each investors as investor (investor.id)}
               <label
@@ -591,14 +592,14 @@
             onclick={closeGenerateModal}
             disabled={generateReportPending}
           >
-            Cancel
+            {$_('cancel')}
           </button>
           <button
             type="submit"
             class="primary"
             disabled={!selectedInvestor || generateReportPending}
           >
-            {generateReportPending ? "Generating…" : "Generate Report"}
+            {generateReportPending ? $_('generating') : $_('generateReport')}
           </button>
         </footer>
       </form>
@@ -625,10 +626,10 @@
         e.key === "Escape" && !sendReportPending && closePreviewModal()}
     >
       <header>
-        <h2>Investor Report Preview</h2>
+        <h2>{$_('investorReportPreview')}</h2>
         <button
           class="icon"
-          aria-label="Close"
+          aria-label={$_('close')}
           disabled={sendReportPending}
           onclick={closePreviewModal}>✕</button
         >

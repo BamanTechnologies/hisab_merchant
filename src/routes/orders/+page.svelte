@@ -7,6 +7,7 @@
   import TableSortHeader from "$lib/components/TableSortHeader.svelte";
   import SummaryMetricCard from "$lib/components/SummaryMetricCard.svelte";
   import { mc, statusChipClass } from "$lib/merchant-styles.js";
+  import { _ } from "svelte-i18n";
   import { paginateSlice } from "$lib/pagination.js";
   import { buildStockLabel, formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
   import type { PageData } from "./$types";

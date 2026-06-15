@@ -5,6 +5,7 @@
 		DEFAULT_PAGE_SIZE,
 		PAGE_SIZE_OPTIONS,
 	} from "$lib/pagination.js";
+	import { _ } from "svelte-i18n";
 
 	type Props = {
 		total: number;
@@ -43,7 +44,7 @@
 	aria-label="Table pagination"
 >
 	<div class="flex items-center gap-2 text-sm text-gray-500">
-		<span>Row Per Page</span>
+		<span>{$_('rowPerPage')}</span>
 		<select
 			class="merchant-filter-select h-[30px] rounded-[5px] border border-[#e6eaed] bg-white py-0 pl-2 pr-8 text-sm text-gray-800"
 			aria-label="Rows per page"
@@ -57,14 +58,14 @@
 				<option value={n}>{n}</option>
 			{/each}
 		</select>
-		<span>Entries</span>
+		<span>{$_('entries')}</span>
 	</div>
 
 	<div class="flex items-center gap-1">
 		<button
 			type="button"
 			class="inline-flex size-[30px] items-center justify-center rounded-full text-gray-500 hover:bg-gray-50 disabled:opacity-40"
-			aria-label="Previous page"
+			aria-label={$_('previousPage')}
 			disabled={page <= 1}
 			onclick={() => goTo(page - 1)}
 		>
@@ -93,7 +94,7 @@
 		<button
 			type="button"
 			class="inline-flex size-[30px] items-center justify-center rounded-full text-gray-500 hover:bg-gray-50 disabled:opacity-40"
-			aria-label="Next page"
+			aria-label={$_('nextPage')}
 			disabled={page >= totalPages}
 			onclick={() => goTo(page + 1)}
 		>
