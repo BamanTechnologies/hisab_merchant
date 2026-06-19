@@ -299,5 +299,7 @@
   "disclaimer": "Disclaimer",
   "copyright": "Copyright © 2025. Bamanstock All rights reserved",
   "lightMode": "Light mode",
-  "darkMode": "Dark mode"
+  "darkMode": "Dark mode",
+  "contactReceived": "We have received your message",
+  "contactReceivedDesc": "Thanks for reaching out! Our team will get back to you shortly."
 }
