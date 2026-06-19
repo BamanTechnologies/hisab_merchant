@@ -9,7 +9,6 @@
   "logout": "Logout",
   "goToLanding": "Go to landing page",
   "loadingPage": "Loading page",
-
   "all": "All",
   "cancel": "Cancel",
   "close": "Close",
@@ -28,7 +27,6 @@
   "sending": "Sending…",
   "cancelling": "Cancelling…",
   "generating": "Generating…",
-
   "from": "From",
   "to": "To",
   "date": "Date",
@@ -56,14 +54,12 @@
   "receipt": "Receipt",
   "details": "Details",
   "createdBy": "Created By",
-
   "dateRange": "Date range",
   "allTime": "All time",
   "today": "Today",
   "last7Days": "Last 7 days",
   "last30Days": "Last 30 days",
   "customRange": "Custom range",
-
   "pageStocksTitle": "Stocks",
   "pageStocksSubtitle": "Inventory overview. Click a row to view details.",
   "newStock": "New Stock",
@@ -93,7 +89,6 @@
   "noStocksEmpty": "No stocks found. Create your first stock to get started.",
   "noStocksSearch": "No stocks match your search or type filter.",
   "searchByStockName": "Search by stock name…",
-
   "pageOrdersTitle": "Orders",
   "pageOrdersSubtitle": "Click a row to view full order details.",
   "createOrder": "Create Order",
@@ -153,14 +148,12 @@
   "totalAmount": "Total amount",
   "noOrdersEmpty": "No orders found. Create your first order to get started.",
   "noOrdersFiltered": "No orders match your current filters.",
-
   "pageCustomersTitle": "Customers",
   "pageCustomersSubtitle": "Company customers. Select a row for orders and payments.",
   "noBranchLinkedCustomers": "Your branch has no company linked, so customers cannot be loaded.",
   "noCustomersRegistered": "No customers registered for this company yet.",
   "registered": "Registered",
   "noCustomersDisplay": "No customers to display.",
-
   "pageTransfersTitle": "Transfers",
   "pageTransfersSubtitle": "Transfers where you are sender or destination merchant.",
   "destinationMerchant": "Destination merchant",
@@ -168,13 +161,11 @@
   "toMerchant": "To merchant",
   "noTransfersFound": "No transfers found for current filters.",
   "unavailable": "Unavailable",
-
   "pagePaymentsTitle": "Payments",
   "pagePaymentsSubtitle": "Payment history and transaction records.",
   "viewOrder": "View order",
   "noPaymentsEmpty": "No payments found. Payments will appear here once orders are paid.",
   "noPaymentsFiltered": "No payments match your current filters.",
-
   "pageExpensesTitle": "Expenses",
   "pageExpensesSubtitle": "Branch expenses for your assigned location.",
   "createExpense": "Create expense",
@@ -205,7 +196,6 @@
   "noExpensesFiltered": "No expenses match your current filters.",
   "noExpensesEmpty": "No expenses yet. Create one to get started.",
   "noBranchExpensesSee": "Assign a branch to your account to see expenses.",
-
   "pageReportsTitle": "Reports",
   "pageReportsSubtitle": "Investor SMS reports and delivery status.",
   "generateReport": "Generate Report",
@@ -234,13 +224,11 @@
   "totalPayments": "Total Payments:",
   "sendReport": "Send Report",
   "invalidDate": "Invalid Date",
-
   "rowPerPage": "Row Per Page",
   "entries": "Entries",
   "previousPage": "Previous page",
   "nextPage": "Next page",
   "searchDots": "Search…",
-
   "navFeatures": "Features",
   "navHowItWorks": "How It Works",
   "navAbout": "About",
@@ -309,5 +297,7 @@
   "termsOfUse": "Terms of Use",
   "privacyPolicy": "Privacy Policy",
   "disclaimer": "Disclaimer",
-  "copyright": "Copyright © 2025. Bamanstock All rights reserved"
+  "copyright": "Copyright © 2025. Bamanstock All rights reserved",
+  "lightMode": "Light mode",
+  "darkMode": "Dark mode"
 }

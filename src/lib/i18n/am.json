@@ -9,7 +9,6 @@
   "logout": "ውጣ",
   "goToLanding": "ወደ መነሻ ገጽ ሂድ",
   "loadingPage": "ገጽ በመጫን ላይ",
-
   "all": "ሁሉ",
   "cancel": "ሰርዝ",
   "close": "ዝጋ",
@@ -28,7 +27,6 @@
   "sending": "በመላክ ላይ…",
   "cancelling": "በመሰረዝ ላይ…",
   "generating": "በማዘጋጀት ላይ…",
-
   "from": "ከ",
   "to": "እስከ",
   "date": "ቀን",
@@ -56,14 +54,12 @@
   "receipt": "ደረሰኝ",
   "details": "ዝርዝር",
   "createdBy": "የተፈጠረ በ",
-
   "dateRange": "የቀን ክልል",
   "allTime": "ሁሉም ጊዜ",
   "today": "ዛሬ",
   "last7Days": "ባለፉት 7 ቀናት",
   "last30Days": "ባለፉት 30 ቀናት",
   "customRange": "ብጁ ክልል",
-
   "pageStocksTitle": "ክምችቶች",
   "pageStocksSubtitle": "የክምችት አጠቃላይ እይታ። ዝርዝር ለማየት ረድፍ ይጫኑ።",
   "newStock": "አዲስ ክምችት",
@@ -93,7 +89,6 @@
   "noStocksEmpty": "ምንም ክምችት አልተገኘም። የመጀመሪያዎን ክምችት ይፍጠሩ።",
   "noStocksSearch": "ምንም ክምችት ከፍለጋዎ ወይም ከአይነት ፍልተርዎ ጋር አይዛመድም።",
   "searchByStockName": "በክምችት ስም ፈልግ…",
-
   "pageOrdersTitle": "ትዕዛዞች",
   "pageOrdersSubtitle": "ሙሉ ዝርዝር ለማየት ረድፍ ይጫኑ።",
   "createOrder": "ትዕዛዝ ፍጠር",
@@ -153,14 +148,12 @@
   "totalAmount": "ጠቅላላ መጠን",
   "noOrdersEmpty": "ምንም ትዕዛዝ አልተገኘም። የመጀመሪያዎን ትዕዛዝ ይፍጠሩ።",
   "noOrdersFiltered": "ምንም ትዕዛዝ ከአሁኑ ፍልተሮችዎ ጋር አይዛመድም።",
-
   "pageCustomersTitle": "ደንበኞች",
   "pageCustomersSubtitle": "የኩባንያ ደንበኞች። ለትዕዛዞች እና ክፍያዎች ረድፍ ይምረጡ።",
   "noBranchLinkedCustomers": "ቅርንጫፍዎ ምንም ኩባንያ ስላልተያያዘ ደንበኞች መጫን አይቻልም።",
   "noCustomersRegistered": "ለዚህ ኩባንያ ምንም ደንበኛ ገና አልተመዘገበም።",
   "registered": "የተመዘገበበት",
   "noCustomersDisplay": "የሚታዩ ደንበኞች የሉም።",
-
   "pageTransfersTitle": "ዝውውሮች",
   "pageTransfersSubtitle": "ላኪ ወይም ተቀባይ ነጋዴ የሆኑባቸው ዝውውሮች።",
   "destinationMerchant": "ተቀባይ ነጋዴ",
@@ -168,13 +161,11 @@
   "toMerchant": "ወደ ነጋዴ",
   "noTransfersFound": "ለአሁኑ ፍልተሮች ምንም ዝውውር አልተገኘም።",
   "unavailable": "አይገኝም",
-
   "pagePaymentsTitle": "ክፍያዎች",
   "pagePaymentsSubtitle": "የክፍያ ታሪክ እና ግብይት መዝገቦች።",
   "viewOrder": "ትዕዛዝ ይመልከቱ",
   "noPaymentsEmpty": "ምንም ክፍያ አልተገኘም። ትዕዛዞች ሲከፈሉ ክፍያዎች ይታያሉ።",
   "noPaymentsFiltered": "ምንም ክፍያ ከአሁኑ ፍልተሮችዎ ጋር አይዛመድም።",
-
   "pageExpensesTitle": "ወጪዎች",
   "pageExpensesSubtitle": "ለተመደቡበት ቅርንጫፍ ወጪዎች።",
   "createExpense": "ወጪ ፍጠር",
@@ -205,7 +196,6 @@
   "noExpensesFiltered": "ምንም ወጪ ከአሁኑ ፍልተሮችዎ ጋር አይዛመድም።",
   "noExpensesEmpty": "ምንም ወጪ የለም። ለመጀመር ያስቀምጡ።",
   "noBranchExpensesSee": "ወጪዎችን ለማየት ቅርንጫፍ ወደ መለያዎ ይመድቡ።",
-
   "pageReportsTitle": "ሪፖርቶች",
   "pageReportsSubtitle": "የባለሀብት SMS ሪፖርቶች እና የአቅርቦት ሁኔታ።",
   "generateReport": "ሪፖርት አዘጋጅ",
@@ -234,13 +224,11 @@
   "totalPayments": "ጠቅላላ ክፍያዎች፡",
   "sendReport": "ሪፖርት ላክ",
   "invalidDate": "ልክ ያልሆነ ቀን",
-
   "rowPerPage": "ረድፍ በአንድ ገጽ",
   "entries": "ግቤቶች",
   "previousPage": "ቀዳሚ ገጽ",
   "nextPage": "ቀጣይ ገጽ",
   "searchDots": "ፈልግ…",
-
   "navFeatures": "ዋና ባህሪያት",
   "navHowItWorks": "እንዴት ይሰራል",
   "navAbout": "ስለ እኛ",
@@ -309,5 +297,7 @@
   "termsOfUse": "የአጠቃቀም ውሎች",
   "privacyPolicy": "የግላዊነት ፖሊሲ",
   "disclaimer": "ማስጠንቀቂያ",
-  "copyright": "ቅጂ መብት © 2025. ባማን ስቶክ መብቱ በህግ ተጠብቋል"
+  "copyright": "ቅጂ መብት © 2025. ባማን ስቶክ መብቱ በህግ ተጠብቋል",
+  "lightMode": "ብርሃን ሁነታ",
+  "darkMode": "ጨለማ ሁነታ"
 }

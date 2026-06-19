@@ -9,7 +9,6 @@
   "logout": "Ba'i",
   "goToLanding": "Gara Fuula Jalqabaatti Deemi",
   "loadingPage": "Fuulni Fe'amaa Jira",
-
   "all": "Hunda",
   "cancel": "Haqi",
   "close": "Cufii",
@@ -28,7 +27,6 @@
   "sending": "Ergaa jira…",
   "cancelling": "Haqqaa jira…",
   "generating": "Qopheessaa jira…",
-
   "from": "Irraa",
   "to": "Gara",
   "date": "Guyyaa",
@@ -56,14 +54,12 @@
   "receipt": "Tajaajila",
   "details": "Bal'ina",
   "createdBy": "Kan Uume",
-
   "dateRange": "Daangaa Guyyaa",
   "allTime": "Yeroo Hunda",
   "today": "Har'a",
   "last7Days": "Guyyoota 7 Darbanii",
   "last30Days": "Guyyoota 30 Darbanii",
   "customRange": "Daangaa Filatame",
-
   "pageStocksTitle": "Kuusaalee",
   "pageStocksSubtitle": "Cuunfaa kuusaa. Bal'ina ilaluuf tarree cuqi.",
   "newStock": "Kuusaa Haaraa",
@@ -93,7 +89,6 @@
   "noStocksEmpty": "Kuusaan hin argamne. Kuusaa jalqabaa uumi.",
   "noStocksSearch": "Kuusaan qorannoo keetiif hin argamne.",
   "searchByStockName": "Maqaa kuusaan barbaadi…",
-
   "pageOrdersTitle": "Ajajaalee",
   "pageOrdersSubtitle": "Bal'ina guutuu ilaluuf tarree cuqi.",
   "createOrder": "Ajaja Uumi",
@@ -153,14 +148,12 @@
   "totalAmount": "Waliigala Baay'ina",
   "noOrdersEmpty": "Ajajni hin argamne. Ajaja jalqabaa uumi.",
   "noOrdersFiltered": "Ajajni filannoo ammaa waliin hin walfakkaanne.",
-
   "pageCustomersTitle": "Maamiltoota",
   "pageCustomersSubtitle": "Maamiltoota dhaabbataa. Ajajaalee fi kaffaltiileef tarree filadhu.",
   "noBranchLinkedCustomers": "Dameen kee dhaabbata hin qabne, maamiltoonni fe'amuu hin danda'an.",
   "noCustomersRegistered": "Dhaabbata kanaaf maamiltoonni hin galmoofne.",
   "registered": "Galmoofame",
   "noCustomersDisplay": "Maamiltoota mul'ataa hin jiru.",
-
   "pageTransfersTitle": "Jijjiirraalee",
   "pageTransfersSubtitle": "Ergaa ykn fudhattuu daldalaa ta'an jijjiirraalee.",
   "destinationMerchant": "Daldalaa Fudhattuu",
@@ -168,13 +161,11 @@
   "toMerchant": "Daldalaa Gara",
   "noTransfersFound": "Filannoo ammaa waliin jijjiirraan hin argamne.",
   "unavailable": "Hin Argamu",
-
   "pagePaymentsTitle": "Kaffaltiilee",
   "pagePaymentsSubtitle": "Seenaa kaffaltii fi galmeewwan daldalaa.",
   "viewOrder": "Ajaja Ilaali",
   "noPaymentsEmpty": "Kaffaltiin hin argamne. Kaffaltiilee ajajaalee erga kaffalamanii mul'atu.",
   "noPaymentsFiltered": "Kaffaltiin filannoo ammaa waliin hin walfakkaanne.",
-
   "pageExpensesTitle": "Baasii",
   "pageExpensesSubtitle": "Baasii damee bakka ramadamtetti.",
   "createExpense": "Baasii Uumi",
@@ -205,7 +196,6 @@
   "noExpensesFiltered": "Baasiin filannoo ammaa waliin hin walfakkaanne.",
   "noExpensesEmpty": "Baasii hin jiru. Jalqabuuf uumi.",
   "noBranchExpensesSee": "Baasii ilaluuf damee herrega keessan qindeessaa.",
-
   "pageReportsTitle": "Gabaasaalee",
   "pageReportsSubtitle": "Gabaasaalee SMS mamuudaa fi haala erguu.",
   "generateReport": "Gabaasa Qopheessi",
@@ -234,13 +224,11 @@
   "totalPayments": "Waliigala Kaffaltiilee:",
   "sendReport": "Gabaasa Ergi",
   "invalidDate": "Guyyaa Sirrii Miti",
-
   "rowPerPage": "Tarree Fuula Tokkotti",
   "entries": "Galmeewwan",
   "previousPage": "Fuula Duraa",
   "nextPage": "Fuula Itti Aanu",
   "searchDots": "Barbaadi…",
-
   "navFeatures": "Qabiyyeewwan",
   "navHowItWorks": "Akkamitti Hojjeta",
   "navAbout": "Waa'ee Keenya",
@@ -309,5 +297,7 @@
   "termsOfUse": "Heeyyama Fayyadama",
   "privacyPolicy": "Iccitummaa Imaammata",
   "disclaimer": "Beeksisa",
-  "copyright": "Mirga Maxxansaa © 2025. Bamanstock Mirgi Isaa Seeraan Eegama"
+  "copyright": "Mirga Maxxansaa © 2025. Bamanstock Mirgi Isaa Seeraan Eegama",
+  "lightMode": "Haala Ifa",
+  "darkMode": "Haala Dukkana"
 }
