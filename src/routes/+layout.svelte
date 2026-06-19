@@ -40,6 +40,13 @@
 	let isAuthenticated = $state(shellVisible());
 	let sidebarOpen = $state(false);
 	let theme = $state<"light" | "dark">("light");
+	let showLanguageDropdown = $state(false);
+
+	const langOptions = [
+		{ value: "en", label: "English",     abbr: "ENG" },
+		{ value: "am", label: "አማርኛ",        abbr: "AMH" },
+		{ value: "om", label: "Afaan Oromoo", abbr: "ORO" },
+	];
 
 	const APP_PREFIXES = [
 		"/stocks",
@@ -245,18 +252,30 @@
 						{$_('darkMode')}
 					{/if}
 				</button>
-				<button
-					type="button"
-					class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-white/5 dark:hover:text-white"
-					onclick={() => {
-						const next = $locale === 'en' ? 'am' : $locale === 'am' ? 'om' : 'en';
-						setLocale(next);
-					}}
-					aria-label="Switch language"
-				>
-					<Globe size={20} strokeWidth={2} class="text-gray-500 dark:text-gray-400" />
-					{localeAbbr($locale)}
-				</button>
+				<div class="relative">
+					<button
+						type="button"
+						class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-white/5 dark:hover:text-white"
+						onclick={() => (showLanguageDropdown = !showLanguageDropdown)}
+						aria-label="Switch language"
+					>
+						<Globe size={20} strokeWidth={2} class="text-gray-500 dark:text-gray-400" />
+						{localeAbbr($locale)}
+					</button>
+					{#if showLanguageDropdown}
+						<div class="absolute bottom-full left-0 mb-2 w-44 rounded-xl border border-gray-200 bg-white shadow-lg dark:border-white/10 dark:bg-[#0f172a] z-50 overflow-hidden">
+							{#each langOptions as opt}
+								<button
+									type="button"
+									class="w-full text-left px-4 py-2.5 text-sm transition-colors hover:bg-gray-50 dark:hover:bg-white/5 {$locale === opt.value ? 'text-[#4DA0E6] font-medium' : 'text-gray-700 dark:text-gray-300'}"
+									onclick={() => { setLocale(opt.value); showLanguageDropdown = false; }}
+								>
+									<span class="mr-2 font-mono text-xs text-gray-400">{opt.abbr}</span>{opt.label}
+								</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
 				<button
 					type="button"
 					class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[#D15B7A] transition hover:bg-red-50 dark:hover:bg-red-500/10"
