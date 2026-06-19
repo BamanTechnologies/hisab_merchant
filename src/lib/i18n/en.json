@@ -301,5 +301,20 @@
   "lightMode": "Light mode",
   "darkMode": "Dark mode",
   "contactReceived": "We have received your message",
-  "contactReceivedDesc": "Thanks for reaching out! Our team will get back to you shortly."
+  "contactReceivedDesc": "Thanks for reaching out! Our team will get back to you shortly.",
+  "statusPaid": "Paid",
+  "statusUnpaid": "Unpaid",
+  "statusPartiallyPaid": "Partially paid",
+  "statusCancelled": "Cancelled",
+  "statusSent": "Sent",
+  "statusFailed": "Failed",
+  "attrCountry": "Country",
+  "attrColor": "Color",
+  "attrFactor": "Factor",
+  "attrThickness": "Thickness",
+  "attrModelNo": "Model No",
+  "attrCapacityUnit": "Capacity unit",
+  "typeBrakeLining": "Brake lining",
+  "typeGlass": "Glass",
+  "typeCoffeeTools": "Coffee tools"
 }

@@ -20,6 +20,17 @@
   import type { PageData } from "./$types";
   import { _ } from "svelte-i18n";
 
+  function statusI18nKey(status: string | null | undefined): string {
+    const s = String(status ?? "");
+    const map: Record<string, string> = {
+      paid: "statusPaid",
+      unpaid: "statusUnpaid",
+      partially_paid: "statusPartiallyPaid",
+      cancelled: "statusCancelled",
+    };
+    return map[s] ?? s;
+  }
+
   type StockPanelPos = {
     top: number;
     left: number;
@@ -1395,7 +1406,7 @@
           <strong>{$_('totalAmountLabel')}</strong>
           {formatMoney(orderToCancel.total_amount)}
         </p>
-        <p><strong>{$_('statusLabel')}</strong> {orderToCancel.status}</p>
+        <p><strong>{$_('statusLabel')}</strong> {$_(statusI18nKey(orderToCancel.status))}</p>
       </div>
       <p class="warning">
         {$_('stockQtyRestored')}
@@ -1549,7 +1560,7 @@
             <td class={mc.td}>{o.customer_name}</td>
             <td class="{mc.tdCenter} whitespace-nowrap">{orderQtyCell(o)}</td>
             <td class={mc.td}
-              ><span class={statusChipClass(o.status)}>{o.status}</span></td
+              ><span class={statusChipClass(o.status)}>{$_(statusI18nKey(o.status))}</span></td
             >
             <td class="{mc.td} font-semibold">{formatMoney(o.total_amount)}</td>
             <td class={mc.tdCenter}>

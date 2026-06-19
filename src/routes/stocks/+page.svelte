@@ -545,10 +545,34 @@
       return "Brake lining";
     return x.replaceAll("_", " ").replace(/\b\w/g, (m) => m.toUpperCase());
   }
+  function typeI18nKey(t: string | null | undefined): string {
+    const x = String(t ?? "").trim().toLowerCase();
+    const map: Record<string, string> = {
+      brake_lining: "typeBrakeLining",
+      brake_pad: "typeBrakeLining",
+      break_pad: "typeBrakeLining",
+      glass: "typeGlass",
+      coffee_tools: "typeCoffeeTools",
+    };
+    return map[x] ?? "";
+  }
   function attributeLabel(key: string): string {
     if (key === "model_number") return "Model No";
     if (key === "capacity_unit") return "Capacity unit";
     return key.replaceAll("_", " ").replace(/\b\w/g, (m) => m.toUpperCase());
+  }
+  function attrI18nKey(key: string): string {
+    const map: Record<string, string> = {
+      model_number: "attrModelNo",
+      capacity_unit: "attrCapacityUnit",
+      country: "attrCountry",
+      color: "attrColor",
+      factor: "attrFactor",
+      thickness: "attrThickness",
+      figure: "figureCol",
+      capacity: "attrCapacityUnit",
+    };
+    return map[key] ?? "";
   }
 
   function currentTypeFields(): string[] {
@@ -1055,7 +1079,7 @@
     <div class="modal-content">
       <p>{$_('deleteStockConfirm')}</p>
       <div class="stock-details">
-        <p><strong>{$_('typeLabel')}:</strong> {productTypeLabel(stockToDelete)}</p>
+        <p><strong>{$_('typeLabel')}:</strong> {typeI18nKey(typeFromStock(stockToDelete)) ? $_(typeI18nKey(typeFromStock(stockToDelete))) : productTypeLabel(stockToDelete)}</p>
         <p><strong>{$_('branchLabel')}:</strong> {branchLabel(stockToDelete.branch)}</p>
         {#if stockToDelete.attributes && Object.keys(stockToDelete.attributes).length > 0}
           {#each attributeEntriesForList(stockToDelete) as [k, v]}
@@ -1222,7 +1246,7 @@
           role="button"
         >
           <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
-          <td class={mc.td}>{productTypeLabel(s)}</td>
+          <td class={mc.td}>{typeI18nKey(typeFromStock(s)) ? $_(typeI18nKey(typeFromStock(s))) : productTypeLabel(s)}</td>
           <td class={mc.td}>{branchLabel(s.branch)}</td>
           <td class={mc.td}>{s.origin ? branchLabel(s.origin) : "-"}</td>
           {#if isSingleTypeFilter}
@@ -1235,7 +1259,7 @@
                 <div class="flex flex-col gap-0.5 text-sm">
                   {#each attributeEntriesForList(s) as [k, v]}
                     <div class="attr-row">
-                      <span class="attr-key">{attributeLabel(k)}</span>
+                      <span class="attr-key">{attrI18nKey(k) ? $_(attrI18nKey(k)) : attributeLabel(k)}</span>
                       <span class="attr-sep">:</span>
                       <span class="attr-val">{v}</span>
                     </div>

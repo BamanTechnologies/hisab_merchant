@@ -301,5 +301,20 @@
   "lightMode": "Haala Ifa",
   "darkMode": "Haala Dukkana",
   "contactReceived": "Ergaa Keessan Fudhanne",
-  "contactReceivedDesc": "Quunnamtaniif galatoomaa! Gareen keenya si'a dheera osoo hin turiin si quunnamuu ni danda'u."
+  "contactReceivedDesc": "Quunnamtaniif galatoomaa! Gareen keenya si'a dheera osoo hin turiin si quunnamuu ni danda'u.",
+  "statusPaid": "Kaffalame",
+  "statusUnpaid": "Hin Kaffalamne",
+  "statusPartiallyPaid": "Harka Lama Kaffalame",
+  "statusCancelled": "Haqame",
+  "statusSent": "Ergame",
+  "statusFailed": "Hin Milkoofne",
+  "attrCountry": "Biyya",
+  "attrColor": "Halluu",
+  "attrFactor": "Faaktarii",
+  "attrThickness": "Gadi Fageenya",
+  "attrModelNo": "Lakk. Mudela",
+  "attrCapacityUnit": "Isa Dandeettii",
+  "typeBrakeLining": "Brake Lining",
+  "typeGlass": "Biloo",
+  "typeCoffeeTools": "Meeshaa Bunaa"
 }

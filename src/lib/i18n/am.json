@@ -301,5 +301,20 @@
   "lightMode": "ብርሃን ሁነታ",
   "darkMode": "ጨለማ ሁነታ",
   "contactReceived": "መልዕክትዎን ተቀብለናል",
-  "contactReceivedDesc": "ስለ ደወሉልን እናመሰግናለን! ቡድናችን ብዙም ሳይቆይ ይደርስዎታል።"
+  "contactReceivedDesc": "ስለ ደወሉልን እናመሰግናለን! ቡድናችን ብዙም ሳይቆይ ይደርስዎታል።",
+  "statusPaid": "ተከፍሏል",
+  "statusUnpaid": "አልተከፈለም",
+  "statusPartiallyPaid": "በከፊል ተከፍሏል",
+  "statusCancelled": "ተሰርዟል",
+  "statusSent": "ተልኳል",
+  "statusFailed": "አልተሳካም",
+  "attrCountry": "ሀገር",
+  "attrColor": "ቀለም",
+  "attrFactor": "ፋክተር",
+  "attrThickness": "ውፍረት",
+  "attrModelNo": "ሞዴል ቁጥር",
+  "attrCapacityUnit": "የአቅም ክፍል",
+  "typeBrakeLining": "ብሬክ ላይኒንግ",
+  "typeGlass": "ብርጭቆ",
+  "typeCoffeeTools": "የቡና እቃዎች"
 }

@@ -15,6 +15,7 @@
   import { paginateSlice } from "$lib/pagination.js";
   import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
   import { _ } from "svelte-i18n";
+  import { get } from "svelte/store";
 
   type Report = {
     id: string;
@@ -126,11 +127,22 @@
     }
   }
 
+  function smsStatusI18nKey(status: string | null | undefined): string {
+    const s = String(status ?? "").trim().toLowerCase();
+    const map: Record<string, string> = {
+      sent: "statusSent",
+      failed: "statusFailed",
+      error: "statusFailed",
+    };
+    return map[s] ?? s;
+  }
+
   function reportStockTypeLabel(t: string | null | undefined) {
-    if (t === "glass") return "Glass";
-    if (t === "brake_lining" || t === "brake_pad" || t === "break_pad")
-      return "Brake lining";
-    if (t === "coffee_tools") return "Coffee tools";
+    const x = String(t ?? "").trim().toLowerCase();
+    if (x === "glass") return get(_)("typeGlass");
+    if (x === "brake_lining" || x === "brake_pad" || x === "break_pad")
+      return get(_)("typeBrakeLining");
+    if (x === "coffee_tools") return get(_)("typeCoffeeTools");
     return t && String(t).trim() !== "" ? String(t) : "—";
   }
 
@@ -363,7 +375,7 @@
               <td class={mc.td}>{report.investor_phone}</td>
               <td class={mc.td}>
                 <span class={smsStatusChipClass(report.sms_status)}>
-                  {report.sms_status}
+                  {$_(smsStatusI18nKey(report.sms_status))}
                 </span>
               </td>
               <td class={mc.td} onclick={(e) => e.stopPropagation()}>
@@ -425,7 +437,7 @@
             <div class="info-item">
               <span class="label">{$_('smsStatus')}:</span>
               <span class={smsStatusChipClass(selectedReport.sms_status)}>
-                {selectedReport.sms_status}
+                {$_(smsStatusI18nKey(selectedReport.sms_status))}
               </span>
             </div>
             <div class="info-item">
