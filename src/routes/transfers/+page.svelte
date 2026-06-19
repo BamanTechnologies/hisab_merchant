@@ -4,6 +4,7 @@
 	import { mc } from "$lib/merchant-styles.js";
 	import { paginateSlice } from "$lib/pagination.js";
 	import type { PageData } from "./$types";
+	import { _ } from "svelte-i18n";
 
 	type Transfer = {
 		id: string;
@@ -133,50 +134,50 @@
 
 <section class={mc.pageHeader}>
 	<div>
-		<h1 class={mc.pageTitle}>Transfers</h1>
-		<p class={mc.pageSubtitle}>Transfers where you are sender or destination merchant.</p>
+		<h1 class={mc.pageTitle}>{$_('pageTransfersTitle')}</h1>
+		<p class={mc.pageSubtitle}>{$_('pageTransfersSubtitle')}</p>
 	</div>
 </section>
 
-<section class={mc.filterSection} aria-label="Filter transfers">
+<section class={mc.filterSection} aria-label={$_('pageTransfersTitle')}>
 	<label>
-		<span class={mc.filterLabel}>From</span>
+		<span class={mc.filterLabel}>{$_('from')}</span>
 		<select class={mc.filterSelect} bind:value={fromFilter}>
-			<option value="">All</option>
+			<option value="">{$_('all')}</option>
 			{#each branches as b}
 				<option value={b.id}>{branchName(b.id)}</option>
 			{/each}
 		</select>
 	</label>
 	<label>
-		<span class={mc.filterLabel}>To</span>
+		<span class={mc.filterLabel}>{$_('to')}</span>
 		<select class={mc.filterSelect} bind:value={toFilter}>
-			<option value="">All</option>
+			<option value="">{$_('all')}</option>
 			{#each branches as b}
 				<option value={b.id}>{branchName(b.id)}</option>
 			{/each}
 		</select>
 	</label>
 	<label>
-		<span class={mc.filterLabel}>Destination merchant</span>
+		<span class={mc.filterLabel}>{$_('destinationMerchant')}</span>
 		<select class={mc.filterSelect} bind:value={destinationMerchantFilter}>
-			<option value="">All</option>
+			<option value="">{$_('all')}</option>
 			{#each destinationMerchantIds as id}
 				<option value={id}>{merchantName(id)}</option>
 			{/each}
 		</select>
 	</label>
 	<label>
-		<span class={mc.filterLabel}>Created by</span>
+		<span class={mc.filterLabel}>{$_('createdBy')}</span>
 		<select class={mc.filterSelect} bind:value={createdByFilter}>
-			<option value="">All</option>
+			<option value="">{$_('all')}</option>
 			{#each senderMerchantIds as id}
 				<option value={id}>{merchantName(id)}</option>
 			{/each}
 		</select>
 	</label>
 	<div class="flex items-end">
-		<button class={mc.ghostBtn} type="button" onclick={clearFilters}>Clear</button>
+		<button class={mc.ghostBtn} type="button" onclick={clearFilters}>{$_('clear')}</button>
 	</div>
 </section>
 
@@ -185,20 +186,20 @@
 		<table class={mc.table}>
 			<thead>
 				<tr>
-					<th class={mc.colNumHead}>#</th>
-					<th class={mc.th}>From</th>
-					<th class={mc.th}>To</th>
-					<th class={mc.th}>From merchant</th>
-					<th class={mc.th}>To merchant</th>
-					<th class={mc.th}>Stock</th>
-					<th class={mc.thRight}>Quantity</th>
-					<th class={mc.th}>Date</th>
+					<th class={mc.colNumHead}>{$_('number')}</th>
+					<th class={mc.th}>{$_('from')}</th>
+					<th class={mc.th}>{$_('to')}</th>
+					<th class={mc.th}>{$_('fromMerchant')}</th>
+					<th class={mc.th}>{$_('toMerchant')}</th>
+					<th class={mc.th}>{$_('stock')}</th>
+					<th class={mc.thRight}>{$_('quantity')}</th>
+					<th class={mc.th}>{$_('date')}</th>
 				</tr>
 			</thead>
 			<tbody>
 				{#if filteredTransfers.length === 0}
 					<tr>
-						<td colspan="8" class={mc.emptyCell}>No transfers found for current filters.</td>
+						<td colspan="8" class={mc.emptyCell}>{$_('noTransfersFound')}</td>
 					</tr>
 				{:else}
 					{#each pagedTransfers as t, i}
@@ -219,7 +220,7 @@
 								{#if linkId}
 									{t.stock_display_name ?? "—"}
 								{:else}
-									<span class="text-gray-400">Unavailable</span>
+									<span class="text-gray-400">{$_('unavailable')}</span>
 								{/if}
 							</td>
 							<td class={mc.tdRight}>{quantityLabel(t.quantity)}</td>

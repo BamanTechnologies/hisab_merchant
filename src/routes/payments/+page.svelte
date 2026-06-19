@@ -4,6 +4,7 @@
   import { mc } from "$lib/merchant-styles.js";
   import { paginateSlice } from "$lib/pagination.js";
   import type { PageData } from "./$types";
+  import { _ } from "svelte-i18n";
 
   type Payment = {
     id: string;
@@ -156,26 +157,26 @@
 
 <section class={mc.pageHeader}>
   <div>
-    <h1 class={mc.pageTitle}>Payments</h1>
-    <p class={mc.pageSubtitle}>Payment history and transaction records.</p>
+    <h1 class={mc.pageTitle}>{$_('pagePaymentsTitle')}</h1>
+    <p class={mc.pageSubtitle}>{$_('pagePaymentsSubtitle')}</p>
   </div>
 </section>
 
 <section class={mc.filterSection} aria-label="Filter payments">
   <label>
-    <span class={mc.filterLabel}>Date range</span>
+    <span class={mc.filterLabel}>{$_('dateRange')}</span>
     <select class={mc.filterSelect} bind:value={dateRangePreset}>
-      <option value="all">All time</option>
-      <option value="today">Today</option>
-      <option value="last7">Last 7 days</option>
-      <option value="last30">Last 30 days</option>
-      <option value="custom">Custom range</option>
+      <option value="all">{$_('allTime')}</option>
+      <option value="today">{$_('today')}</option>
+      <option value="last7">{$_('last7Days')}</option>
+      <option value="last30">{$_('last30Days')}</option>
+      <option value="custom">{$_('customRange')}</option>
     </select>
   </label>
 
   {#if dateRangePreset === "custom"}
     <label>
-      <span class={mc.filterLabel}>From</span>
+      <span class={mc.filterLabel}>{$_('from')}</span>
       <input
         class="{mc.filterDate} cursor-pointer"
         type="date"
@@ -186,7 +187,7 @@
       />
     </label>
     <label>
-      <span class={mc.filterLabel}>To</span>
+      <span class={mc.filterLabel}>{$_('to')}</span>
       <input
         class="{mc.filterDate} cursor-pointer"
         type="date"
@@ -199,9 +200,9 @@
   {/if}
 
   <label>
-    <span class={mc.filterLabel}>Customer</span>
+    <span class={mc.filterLabel}>{$_('customer')}</span>
     <select class={mc.filterSelect} bind:value={customerFilterName}>
-      <option value="">All customers</option>
+      <option value="">{$_('allCustomers')}</option>
       {#each customerFilterOptions as customerName}
         <option value={customerName}>{customerName}</option>
       {/each}
@@ -214,13 +215,13 @@
   <table class={mc.table}>
     <thead>
       <tr>
-        <th class={mc.colNumHead}>#</th>
-        <th class={mc.th}><TableSortHeader label="Date" onclick={() => cycleSort("date")} ascActive={isSortActive("date","asc")} descActive={isSortActive("date","desc")} /></th>
-        <th class={mc.th}><TableSortHeader label="Amount" onclick={() => cycleSort("amount")} ascActive={isSortActive("amount","asc")} descActive={isSortActive("amount","desc")} /></th>
-        <th class={mc.th}><TableSortHeader label="Customer" onclick={() => cycleSort("customer")} ascActive={isSortActive("customer","asc")} descActive={isSortActive("customer","desc")} /></th>
-        <th class={mc.th}><TableSortHeader label="Method" onclick={() => cycleSort("method")} ascActive={isSortActive("method","asc")} descActive={isSortActive("method","desc")} /></th>
-        <th class={mc.th}>Created By</th>
-        <th class={mc.thCenter}>Actions</th>
+        <th class={mc.colNumHead}>{$_('number')}</th>
+        <th class={mc.th}><TableSortHeader label={$_('date')} onclick={() => cycleSort("date")} ascActive={isSortActive("date","asc")} descActive={isSortActive("date","desc")} /></th>
+        <th class={mc.th}><TableSortHeader label={$_('amount')} onclick={() => cycleSort("amount")} ascActive={isSortActive("amount","asc")} descActive={isSortActive("amount","desc")} /></th>
+        <th class={mc.th}><TableSortHeader label={$_('customer')} onclick={() => cycleSort("customer")} ascActive={isSortActive("customer","asc")} descActive={isSortActive("customer","desc")} /></th>
+        <th class={mc.th}><TableSortHeader label={$_('method')} onclick={() => cycleSort("method")} ascActive={isSortActive("method","asc")} descActive={isSortActive("method","desc")} /></th>
+        <th class={mc.th}>{$_('createdBy')}</th>
+        <th class={mc.thCenter}>{$_('actions')}</th>
       </tr>
     </thead>
     <tbody>
@@ -233,7 +234,7 @@
           <td class={mc.td}>{p.payment_method}</td>
           <td class="{mc.td} text-gray-500">{p.created_by_name || "—"}</td>
           <td class={mc.td}>
-            <a class={mc.link} href={`/orders/${p.order_id}`}>View order</a>
+            <a class={mc.link} href={`/orders/${p.order_id}`}>{$_('viewOrder')}</a>
           </td>
         </tr>
       {/each}
@@ -241,8 +242,8 @@
         <tr>
           <td colspan="7" class={mc.emptyCell}>
               {payments.length === 0
-                ? "No payments found. Payments will appear here once orders are paid."
-                : "No payments match your current filters."}
+                ? $_('noPaymentsEmpty')
+                : $_('noPaymentsFiltered')}
           </td>
         </tr>
       {/if}

@@ -18,6 +18,7 @@
   } from "$lib/stockLabel";
   import { Trash2 } from "@lucide/svelte";
   import type { PageData } from "./$types";
+  import { _ } from "svelte-i18n";
 
   type StockPanelPos = {
     top: number;
@@ -522,11 +523,11 @@
   function lineQuantityError(row: LineRow): string {
     if (!row.stockId) return "";
     const q = Number(row.quantity);
-    if (!Number.isFinite(q) || q < 1) return "Minimum quantity is 1";
+    if (!Number.isFinite(q) || q < 1) return $_("minQty1");
     const s = getStock(row.stockId);
-    if (!s) return "Invalid stock";
+    if (!s) return $_("invalidStock");
     const avail = Number(s.quantity);
-    if (q > avail) return "Exceeds available quantity";
+    if (q > avail) return $_("exceedsQty");
     return "";
   }
 
@@ -534,7 +535,7 @@
     if (!row.stockId) return "";
     const p = Number(row.unitPrice);
     if (!Number.isFinite(p) || p <= 0) {
-      return "Enter a valid unit price greater than zero";
+      return $_("invalidUnitPrice");
     }
     return "";
   }
@@ -634,8 +635,8 @@
 
       const result = deserialize(await response.text());
       if (result.type !== "success" || !("data" in result) || !result.data) {
-        addCustomerError = "Could not add customer";
-        showToast("Could not add customer", "error");
+        addCustomerError = $_("couldNotAddCustomer");
+        showToast($_("couldNotAddCustomer"), "error");
         return;
       }
       const payload = result.data as {
@@ -644,21 +645,21 @@
         customer?: CustomerRow;
       };
       if (!payload.success) {
-        addCustomerError = payload.message ?? "Could not add customer";
-        showToast(payload.message ?? "Could not add customer", "error");
+        addCustomerError = payload.message ?? $_("couldNotAddCustomer");
+        showToast(payload.message ?? $_("couldNotAddCustomer"), "error");
         return;
       }
       if (payload.customer) {
         customers = [...customers, payload.customer];
         selectedCustomerId = payload.customer.id;
       }
-      showToast(payload.message ?? "Customer added", "success");
+      showToast(payload.message ?? $_("customerAdded"), "success");
       closeAddCustomerModal(true);
       successMessage = "";
       errorMessage = "";
     } catch {
-      addCustomerError = "Request failed";
-      showToast("Request failed", "error");
+      addCustomerError = $_("requestFailed");
+      showToast($_("requestFailed"), "error");
     } finally {
       addCustomerSubmitting = false;
     }
@@ -668,11 +669,11 @@
     if (createSubmitting) return;
     createError = "";
     if (!selectedCustomerId) {
-      createError = "Select a customer";
+      createError = $_("selectACustomer");
       return;
     }
     if (orderLines.length === 0) {
-      createError = "Add at least one stock line";
+      createError = $_("addAtLeastOneLine");
       return;
     }
     const linesPayload: {
@@ -682,7 +683,7 @@
     }[] = [];
     for (const row of orderLines) {
       if (!row.stockId) {
-        createError = "Each line needs a stock item";
+        createError = $_("eachLineNeedsStock");
         return;
       }
       const err = lineQuantityError(row);
@@ -716,24 +717,24 @@
 
       const result = deserialize(await response.text());
       if (result.type !== "success" || !("data" in result) || !result.data) {
-        createError = "Could not create orders";
-        showToast("Could not create orders", "error");
+        createError = $_("couldNotCreateOrders");
+        showToast($_("couldNotCreateOrders"), "error");
         return;
       }
       const payload = result.data as { success?: boolean; message?: string };
       if (!payload.success) {
-        createError = payload.message ?? "Could not create orders";
-        showToast(payload.message ?? "Could not create orders", "error");
+        createError = payload.message ?? $_("couldNotCreateOrders");
+        showToast(payload.message ?? $_("couldNotCreateOrders"), "error");
         return;
       }
-      showToast(payload.message ?? "Orders created", "success");
+      showToast(payload.message ?? $_("ordersCreated"), "success");
       successMessage = "";
       errorMessage = "";
       closeCreateModal(true);
       afterToast(TOAST_MS, () => window.location.reload());
     } catch {
-      createError = "Request failed";
-      showToast("Request failed", "error");
+      createError = $_("requestFailed");
+      showToast($_("requestFailed"), "error");
     } finally {
       createSubmitting = false;
     }
@@ -932,8 +933,8 @@
 
 <section class={mc.pageHeader}>
   <div>
-    <h1 class={mc.pageTitle}>Orders</h1>
-    <p class={mc.pageSubtitle}>Click a row to view full order details.</p>
+    <h1 class={mc.pageTitle}>{$_('pageOrdersTitle')}</h1>
+    <p class={mc.pageSubtitle}>{$_('pageOrdersSubtitle')}</p>
   </div>
   <button
     type="button"
@@ -942,25 +943,25 @@
     disabled={subscriptionLocked}
     title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : undefined}
   >
-    Create Order
+    {$_('createOrder')}
   </button>
 </section>
 
 <section class={mc.filterSection} aria-label="Filter orders">
   <label>
-    <span class={mc.filterLabel}>Date range</span>
+    <span class={mc.filterLabel}>{$_('dateRange')}</span>
     <select class={mc.filterSelect} bind:value={dateRangePreset}>
-      <option value="all">All time</option>
-      <option value="today">Today</option>
-      <option value="last7">Last 7 days</option>
-      <option value="last30">Last 30 days</option>
-      <option value="custom">Custom range</option>
+      <option value="all">{$_('allTime')}</option>
+      <option value="today">{$_('today')}</option>
+      <option value="last7">{$_('last7Days')}</option>
+      <option value="last30">{$_('last30Days')}</option>
+      <option value="custom">{$_('customRange')}</option>
     </select>
   </label>
 
   {#if dateRangePreset === "custom"}
     <label>
-      <span class={mc.filterLabel}>From</span>
+      <span class={mc.filterLabel}>{$_('from')}</span>
       <input
         class="{mc.filterDate} cursor-pointer"
         type="date"
@@ -971,7 +972,7 @@
       />
     </label>
     <label>
-      <span class={mc.filterLabel}>To</span>
+      <span class={mc.filterLabel}>{$_('to')}</span>
       <input
         class="{mc.filterDate} cursor-pointer"
         type="date"
@@ -984,9 +985,9 @@
   {/if}
 
   <label>
-    <span class={mc.filterLabel}>Customer</span>
+    <span class={mc.filterLabel}>{$_('customer')}</span>
     <select class={mc.filterSelect} bind:value={customerFilterName}>
-      <option value="">All customers</option>
+      <option value="">{$_('allCustomers')}</option>
       {#each customerFilterOptions as customerName}
         <option value={customerName}>{customerName}</option>
       {/each}
@@ -996,13 +997,13 @@
 
 <section class={mc.summaryGrid} aria-label="Orders summary">
   <SummaryMetricCard
-    value={`${formatMoney(orderSummary.totalCreatedAmount)} (${orderSummary.totalCreatedCount.toLocaleString()} ${orderSummary.totalCreatedCount === 1 ? "order" : "orders"})`}
-    label="Total orders created"
+    value={`${formatMoney(orderSummary.totalCreatedAmount)} (${orderSummary.totalCreatedCount.toLocaleString()} ${orderSummary.totalCreatedCount === 1 ? $_('orderSingular') : $_('orderPlural')})`}
+    label={$_('totalOrdersCreated')}
     icon="three"
   />
   <SummaryMetricCard
     value={formatMoney(orderSummary.totalPaidAmount)}
-    label="Total amount paid"
+    label={$_('totalAmountPaid')}
     icon="five"
   />
   <SummaryMetricCard
@@ -1012,8 +1013,8 @@
         : orderSummary.totalUnpaidAmount,
     )}
     label={orderSummary.totalUnpaidAmount < 0
-      ? "Total amount overpaid"
-      : "Total amount unpaid"}
+      ? $_('totalAmountOverpaid')
+      : $_('totalAmountUnpaid')}
     icon="eight"
   />
 </section>
@@ -1058,10 +1059,10 @@
     }}
   >
     <header>
-      <h2>Create Order</h2>
+      <h2>{$_('createOrder')}</h2>
       <button
         class="icon"
-        aria-label="Close"
+        aria-label={$_('close')}
         onclick={() => closeCreateModal()}
         disabled={createSubmitting}>✕</button
       >
@@ -1073,25 +1074,23 @@
 
       {#if !data.companyId}
         <p class="inline-error muted-strong">
-          Your account has no branch or company linked, so customers cannot be
-          loaded. Contact an administrator.
+          {$_('noCompanyLinked')}
         </p>
       {:else if customers.length === 0}
         <p class="muted-strong">
-          No customers yet for your company. Use &ldquo;Add New Customer&rdquo;
-          below.
+          {$_('noCustomersYet')}
         </p>
       {/if}
 
       <label class="block-label">
-        <span>Select Customer</span>
+        <span>{$_('selectCustomer')}</span>
         <select
           class="native-select full"
           bind:value={selectedCustomerId}
           required
           disabled={!data.companyId || createSubmitting}
         >
-          <option value="">Choose a customer</option>
+          <option value="">{$_('chooseCustomer')}</option>
           {#each customers as c}
             <option value={c.id}>{customerOptionLabel(c)}</option>
           {/each}
@@ -1105,10 +1104,10 @@
         disabled={!data.companyId || createSubmitting || subscriptionLocked}
         title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : undefined}
       >
-        + Add New Customer
+        {$_('addNewCustomer')}
       </button>
 
-      <h3 class="section-title">Stock items</h3>
+      <h3 class="section-title">{$_('stockItems')}</h3>
       <div class="lines">
         {#each orderLines as row (row.rowId)}
           <div
@@ -1117,7 +1116,7 @@
               (!!lineQuantityError(row) || !!lineUnitPriceError(row))}
           >
             <div class="grow stock-combo-wrap" data-stock-combo-wrap>
-              <span class="sr-only">Stock</span>
+              <span class="sr-only">{$_('selectStock')}</span>
               <div class="stock-combobox">
                 <button
                   type="button"
@@ -1132,9 +1131,9 @@
                   <span class="stock-combobox-trigger-text">
                     {#if row.stockId}
                       {@const st = getStock(row.stockId)}
-                      {st ? stockOptionLabel(st) : "Select stock"}
+                      {st ? stockOptionLabel(st) : $_('selectStock')}
                     {:else}
-                      Select stock
+                      {$_('selectStock')}
                     {/if}
                   </span>
                   <span class="stock-combobox-caret" aria-hidden="true">▾</span>
@@ -1142,7 +1141,7 @@
               </div>
             </div>
             <label class="qty">
-              <span class="sr-only">Quantity</span>
+              <span class="sr-only">{$_('number')}</span>
               <input
                 type="number"
                 min="1"
@@ -1155,19 +1154,19 @@
             </label>
             <div
               class="unit-readonly"
-              title="Unit comes from the selected stock"
+              title={$_('unitFromStock')}
             >
-              <span class="unit-label">Unit</span>
+              <span class="unit-label">{$_('unit')}</span>
               <span class="unit-value">{lineStockUnitLabel(row)}</span>
             </div>
             <label class="line-price">
-              <span class="sr-only">Unit price (ETB)</span>
+              <span class="sr-only">{$_('unitPriceETB')}</span>
               <input
                 type="number"
                 min="0"
                 step="any"
-                placeholder="Price"
-                title="Unit selling price for this order (editable)"
+                placeholder={$_('unitPriceETB')}
+                title={$_('unitSellPrice')}
                 bind:value={row.unitPrice}
                 oninput={() => {
                   orderLines = [...orderLines];
@@ -1178,8 +1177,8 @@
             <button
               type="button"
               class="{mc.actionBtnDanger} line-rm"
-              aria-label="Remove this stock from the order"
-              title="Remove this stock from the order"
+              aria-label={$_('removeLine')}
+              title={$_('removeLine')}
               disabled={createSubmitting}
               onclick={() => removeOrderLine(row.rowId)}
             >
@@ -1201,7 +1200,7 @@
           onclick={addOrderLine}
           disabled={!canAddLine || createSubmitting}
         >
-          + Add line
+          {$_('addLine')}
         </button>
       </div>
     </div>
@@ -1218,7 +1217,7 @@
           bind:this={stockSearchInputEl}
           type="search"
           class="stock-combobox-search"
-          placeholder="Search type, model, thickness, color, country…"
+          placeholder={$_('searchStock')}
           value={stockSearchQuery}
           disabled={createSubmitting}
           oninput={(e) => {
@@ -1243,7 +1242,7 @@
               </button>
             </li>
           {:else}
-            <li class="stock-combobox-empty">No matching stock</li>
+            <li class="stock-combobox-empty">{$_('noMatchingStock')}</li>
           {/each}
         </ul>
       </div>
@@ -1253,7 +1252,7 @@
         type="button"
         class="inline-flex h-[30px] shrink-0 items-center justify-center rounded-[5px] border border-[#e6eaed] bg-white px-3 text-sm font-medium text-[#1a1a1a] transition hover:bg-gray-50 dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
         onclick={() => closeCreateModal()}
-        disabled={createSubmitting}>Cancel</button
+        disabled={createSubmitting}>{$_('cancel')}</button
       >
       <button
         type="button"
@@ -1261,7 +1260,7 @@
         disabled={createModalHasErrors || createSubmitting}
         onclick={submitCreateOrders}
       >
-        {createSubmitting ? "Creating…" : "Create Order"}
+        {createSubmitting ? $_('creating') : $_('createOrder')}
       </button>
     </footer>
   </dialog>
@@ -1285,10 +1284,10 @@
     oncancel={(e) => addCustomerSubmitting && e.preventDefault()}
   >
     <header>
-      <h2>New Customer</h2>
+      <h2>{$_('newCustomer')}</h2>
       <button
         class="icon"
-        aria-label="Close"
+        aria-label={$_('close')}
         disabled={addCustomerSubmitting}
         onclick={() => closeAddCustomerModal()}>✕</button
       >
@@ -1299,7 +1298,7 @@
       {/if}
       <div class="grid-compact">
         <label>
-          <span>First name</span>
+          <span>{$_('firstName')}</span>
           <input
             type="text"
             bind:value={newFirstName}
@@ -1308,7 +1307,7 @@
           />
         </label>
         <label>
-          <span>Last name</span>
+          <span>{$_('lastName')}</span>
           <input
             type="text"
             bind:value={newLastName}
@@ -1317,7 +1316,7 @@
           />
         </label>
         <label class="full-row">
-          <span>Address</span>
+          <span>{$_('address')}</span>
           <input
             type="text"
             bind:value={newAddress}
@@ -1325,7 +1324,7 @@
           />
         </label>
         <label class="full-row">
-          <span>Phone</span>
+          <span>{$_('phone')}</span>
           <input
             type="tel"
             bind:value={newPhone}
@@ -1340,7 +1339,7 @@
         type="button"
         class="inline-flex h-[30px] shrink-0 items-center justify-center rounded-[5px] border border-[#e6eaed] bg-white px-3 text-sm font-medium text-[#1a1a1a] transition hover:bg-gray-50 dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
         onclick={() => closeAddCustomerModal()}
-        disabled={addCustomerSubmitting}>Cancel</button
+        disabled={addCustomerSubmitting}>{$_('cancel')}</button
       >
       <button
         type="button"
@@ -1351,7 +1350,7 @@
           !newPhone.trim()}
         onclick={submitAddCustomer}
       >
-        {addCustomerSubmitting ? "Saving…" : "Save"}
+        {addCustomerSubmitting ? $_('saving') : $_('save')}
       </button>
     </footer>
   </dialog>
@@ -1375,49 +1374,47 @@
     oncancel={(e) => cancelSubmitting && e.preventDefault()}
   >
     <header>
-      <h2>Cancel order</h2>
+      <h2>{$_('cancelOrder')}</h2>
       <button
         class="icon"
-        aria-label="Close"
+        aria-label={$_('close')}
         disabled={cancelSubmitting}
         onclick={() => closeCancelModal()}>✕</button
       >
     </header>
     <div class="modal-content">
-      <p>Are you sure you want this order to be cancelled?</p>
+      <p>{$_('cancelOrderConfirm')}</p>
       <div class="order-details">
-        <p><strong>Customer:</strong> {orderToCancel.customer_name}</p>
-        <p><strong>Phone:</strong> {orderToCancel.customer_phone}</p>
+        <p><strong>{$_('customerLabel')}</strong> {orderToCancel.customer_name}</p>
+        <p><strong>{$_('phoneLabel')}</strong> {orderToCancel.customer_phone}</p>
         <p>
-          <strong>Quantity:</strong>
+          <strong>{$_('quantity')}:</strong>
           {orderQtyCell(orderToCancel)}
         </p>
         <p>
-          <strong>Total Amount:</strong>
+          <strong>{$_('totalAmountLabel')}</strong>
           {formatMoney(orderToCancel.total_amount)}
         </p>
-        <p><strong>Status:</strong> {orderToCancel.status}</p>
+        <p><strong>{$_('statusLabel')}</strong> {orderToCancel.status}</p>
       </div>
       <p class="warning">
-        Stock quantities for all order items will be restored. The order will
-        stay on record as cancelled.
+        {$_('stockQtyRestored')}
       </p>
       {#if String(orderToCancel.status ?? "")
         .trim()
         .toLowerCase() === "partially_paid"}
         {@const paidHint = totalPaidOnOrder(orderToCancel.id)}
         <fieldset class="cancel-refund-fieldset">
-          <legend class="cancel-refund-legend">Partial payments recorded</legend
+          <legend class="cancel-refund-legend">{$_('partialPaymentsRecorded')}</legend
           >
           {#if paidHint > 0}
             <p class="cancel-refund-paid-hint muted-strong">
-              Payments on file for this order: {formatMoney(paidHint)} (cash / bank).
-              Choose how you settled with the customer.
+              {$_('paymentsOnFile')} {formatMoney(paidHint)} (cash / bank).
+              {$_('chooseHowSettled')}
             </p>
           {:else}
             <p class="cancel-refund-paid-hint muted-strong">
-              Choose how partial payments should affect the customer ledger
-              after cancellation.
+              {$_('choosePartialPayments')}
             </p>
           {/if}
           <label class="cancel-refund-option">
@@ -1429,10 +1426,9 @@
               disabled={cancelSubmitting}
             />
             <span>
-              <strong>Refund to customer balance</strong>
+              <strong>{$_('refundToBalance')}</strong>
               <span class="cancel-refund-detail"
-                >Leave the paid amount as credit on their account (current
-                behaviour).</span
+                >{$_('refundToBalanceDesc')}</span
               >
             </span>
           </label>
@@ -1445,11 +1441,9 @@
               disabled={cancelSubmitting}
             />
             <span>
-              <strong>Refund in cash</strong>
+              <strong>{$_('refundInCash')}</strong>
               <span class="cancel-refund-detail"
-                >You returned cash/bank takings outside the system — those
-                payment lines are cleared from the ledger. Amounts that were
-                only moved from customer balance are unchanged.</span
+                >{$_('refundInCashDesc')}</span
               >
             </span>
           </label>
@@ -1461,14 +1455,14 @@
         type="button"
         class="inline-flex h-[30px] shrink-0 items-center justify-center rounded-[5px] border border-[#e6eaed] bg-white px-3 text-sm font-medium text-[#1a1a1a] transition hover:bg-gray-50 dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
         onclick={() => closeCancelModal()}
-        disabled={cancelSubmitting}>Back</button
+        disabled={cancelSubmitting}>{$_('cancel')}</button
       >
       <button
         type="button"
         class="danger"
         onclick={confirmCancelOrder}
         disabled={cancelSubmitting}
-        >{cancelSubmitting ? "Cancelling…" : "Confirm cancel"}</button
+        >{cancelSubmitting ? $_('cancelling') : $_('confirmCancel')}</button
       >
     </footer>
   </dialog>
@@ -1479,10 +1473,10 @@
     <table class={mc.table}>
       <thead>
         <tr>
-          <th class={mc.colNumHead}>#</th>
+          <th class={mc.colNumHead}>{$_('number')}</th>
           <th class={mc.th}
             ><TableSortHeader
-              label="Date"
+              label={$_('date')}
               onclick={() => cycleSort("date")}
               ascActive={isSortActive("date", "asc")}
               descActive={isSortActive("date", "desc")}
@@ -1490,7 +1484,7 @@
           >
           <th class={mc.th}
             ><TableSortHeader
-              label="Stocks (Item)"
+              label={$_('stocksItemColumn')}
               onclick={() => cycleSort("stock")}
               ascActive={isSortActive("stock", "asc")}
               descActive={isSortActive("stock", "desc")}
@@ -1498,7 +1492,7 @@
           >
           <th class={mc.th}
             ><TableSortHeader
-              label="Customer"
+              label={$_('customer')}
               onclick={() => cycleSort("customer")}
               ascActive={isSortActive("customer", "asc")}
               descActive={isSortActive("customer", "desc")}
@@ -1506,7 +1500,7 @@
           >
           <th class={mc.thCenter}
             ><TableSortHeader
-              label="Quantity"
+              label={$_('quantity')}
               align="center"
               onclick={() => cycleSort("quantity")}
               ascActive={isSortActive("quantity", "asc")}
@@ -1515,7 +1509,7 @@
           >
           <th class={mc.th}
             ><TableSortHeader
-              label="Status"
+              label={$_('status')}
               onclick={() => cycleSort("status")}
               ascActive={isSortActive("status", "asc")}
               descActive={isSortActive("status", "desc")}
@@ -1523,13 +1517,13 @@
           >
           <th class={mc.th}
             ><TableSortHeader
-              label="Total amount"
+              label={$_('totalAmount')}
               onclick={() => cycleSort("total")}
               ascActive={isSortActive("total", "asc")}
               descActive={isSortActive("total", "desc")}
             /></th
           >
-          <th class={mc.thCenter}>Actions</th>
+          <th class={mc.thCenter}>{$_('actions')}</th>
         </tr>
       </thead>
       <tbody>
@@ -1565,10 +1559,10 @@
                   class="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
                   onclick={(e) => openCancelModal(o, e)}
                   disabled={subscriptionLocked}
-                  aria-label="Cancel order"
-                  title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : "Cancel order"}
+                  aria-label={$_('cancelOrder')}
+                  title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : $_('cancelOrder')}
                 >
-                  Cancel
+                  {$_('cancelOrder')}
                 </button>
               {:else}
                 <span class="text-gray-400">—</span>
@@ -1580,8 +1574,8 @@
           <tr>
             <td colspan="8" class={mc.emptyCell}>
               {orders.length === 0
-                ? "No orders found. Create your first order to get started."
-                : "No orders match your current filters."}
+                ? $_('noOrdersEmpty')
+                : $_('noOrdersFiltered')}
             </td>
           </tr>
         {/if}

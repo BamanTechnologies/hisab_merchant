@@ -7,7 +7,7 @@
   import { onMount } from "svelte";
   import { fade } from "svelte/transition";
   import { _ } from "svelte-i18n";
-  import { locale } from "$lib/i18n/index.js";
+  import { setLocale, localeAbbr, locale } from "$lib/i18n/index.js";
   import heroBackground from "$lib/assets/landing/hero-background.png";
   import browserScreenshot from "$lib/assets/landing/browser-screenshot.png";
   import businessOne from "../assets/landing/business_one.png";
@@ -23,6 +23,13 @@
   let isAuthenticated = $state(false);
   let faqOpen = $state<Record<number, boolean>>({ 0: true });
   let mobileMenuOpen = $state(false);
+  let showLangDropdown = $state(false);
+
+  const langOptions = [
+    { value: "en", label: "English",     abbr: "ENG" },
+    { value: "am", label: "አማርኛ",        abbr: "AMH" },
+    { value: "om", label: "Afaan Oromoo", abbr: "ORO" },
+  ];
 
   let contactPending = $state(false);
   let contactSuccess = $state(false);
@@ -107,6 +114,29 @@
         </div>
 
         <div class="hidden md:flex items-center gap-3">
+          <div class="relative">
+            <button
+              type="button"
+              onclick={() => (showLangDropdown = !showLangDropdown)}
+              class="w-9 h-9 rounded-full border border-border flex items-center justify-center text-[10px] font-semibold cursor-pointer bg-background hover:bg-muted transition-colors text-foreground"
+              aria-label="Switch language"
+            >
+              {localeAbbr($locale)}
+            </button>
+            {#if showLangDropdown}
+              <div class="absolute right-0 top-full mt-2 w-44 rounded-xl border border-border bg-white shadow-lg z-50 overflow-hidden">
+                {#each langOptions as opt}
+                  <button
+                    type="button"
+                    class="w-full text-left px-4 py-2.5 text-sm transition-colors hover:bg-muted {$locale === opt.value ? 'text-info font-medium' : 'text-foreground'}"
+                    onclick={() => { setLocale(opt.value); showLangDropdown = false; }}
+                  >
+                    <span class="mr-2 font-mono text-xs text-muted-foreground">{opt.abbr}</span>{opt.label}
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          </div>
           {#if isAuthenticated}
             <Button variant="outline" href="/stocks" size="sm">{$_('openDashboard')}</Button>
             <Button onclick={handleLogout} size="sm" class="bg-info text-info-foreground hover:bg-info/90">{$_('logout')}</Button>
@@ -139,6 +169,17 @@
         <a href="#about" onclick={(e) => { smoothScrollToHash(e, '#about'); mobileMenuOpen = false; }} class="block py-3 text-foreground hover:text-info transition-colors text-sm font-medium border-b border-border/10">{$_('navAbout')}</a>
         <a href="#contact" onclick={(e) => { smoothScrollToHash(e, '#contact'); mobileMenuOpen = false; }} class="block py-3 text-foreground hover:text-info transition-colors text-sm font-medium border-b border-border/10">{$_('navContact')}</a>
         <div class="pt-3 flex flex-col gap-2">
+          <div class="flex gap-2">
+            {#each langOptions as opt}
+              <button
+                type="button"
+                class="flex-1 rounded-lg border py-2 text-xs font-semibold transition-colors {$locale === opt.value ? 'border-info bg-info/10 text-info' : 'border-border text-foreground hover:bg-muted'}"
+                onclick={() => { setLocale(opt.value); }}
+              >
+                {opt.abbr}
+              </button>
+            {/each}
+          </div>
           {#if isAuthenticated}
             <Button variant="outline" href="/stocks" class="w-full">{$_('openDashboard')}</Button>
             <Button onclick={handleLogout} class="w-full bg-info text-info-foreground hover:bg-info/90">{$_('logout')}</Button>
