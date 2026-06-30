@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { _ } from "svelte-i18n";
 	import { ChevronLeft, ChevronRight } from "@lucide/svelte";
 	import {
 		buildPageList,
@@ -43,7 +44,7 @@
 	aria-label="Table pagination"
 >
 	<div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-		<span>Row Per Page</span>
+		<span>{$_('rowPerPage')}</span>
 		<select
 			class="merchant-filter-select h-[30px] rounded-[5px] border border-[#e6eaed] bg-white py-0 pl-2 pr-8 text-sm text-gray-800 dark:border-white/10 dark:bg-[#111827] dark:text-gray-200"
 			aria-label="Rows per page"
@@ -57,14 +58,14 @@
 				<option value={n}>{n}</option>
 			{/each}
 		</select>
-		<span>Entries</span>
+		<span>{$_('entries')}</span>
 	</div>
 
 	<div class="flex items-center gap-1">
 		<button
 			type="button"
 			class="inline-flex size-[30px] items-center justify-center rounded-full text-gray-500 hover:bg-gray-50 disabled:opacity-40 dark:text-gray-400 dark:hover:bg-white/5"
-			aria-label="Previous page"
+			aria-label={$_('previousPage')}
 			disabled={page <= 1}
 			onclick={() => goTo(page - 1)}
 		>
@@ -93,7 +94,7 @@
 		<button
 			type="button"
 			class="inline-flex size-[30px] items-center justify-center rounded-full text-gray-500 hover:bg-gray-50 disabled:opacity-40 dark:text-gray-400 dark:hover:bg-white/5"
-			aria-label="Next page"
+			aria-label={$_('nextPage')}
 			disabled={page >= totalPages}
 			onclick={() => goTo(page + 1)}
 		>

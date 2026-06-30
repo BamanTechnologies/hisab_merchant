@@ -14,6 +14,8 @@
   } from "$lib/subscription/client";
   import { paginateSlice } from "$lib/pagination.js";
   import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
+  import { _ } from "svelte-i18n";
+  import { get } from "svelte/store";
 
   type Report = {
     id: string;
@@ -121,15 +123,26 @@
         minute: "2-digit",
       });
     } catch (error) {
-      return "Invalid Date";
+      return $_('invalidDate');
     }
   }
 
+  function smsStatusI18nKey(status: string | null | undefined): string {
+    const s = String(status ?? "").trim().toLowerCase();
+    const map: Record<string, string> = {
+      sent: "statusSent",
+      failed: "statusFailed",
+      error: "statusFailed",
+    };
+    return map[s] ?? s;
+  }
+
   function reportStockTypeLabel(t: string | null | undefined) {
-    if (t === "glass") return "Glass";
-    if (t === "brake_lining" || t === "brake_pad" || t === "break_pad")
-      return "Brake lining";
-    if (t === "coffee_tools") return "Coffee tools";
+    const x = String(t ?? "").trim().toLowerCase();
+    if (x === "glass") return get(_)("typeGlass");
+    if (x === "brake_lining" || x === "brake_pad" || x === "break_pad")
+      return get(_)("typeBrakeLining");
+    if (x === "coffee_tools") return get(_)("typeCoffeeTools");
     return t && String(t).trim() !== "" ? String(t) : "—";
   }
 
@@ -311,8 +324,8 @@
 
 <section class={mc.pageHeader}>
   <div>
-    <h1 class={mc.pageTitle}>Reports</h1>
-    <p class={mc.pageSubtitle}>Investor SMS reports and delivery status.</p>
+    <h1 class={mc.pageTitle}>{$_('pageReportsTitle')}</h1>
+    <p class={mc.pageSubtitle}>{$_('pageReportsSubtitle')}</p>
   </div>
   <button
     type="button"
@@ -321,7 +334,7 @@
     disabled={subscriptionLocked}
     title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : undefined}
   >
-    Generate Report
+    {$_('generateReport')}
   </button>
 </section>
 
@@ -339,7 +352,7 @@
 
 {#if reports.length === 0}
   <p class="rounded-xl bg-white px-6 py-10 text-center text-sm text-gray-500">
-    No reports found.
+    {$_('noReportsFound')}
   </p>
 {:else}
   <section class={mc.tableSection}>
@@ -348,10 +361,10 @@
         <thead>
           <tr>
             <th class={mc.colNumHead}>#</th>
-            <th class={mc.th}>Date</th>
-            <th class={mc.th}>Investor Phone</th>
-            <th class={mc.th}>SMS Status</th>
-            <th class={mc.th}>Actions</th>
+            <th class={mc.th}>{$_('date')}</th>
+            <th class={mc.th}>{$_('investorPhone')}</th>
+            <th class={mc.th}>{$_('smsStatus')}</th>
+            <th class={mc.th}>{$_('actions')}</th>
           </tr>
         </thead>
         <tbody>
@@ -362,7 +375,7 @@
               <td class={mc.td}>{report.investor_phone}</td>
               <td class={mc.td}>
                 <span class={smsStatusChipClass(report.sms_status)}>
-                  {report.sms_status}
+                  {$_(smsStatusI18nKey(report.sms_status))}
                 </span>
               </td>
               <td class={mc.td} onclick={(e) => e.stopPropagation()}>
@@ -374,7 +387,7 @@
                     openModal(report);
                   }}
                 >
-                  View Message
+                  {$_('viewMessage')}
                 </button>
               </td>
             </tr>
@@ -405,7 +418,7 @@
         e.key === "Escape" && !resendReportPending && closeModal()}
     >
       <header>
-        <h2>SMS Message Details</h2>
+        <h2>{$_('smsMessageDetails')}</h2>
         <button
           class="icon"
           aria-label="Close"
@@ -418,24 +431,24 @@
         <div class="message-header">
           <div class="message-info">
             <div class="info-item">
-              <span class="label">To:</span>
+              <span class="label">{$_('investorPhone')}:</span>
               <span>{selectedReport.investor_phone}</span>
             </div>
             <div class="info-item">
-              <span class="label">Status:</span>
+              <span class="label">{$_('smsStatus')}:</span>
               <span class={smsStatusChipClass(selectedReport.sms_status)}>
-                {selectedReport.sms_status}
+                {$_(smsStatusI18nKey(selectedReport.sms_status))}
               </span>
             </div>
             <div class="info-item">
-              <span class="label">Sent:</span>
+              <span class="label">{$_('sentLabel')}:</span>
               <span>{formatDate(selectedReport.updated_at)}</span>
             </div>
           </div>
         </div>
 
         <div class="message-body">
-          <h3>Message Content:</h3>
+          <h3>{$_('messageContent')}:</h3>
           <div class="message-text">
             {selectedReport.message}
           </div>
@@ -482,7 +495,7 @@
               disabled={resendReportPending || subscriptionLocked}
               title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : undefined}
             >
-              {resendReportPending ? "Sending…" : "Resend"}
+              {resendReportPending ? $_('sending') : $_('resend')}
             </button>
           </form>
         {/if}
@@ -510,7 +523,7 @@
         e.key === "Escape" && !generateReportPending && closeGenerateModal()}
     >
       <header>
-        <h2>Generate Investor Report</h2>
+        <h2>{$_('generateInvestorReport')}</h2>
         <button
           class="icon"
           aria-label="Close"
@@ -559,8 +572,8 @@
         }}
       >
         <div class="investor-selection">
-          <span class="investor-selection-label">Select investor</span>
-          <div class="investor-list" role="radiogroup" aria-label="Select investor">
+          <span class="investor-selection-label">{$_('selectInvestor')}</span>
+          <div class="investor-list" role="radiogroup" aria-label={$_('selectInvestor')}>
             {#each investors as investor (investor.id)}
               <label
                 class="investor-item"
@@ -604,7 +617,7 @@
             onclick={closeGenerateModal}
             disabled={generateReportPending}
           >
-            Cancel
+            {$_('cancel')}
           </button>
           <button
             type="submit"
@@ -612,7 +625,7 @@
             disabled={!selectedInvestor || generateReportPending || subscriptionLocked}
             title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : undefined}
           >
-            {generateReportPending ? "Generating…" : "Generate Report"}
+            {generateReportPending ? $_('generating') : $_('generateReport')}
           </button>
         </footer>
       </form>
@@ -639,7 +652,7 @@
         e.key === "Escape" && !sendReportPending && closePreviewModal()}
     >
       <header>
-        <h2>Investor Report Preview</h2>
+        <h2>{$_('investorReportPreview')}</h2>
         <button
           class="icon"
           aria-label="Close"
@@ -650,10 +663,10 @@
 
       <div class="report-content">
         <div class="report-header">
-          <h3>Report for {generatedReportData.investor_by_pk.first_name}</h3>
-          <p>Phone: {generatedReportData.investor_by_pk.phone_number}</p>
+          <h3>{$_('reportFor')} {generatedReportData.investor_by_pk.first_name}</h3>
+          <p>{$_('phone')}: {generatedReportData.investor_by_pk.phone_number}</p>
           <p>
-            Generated by: {generatedReportData.merchant_by_pk.first_name}
+            {$_('generatedBy')}: {generatedReportData.merchant_by_pk.first_name}
             {generatedReportData.merchant_by_pk.last_name}
           </p>
         </div>
@@ -666,16 +679,16 @@
                 <thead>
                   <tr>
                     <th class="col-num">#</th>
-                    <th>Type</th>
-                    <th>Model #</th>
-                    <th>Name</th>
-                    <th>Country</th>
-                    <th>Color</th>
-                    <th>Figure</th>
-                    <th>Thickness / Capacity</th>
-                    <th>Quantity</th>
-                    <th>Price</th>
-                    <th>Factor</th>
+                    <th>{$_('type')}</th>
+                    <th>{$_('number')}</th>
+                    <th>{$_('name')}</th>
+                    <th>{$_('countryCol')}</th>
+                    <th>{$_('colorCol')}</th>
+                    <th>{$_('figureCol')}</th>
+                    <th>{$_('thicknessCapacity')}</th>
+                    <th>{$_('quantity')}</th>
+                    <th>{$_('amount')}</th>
+                    <th>{$_('factor')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -702,7 +715,7 @@
               </table>
             </div>
           {:else}
-            <p class="no-data">No stocks found</p>
+            <p class="no-data">{$_('noStocksFound')}</p>
           {/if}
         </div>
 
@@ -714,11 +727,11 @@
                 <thead>
                   <tr>
                     <th class="col-num">#</th>
-                    <th>Stock</th>
-                    <th>Quantity</th>
-                    <th>Price</th>
-                    <th>Total</th>
-                    <th>Date</th>
+                    <th>{$_('stock')}</th>
+                    <th>{$_('quantity')}</th>
+                    <th>{$_('amount')}</th>
+                    <th>{$_('total')}</th>
+                    <th>{$_('date')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -746,13 +759,13 @@
             </div>
             <div class="summary">
               <strong
-                >Total Orders: {formatMoney(
+                >{$_('totalOrders')}: {formatMoney(
                   generatedReportData.orders_aggregate.aggregate.sum.total_amount,
                 )}</strong
               >
             </div>
           {:else}
-            <p class="no-data">No orders found</p>
+            <p class="no-data">{$_('noOrdersFound')}</p>
           {/if}
         </div>
 
@@ -764,10 +777,10 @@
                 <thead>
                   <tr>
                     <th class="col-num">#</th>
-                    <th>Customer</th>
-                    <th>Amount</th>
-                    <th>Method</th>
-                    <th>Date</th>
+                    <th>{$_('name')}</th>
+                    <th>{$_('amount')}</th>
+                    <th>{$_('type')}</th>
+                    <th>{$_('date')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -785,13 +798,13 @@
             </div>
             <div class="summary">
               <strong
-                >Total Payments: {formatMoney(
+                >{$_('totalPayments')}: {formatMoney(
                   generatedReportData.payments_aggregate.aggregate.sum.amount,
                 )}</strong
               >
             </div>
           {:else}
-            <p class="no-data">No payments found</p>
+            <p class="no-data">{$_('noPaymentsFound')}</p>
           {/if}
         </div>
       </div>
@@ -840,7 +853,7 @@
             onclick={closePreviewModal}
             disabled={sendReportPending}
           >
-            Close
+            {$_('close')}
           </button>
           <button
             type="submit"
@@ -848,7 +861,7 @@
             disabled={sendReportPending || subscriptionLocked}
             title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : undefined}
           >
-            {sendReportPending ? "Sending…" : "Send Report"}
+            {sendReportPending ? $_('sending') : $_('sendReport')}
           </button>
         </form>
       </footer>

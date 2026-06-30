@@ -6,6 +6,8 @@
   import Icon from "$lib/components/ui/Icon/index.js";
   import { onMount } from "svelte";
   import { fade } from "svelte/transition";
+  import { _ } from "svelte-i18n";
+  import { setLocale, localeAbbr, locale } from "$lib/i18n/index.js";
   import heroBackground from "$lib/assets/landing/hero-background.png";
   import browserScreenshot from "$lib/assets/landing/browser-screenshot.png";
   import businessOne from "../assets/landing/business_one.png";
@@ -21,6 +23,13 @@
   let isAuthenticated = $state(false);
   let faqOpen = $state<Record<number, boolean>>({ 0: true });
   let mobileMenuOpen = $state(false);
+  let showLangDropdown = $state(false);
+
+  const langOptions = [
+    { value: "en", label: "English",     abbr: "ENG" },
+    { value: "am", label: "አማርኛ",        abbr: "AMH" },
+    { value: "om", label: "Afaan Oromoo", abbr: "ORO" },
+  ];
 
   let contactPending = $state(false);
   let contactSuccess = $state(false);
@@ -52,6 +61,14 @@
   function toggleFaq(index: number) {
     faqOpen[index] = !faqOpen[index];
   }
+
+  const faqItems = $derived([
+    { q: $_('faq1Q'), a: $_('faq1A') },
+    { q: $_('faq2Q'), a: $_('faq2A') },
+    { q: $_('faq3Q'), a: $_('faq3A') },
+    { q: $_('faq4Q'), a: $_('faq4A') },
+    { q: $_('faq5Q'), a: $_('faq5A') },
+  ]);
 
   async function smoothScrollToHash(e: Event, hash?: string) {
     e?.preventDefault?.();
@@ -90,19 +107,42 @@
         </a>
 
         <div class="hidden md:flex items-center gap-8">
-          <a href="#features" onclick={(e) => smoothScrollToHash(e, '#features')} class="text-foreground hover:text-info transition-colors text-sm">Features</a>
-          <a href="#how-it-works" onclick={(e) => smoothScrollToHash(e, '#how-it-works')} class="text-foreground hover:text-info transition-colors text-sm">How It Works</a>
-          <a href="#about" onclick={(e) => smoothScrollToHash(e, '#about')} class="text-foreground hover:text-info transition-colors text-sm">About</a>
-          <a href="#contact" onclick={(e) => smoothScrollToHash(e, '#contact')} class="text-foreground hover:text-info transition-colors text-sm">Contact</a>
+          <a href="#features" onclick={(e) => smoothScrollToHash(e, '#features')} class="text-foreground hover:text-info transition-colors text-sm">{$_('navFeatures')}</a>
+          <a href="#how-it-works" onclick={(e) => smoothScrollToHash(e, '#how-it-works')} class="text-foreground hover:text-info transition-colors text-sm">{$_('navHowItWorks')}</a>
+          <a href="#about" onclick={(e) => smoothScrollToHash(e, '#about')} class="text-foreground hover:text-info transition-colors text-sm">{$_('navAbout')}</a>
+          <a href="#contact" onclick={(e) => smoothScrollToHash(e, '#contact')} class="text-foreground hover:text-info transition-colors text-sm">{$_('navContact')}</a>
         </div>
 
         <div class="hidden md:flex items-center gap-3">
+          <div class="relative">
+            <button
+              type="button"
+              onclick={() => (showLangDropdown = !showLangDropdown)}
+              class="w-9 h-9 rounded-full border border-border flex items-center justify-center text-[10px] font-semibold cursor-pointer bg-background hover:bg-muted transition-colors text-foreground"
+              aria-label="Switch language"
+            >
+              {localeAbbr($locale)}
+            </button>
+            {#if showLangDropdown}
+              <div class="absolute right-0 top-full mt-2 w-44 rounded-xl border border-border bg-white shadow-lg z-50 overflow-hidden">
+                {#each langOptions as opt}
+                  <button
+                    type="button"
+                    class="w-full text-left px-4 py-2.5 text-sm transition-colors hover:bg-muted {$locale === opt.value ? 'text-info font-medium' : 'text-foreground'}"
+                    onclick={() => { setLocale(opt.value); showLangDropdown = false; }}
+                  >
+                    <span class="mr-2 font-mono text-xs text-muted-foreground">{opt.abbr}</span>{opt.label}
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          </div>
           {#if isAuthenticated}
-            <Button variant="outline" href="/stocks" size="sm">Open Dashboard</Button>
-            <Button onclick={handleLogout} size="sm" class="bg-info text-info-foreground hover:bg-info/90">Logout</Button>
+            <Button variant="outline" href="/stocks" size="sm">{$_('openDashboard')}</Button>
+            <Button onclick={handleLogout} size="sm" class="bg-info text-info-foreground hover:bg-info/90">{$_('logout')}</Button>
           {:else}
-            <a href="/sign-in" class="text-info hover:opacity-80 transition-opacity text-sm font-medium">Sign in</a>
-            <Button href="/register" size="sm" class="bg-info text-info-foreground hover:bg-info/90">Register</Button>
+            <a href="/sign-in" class="text-info hover:opacity-80 transition-opacity text-sm font-medium">{$_('signIn')}</a>
+            <Button href="/register" size="sm" class="bg-info text-info-foreground hover:bg-info/90">{$_('register')}</Button>
           {/if}
         </div>
 
@@ -110,7 +150,7 @@
         <button
           class="md:hidden flex items-center justify-center w-10 h-10 rounded-lg hover:bg-muted transition-colors"
           onclick={() => (mobileMenuOpen = !mobileMenuOpen)}
-          aria-label="Toggle menu"
+          aria-label={$_('toggleMenu')}
         >
           {#if mobileMenuOpen}
             <Icon iconName="icon/x" size={22} class="text-info" />
@@ -124,17 +164,28 @@
     <!-- Mobile menu dropdown -->
     {#if mobileMenuOpen}
       <div class="md:hidden border-t border-border/20 bg-white/95 backdrop-blur-sm px-6 py-4 space-y-1">
-        <a href="#features" onclick={(e) => { smoothScrollToHash(e, '#features'); mobileMenuOpen = false; }} class="block py-3 text-foreground hover:text-info transition-colors text-sm font-medium border-b border-border/10">Features</a>
-        <a href="#how-it-works" onclick={(e) => { smoothScrollToHash(e, '#how-it-works'); mobileMenuOpen = false; }} class="block py-3 text-foreground hover:text-info transition-colors text-sm font-medium border-b border-border/10">How It Works</a>
-        <a href="#about" onclick={(e) => { smoothScrollToHash(e, '#about'); mobileMenuOpen = false; }} class="block py-3 text-foreground hover:text-info transition-colors text-sm font-medium border-b border-border/10">About</a>
-        <a href="#contact" onclick={(e) => { smoothScrollToHash(e, '#contact'); mobileMenuOpen = false; }} class="block py-3 text-foreground hover:text-info transition-colors text-sm font-medium border-b border-border/10">Contact</a>
+        <a href="#features" onclick={(e) => { smoothScrollToHash(e, '#features'); mobileMenuOpen = false; }} class="block py-3 text-foreground hover:text-info transition-colors text-sm font-medium border-b border-border/10">{$_('navFeatures')}</a>
+        <a href="#how-it-works" onclick={(e) => { smoothScrollToHash(e, '#how-it-works'); mobileMenuOpen = false; }} class="block py-3 text-foreground hover:text-info transition-colors text-sm font-medium border-b border-border/10">{$_('navHowItWorks')}</a>
+        <a href="#about" onclick={(e) => { smoothScrollToHash(e, '#about'); mobileMenuOpen = false; }} class="block py-3 text-foreground hover:text-info transition-colors text-sm font-medium border-b border-border/10">{$_('navAbout')}</a>
+        <a href="#contact" onclick={(e) => { smoothScrollToHash(e, '#contact'); mobileMenuOpen = false; }} class="block py-3 text-foreground hover:text-info transition-colors text-sm font-medium border-b border-border/10">{$_('navContact')}</a>
         <div class="pt-3 flex flex-col gap-2">
+          <div class="flex gap-2">
+            {#each langOptions as opt}
+              <button
+                type="button"
+                class="flex-1 rounded-lg border py-2 text-xs font-semibold transition-colors {$locale === opt.value ? 'border-info bg-info/10 text-info' : 'border-border text-foreground hover:bg-muted'}"
+                onclick={() => { setLocale(opt.value); }}
+              >
+                {opt.abbr}
+              </button>
+            {/each}
+          </div>
           {#if isAuthenticated}
-            <Button variant="outline" href="/stocks" class="w-full">Open Dashboard</Button>
-            <Button onclick={handleLogout} class="w-full bg-info text-info-foreground hover:bg-info/90">Logout</Button>
+            <Button variant="outline" href="/stocks" class="w-full">{$_('openDashboard')}</Button>
+            <Button onclick={handleLogout} class="w-full bg-info text-info-foreground hover:bg-info/90">{$_('logout')}</Button>
           {:else}
-            <a href="/sign-in" class="block py-2 text-center text-info hover:opacity-80 transition-opacity text-sm font-medium">Sign in</a>
-            <Button href="/register" class="w-full bg-info text-info-foreground hover:bg-info/90">Register</Button>
+            <a href="/sign-in" class="block py-2 text-center text-info hover:opacity-80 transition-opacity text-sm font-medium">{$_('signIn')}</a>
+            <Button href="/register" class="w-full bg-info text-info-foreground hover:bg-info/90">{$_('register')}</Button>
           {/if}
         </div>
       </div>
@@ -149,11 +200,10 @@
     <div class="container mx-auto px-6 relative z-10 -mt-48">
       <div class="max-w-4xl mx-auto text-center space-y-8">
         <h1 class="text-5xl text-blue-900 lg:text-6xl font-bold leading-tight" style="font-family: 'Sora', sans-serif;">
-          Manage Your Stock. Know Your Business.
+          {$_('heroTitle')}
         </h1>
         <p class="text-xl lg:text-2xl text-muted-foreground max-w-3xl mx-auto" style="font-family: 'Raleway', sans-serif;">
-          A privacy-first stock management platform for investors and merchants —
-          control branches, track inventory, and view performance in one unified dashboard.
+          {$_('heroSubtitle')}
         </p>
         <div class="flex flex-col sm:flex-row gap-4 justify-center items-center pt-4">
           <Button
@@ -161,11 +211,11 @@
             size="lg"
             class="bg-info text-info-foreground hover:bg-info/90 min-w-[200px]"
           >
-            {isAuthenticated ? "Open Dashboard" : "Get Started Now"}
+            {isAuthenticated ? $_('openDashboard') : $_('getStartedNow')}
             <Icon iconName="icon/arrow-right" size={20} />
           </Button>
           <Button variant="outline" size="lg" href="#features" onclick={(e) => smoothScrollToHash(e, '#features')} class="min-w-[200px]">
-            Learn More
+            {$_('learnMore')}
           </Button>
         </div>
       </div>
@@ -186,7 +236,7 @@
   <!-- Trusted Section -->
   <section class="py-16 text-center">
     <h2 class="text-3xl lg:text-4xl font-bold text-foreground mb-10" style="font-family: 'Sora', sans-serif;">
-      Trusted by Leading Businesses
+      {$_('trustedBy')}
     </h2>
     <div
       class="mx-auto flex max-w-5xl flex-wrap items-start justify-center gap-x-12 gap-y-10 px-6 lg:gap-x-16"
@@ -219,14 +269,13 @@
       <div class="max-w-6xl mx-auto">
         <div class="text-center mb-12">
           <span class="inline-block px-4 py-1.5 rounded-full bg-info text-info-foreground hover:bg-info/90 text-sm font-medium mb-4">
-            Features
+            {$_('featuresBadge')}
           </span>
           <h2 class="text-4xl lg:text-5xl font-bold text-foreground mb-6">
-            The Clear Way to Manage Your Stock.
+            {$_('featuresTitle')}
           </h2>
           <p class="text-xl text-muted-foreground max-w-3xl mx-auto">
-            Simplify operations and gain total visibility with features designed
-            to give investors confidence and merchants efficiency.
+            {$_('featuresSubtitle')}
           </p>
         </div>
 
@@ -235,30 +284,24 @@
             <div class="w-12 h-12 rounded-lg bg-info/10 flex items-center justify-center mb-6">
               <Icon iconName="icon/package" size={24} class="text-info" />
             </div>
-            <h3 class="text-xl font-semibold text-foreground mb-3">Smart Inventory Control</h3>
-            <p class="text-muted-foreground">
-              From stock levels to item movement, you'll always know what's available, and where.
-            </p>
+            <h3 class="text-xl font-semibold text-foreground mb-3">{$_('feature1Title')}</h3>
+            <p class="text-muted-foreground">{$_('feature1Desc')}</p>
           </div>
 
           <div class="p-8 bg-card border border-border rounded-lg">
             <div class="w-12 h-12 rounded-lg bg-info/10 flex items-center justify-center mb-6">
               <Icon iconName="icon/building" size={24} class="text-info" />
             </div>
-            <h3 class="text-xl font-semibold text-foreground mb-3">Branch & Merchant Management</h3>
-            <p class="text-muted-foreground">
-              Assign merchants and products to specific branches with complete clarity and flexibility.
-            </p>
+            <h3 class="text-xl font-semibold text-foreground mb-3">{$_('feature2Title')}</h3>
+            <p class="text-muted-foreground">{$_('feature2Desc')}</p>
           </div>
 
           <div class="p-8 bg-card border border-border rounded-lg">
             <div class="w-12 h-12 rounded-lg bg-info/10 flex items-center justify-center mb-6">
               <Icon iconName="icon/bar-chart" size={24} class="text-info" />
             </div>
-            <h3 class="text-xl font-semibold text-foreground mb-3">Powerful Reporting & Insights</h3>
-            <p class="text-muted-foreground">
-              Generate clean, accurate reports that help investors understand performance at a glance.
-            </p>
+            <h3 class="text-xl font-semibold text-foreground mb-3">{$_('feature3Title')}</h3>
+            <p class="text-muted-foreground">{$_('feature3Desc')}</p>
           </div>
         </div>
       </div>
@@ -275,13 +318,13 @@
               <div class="w-5 h-5 bg-warning rounded flex items-center justify-center">
                 <Icon iconName="icon/search" size={12} class="text-warning-foreground" />
               </div>
-              <span class="text-sm text-muted-foreground">Trusted by Growing Businesses</span>
+              <span class="text-sm text-muted-foreground">{$_('howItWorksBadge')}</span>
             </div>
             <h2 class="font-bold text-foreground mb-6" style="font-size: 45px; line-height: 1.2; font-family: 'Sora', sans-serif;">
-              Three Steps to Your Most Organized Workflow
+              {$_('howItWorksTitle')}
             </h2>
             <Button href="#features" onclick={(e) => smoothScrollToHash(e, '#features')} class="bg-info text-info-foreground hover:bg-info/90">
-              Learn more
+              {$_('learnMoreBtn')}
               <Icon iconName="icon/arrow-right" size={16} />
             </Button>
           </div>
@@ -290,8 +333,8 @@
             <div style="width: 305px; height: 204px;">
               <div class="font-bold text-muted-foreground/20 select-none pointer-events-none" style="font-family: 'Sora', sans-serif; font-size: 100px; line-height: 1;">01</div>
               <div style="padding-left: 45px; margin-top: -35px;">
-                <h3 class="text-xl font-semibold text-foreground mb-2">Create Your Account</h3>
-                <p class="text-foreground mb-3">Sign up using your phone number and get started.</p>
+                <h3 class="text-xl font-semibold text-foreground mb-2">{$_('step1Title')}</h3>
+                <p class="text-foreground mb-3">{$_('step1Desc')}</p>
                 <div class="w-12 h-0.5 bg-warning"></div>
               </div>
             </div>
@@ -299,8 +342,8 @@
             <div style="width: 305px; height: 204px; margin-left: auto;">
               <div class="font-bold text-muted-foreground/20 select-none pointer-events-none" style="font-family: 'Sora', sans-serif; font-size: 100px; line-height: 1;">02</div>
               <div style="padding-left: 45px; margin-top: -35px;">
-                <h3 class="text-xl font-semibold text-foreground mb-2">Set Up Your Workspace</h3>
-                <p class="text-foreground mb-3">Add your team, locations, merchants, or deals.</p>
+                <h3 class="text-xl font-semibold text-foreground mb-2">{$_('step2Title')}</h3>
+                <p class="text-foreground mb-3">{$_('step2Desc')}</p>
                 <div class="w-12 h-0.5 bg-warning"></div>
               </div>
             </div>
@@ -308,8 +351,8 @@
             <div style="width: 305px; height: 204px;">
               <div class="font-bold text-muted-foreground/20 select-none pointer-events-none" style="font-family: 'Sora', sans-serif; font-size: 100px; line-height: 1;">03</div>
               <div style="padding-left: 45px; margin-top: -35px;">
-                <h3 class="text-xl font-semibold text-foreground mb-2">Track, Manage & Grow</h3>
-                <p class="text-foreground mb-3">View real-time data and monitor progress across branches.</p>
+                <h3 class="text-xl font-semibold text-foreground mb-2">{$_('step3Title')}</h3>
+                <p class="text-foreground mb-3">{$_('step3Desc')}</p>
                 <div class="w-12 h-0.5 bg-warning"></div>
               </div>
             </div>
@@ -325,33 +368,27 @@
       <div class="max-w-6xl mx-auto">
         <div class="text-center mb-12">
           <h2 class="font-bold text-foreground mb-4" style="font-size: 45px; font-family: 'Sora', sans-serif;">
-            What our customers have to say about our product.
+            {$_('testimonialsTitle')}
           </h2>
-          <p class="text-xl text-muted-foreground">Proven. Reliable. Loved by Users. ❤️</p>
+          <p class="text-xl text-muted-foreground">{$_('testimonialsSubtitle')}</p>
         </div>
 
         <div class="grid md:grid-cols-2 gap-8">
           <div class="relative p-8 bg-card border border-border rounded-lg">
             <Icon iconName="icon/quote" size={48} class="text-muted/30 mb-4" />
-            <p class="text-foreground mb-6 text-lg">
-              Before switching, we were juggling spreadsheets, WhatsApp chats, and scattered files.
-              Now everything — locations, merchants, and deal statuses — is in one place.
-            </p>
+            <p class="text-foreground mb-6 text-lg">{$_('testimonial1')}</p>
             <div class="flex items-center gap-3">
               <div class="w-10 h-10 rounded-full bg-info flex items-center justify-center text-info-foreground font-semibold">SM</div>
-              <span class="text-foreground font-medium">Sophia M.</span>
+              <span class="text-foreground font-medium">{$_('testimonial1Author')}</span>
             </div>
           </div>
 
           <div class="relative p-8 bg-card border border-border rounded-lg">
             <Icon iconName="icon/quote" size={48} class="text-muted/30 mb-4" />
-            <p class="text-foreground mb-6 text-lg">
-              As an investor managing multiple locations, keeping track of merchants and stock
-              movements was always chaotic. This dashboard gives me real-time insights on everything.
-            </p>
+            <p class="text-foreground mb-6 text-lg">{$_('testimonial2')}</p>
             <div class="flex items-center gap-3">
               <div class="w-10 h-10 rounded-full bg-info flex items-center justify-center text-info-foreground font-semibold">NA</div>
-              <span class="text-foreground font-medium">Nathan A.</span>
+              <span class="text-foreground font-medium">{$_('testimonial2Author')}</span>
             </div>
           </div>
         </div>
@@ -379,17 +416,16 @@
           <div class="w-8 h-8 rounded-full bg-orange-500 border border-white/60 -ml-1"></div>
           <div class="w-8 h-8 rounded-full bg-white text-foreground flex items-center justify-center text-xs font-bold border border-white/60 -ml-1">100K+</div>
         </div>
-        <p class="text-white/90 mb-8">Over 100K+ Entrepreneurs, and business choose us</p>
+        <p class="text-white/90 mb-8">{$_('ctaTagline')}</p>
 
         <h2 class="text-4xl lg:text-5xl font-bold text-white mb-6">
-          Start Managing Your Stock With Confidence Today.
+          {$_('ctaTitle')}
         </h2>
         <p class="text-xl text-white/90 mb-8 max-w-2xl mx-auto">
-          Simplify stock tracking, empower your merchants, and gain real-time
-          insights across all locations, all in one clean interface.
+          {$_('ctaDesc')}
         </p>
         <Button href={isAuthenticated ? "/stocks" : "/sign-in"} size="lg" class="bg-info text-info-foreground hover:bg-info/90 min-w-[200px]">
-          {isAuthenticated ? "Open Dashboard" : "Get Started Now"}
+          {isAuthenticated ? $_('openDashboard') : $_('getStartedNow')}
           <Icon iconName="icon/arrow-right" size={20} />
         </Button>
       </div>
@@ -402,19 +438,13 @@
       <div class="max-w-4xl mx-auto">
         <div class="text-center mb-12">
           <h2 class="font-bold text-foreground mb-4" style="font-size: 45px; font-family: 'Sora', sans-serif;">
-            Frequently Asked Questions
+            {$_('faqTitle')}
           </h2>
-          <p class="text-xl text-muted-foreground">Everything you need to know about Baman Stock</p>
+          <p class="text-xl text-muted-foreground">{$_('faqSubtitle')}</p>
         </div>
 
         <div class="space-y-4">
-          {#each [
-            { q: "How does BamanStock work?", a: "BamanStock is designed to help investors manage multiple merchants and locations from one centralized dashboard. Investors create locations (branches), assign merchants to those locations, and link specific stock items to each location." },
-            { q: "Can merchants manage stock on their own?", a: "Yes, merchants can manage assigned location stock and view reports for their branches." },
-            { q: "What is the purpose of locations in the system?", a: "Locations represent branches and let you track inventory and merchant activity separately for each site." },
-            { q: "How secure is my data on BamanStock?", a: "Data is protected with secure authentication and role-based access, so each user only sees and manages what they are allowed to access." },
-            { q: "Can I make changes later to different locations?", a: "Yes. You can update assignments, stock links, and operational details anytime as your business grows and processes evolve." },
-          ] as item, index}
+          {#each faqItems as item, index}
             <div class="border border-border rounded-lg overflow-hidden">
               <button
                 type="button"
@@ -444,7 +474,7 @@
       <div class="max-w-6xl mx-auto">
         <div class="text-center mb-12">
           <h2 class="font-bold text-foreground mb-4" style="font-size: 45px; font-family: 'Sora', sans-serif;">
-            How we can help you?
+            {$_('contactTitle')}
           </h2>
         </div>
 
@@ -459,10 +489,10 @@
               <Icon iconName="icon/check-circle" size={36} class="text-green-600" />
             </div>
             <h3 class="text-2xl font-bold text-foreground" style="font-family: 'Sora', sans-serif;">
-              We have received your message
+              {$_('contactReceived')}
             </h3>
             <p class="text-muted-foreground">
-              Thanks for reaching out! Our team will get back to you shortly.
+              {$_('contactReceivedDesc')}
             </p>
           </div>
         {:else}
@@ -515,9 +545,9 @@
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
             <div class="space-y-6">
               <div>
-                <label for="fullName" class="block text-sm font-medium text-foreground mb-2">Your full name*</label>
+                <label for="fullName" class="block text-sm font-medium text-foreground mb-2">{$_('yourFullName')}</label>
                 <div class="relative">
-                  <input type="text" id="fullName" name="full_name" required bind:value={contactForm.fullName} placeholder="What's your name?"
+                  <input type="text" id="fullName" name="full_name" required bind:value={contactForm.fullName} placeholder={$_('yourFullNamePlaceholder')}
                     class="w-full px-4 py-3 pr-12 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info focus:border-transparent bg-white text-foreground" />
                   <Icon iconName="icon/smile" size={20} class="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                 </div>
@@ -526,9 +556,9 @@
                 {/if}
               </div>
               <div>
-                <label for="phone" class="block text-sm font-medium text-foreground mb-2">Your phone number*</label>
+                <label for="phone" class="block text-sm font-medium text-foreground mb-2">{$_('yourPhone')}*</label>
                 <div class="relative">
-                  <input type="tel" id="phone" name="phone" required bind:value={contactForm.phone} placeholder="Enter your phone number"
+                  <input type="tel" id="phone" name="phone" required bind:value={contactForm.phone} placeholder={$_('yourPhonePlaceholder')}
                     class="w-full px-4 py-3 pr-12 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info focus:border-transparent bg-white text-foreground" />
                   <Icon iconName="icon/phone" size={20} class="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                 </div>
@@ -540,9 +570,9 @@
 
             <div class="space-y-6">
               <div>
-                <label for="email" class="block text-sm font-medium text-foreground mb-2">Your email address*</label>
+                <label for="email" class="block text-sm font-medium text-foreground mb-2">{$_('yourEmail')}</label>
                 <div class="relative">
-                  <input type="email" id="email" name="email" required bind:value={contactForm.email} placeholder="Enter your email address"
+                  <input type="email" id="email" name="email" required bind:value={contactForm.email} placeholder={$_('yourEmailPlaceholder')}
                     class="w-full px-4 py-3 pr-12 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info focus:border-transparent bg-white text-foreground" />
                   <Icon iconName="icon/mail" size={20} class="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                 </div>
@@ -551,9 +581,9 @@
                 {/if}
               </div>
               <div>
-                <label for="subject" class="block text-sm font-medium text-foreground mb-2">Your subject</label>
+                <label for="subject" class="block text-sm font-medium text-foreground mb-2">{$_('yourSubject')}</label>
                 <div class="relative">
-                  <input type="text" id="subject" name="subject" bind:value={contactForm.subject} placeholder="How can we help you?"
+                  <input type="text" id="subject" name="subject" bind:value={contactForm.subject} placeholder={$_('yourSubjectPlaceholder')}
                     class="w-full px-4 py-3 pr-12 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info focus:border-transparent bg-white text-foreground" />
                   <Icon iconName="icon/file-text" size={20} class="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                 </div>
@@ -562,9 +592,9 @@
           </div>
 
           <div>
-            <label for="message" class="block text-sm font-medium text-foreground mb-2">Your message*</label>
+            <label for="message" class="block text-sm font-medium text-foreground mb-2">{$_('yourMessage')}*</label>
             <div class="relative">
-              <textarea id="message" name="message" required bind:value={contactForm.message} rows={6} placeholder="Describe about your project"
+              <textarea id="message" name="message" required bind:value={contactForm.message} rows={6} placeholder={$_('yourMessagePlaceholder')}
                 class="w-full min-h-[150px] px-4 py-3 pr-12 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-info focus:border-transparent resize-none bg-white text-foreground"></textarea>
               <Icon iconName="icon/message-circle" size={20} class="absolute right-4 top-4 text-muted-foreground pointer-events-none" />
             </div>
@@ -575,11 +605,11 @@
 
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center border-t border-border pt-6">
             <p class="text-sm text-muted-foreground">
-              We are committed to protecting your privacy. We will never collect information about you without your explicit consent.
+              {$_('privacyNote')}
             </p>
             <div class="flex justify-end">
               <Button type="submit" disabled={contactPending} class="bg-info text-info-foreground hover:bg-info/90 px-8 py-3">
-                {contactPending ? "Sending…" : "Send Message"}
+                {contactPending ? $_('sending') : $_('sendMessage')}
               </Button>
             </div>
           </div>
@@ -608,9 +638,9 @@
 
           <div class="flex flex-col items-start lg:items-end space-y-6">
             <div class="flex flex-wrap gap-6 lg:gap-8">
-              <a href="/terms" class="text-foreground text-sm hover:text-info transition-colors">Terms of Use</a>
-              <a href="/privacy" class="text-foreground text-sm hover:text-info transition-colors">Privacy Policy</a>
-              <a href="/disclaimer" class="text-foreground text-sm hover:text-info transition-colors">Disclaimer</a>
+              <a href="/terms" class="text-foreground text-sm hover:text-info transition-colors">{$_('termsOfUse')}</a>
+              <a href="/privacy" class="text-foreground text-sm hover:text-info transition-colors">{$_('privacyPolicy')}</a>
+              <a href="/disclaimer" class="text-foreground text-sm hover:text-info transition-colors">{$_('disclaimer')}</a>
             </div>
             <div class="flex gap-4">
               <a href="https://facebook.com" target="_blank" rel="noopener noreferrer"
@@ -630,7 +660,7 @@
         </div>
 
         <div class="border-t border-border pt-6">
-          <p class="text-foreground text-sm text-center">Copyright © 2025. Bamanstock All rights reserved</p>
+          <p class="text-foreground text-sm text-center">{$_('copyright')}</p>
         </div>
       </div>
     </div>
