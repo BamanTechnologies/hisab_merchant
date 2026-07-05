@@ -159,16 +159,22 @@ body.merchant-app-active .modal select,
 body.merchant-app-active .native-select {
 	width: 100%;
 	box-sizing: border-box;
-	padding: 0.55rem 0.75rem;
+	min-height: 38px;
+	padding: 0.5rem 0.75rem;
 	border: 1px solid #e5e7eb;
 	border-radius: 0.5rem;
 	background: #ffffff;
 	color: #111827;
 	font: inherit;
+	line-height: 1.25;
 }
 
 body.merchant-app-active .native-select {
 	cursor: pointer;
+}
+
+body.merchant-app-active .modal .merchant-filter-select {
+	padding-right: 2.25rem;
 }
 
 body.merchant-app-active .modal input:focus,
@@ -856,7 +862,9 @@ body.merchant-app-active .modal .select-trigger {
 	color: #111827;
 	border: 1px solid #e5e7eb;
 	border-radius: 0.5rem;
-	padding: 0.55rem 0.75rem;
+	min-height: 38px;
+	padding: 0.5rem 0.75rem;
+	line-height: 1.25;
 }
 
 @media (max-width: 720px) {

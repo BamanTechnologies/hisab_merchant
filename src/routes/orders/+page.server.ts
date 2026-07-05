@@ -10,6 +10,17 @@ import {
   sumOrderLedgerOrderDebits,
 } from '$lib/customerTransactions.server';
 import { config, getGraphQLHeaders } from '$lib/config';
+import { buildProductLabel } from '$lib/inventory/productLabel';
+import {
+	applyOrderStockEffects,
+	decrementStockSlices,
+	fetchCancelRestoreSlices,
+	FETCH_PRODUCTS_FOR_ORDERS_QUERY,
+	incrementStockSlices,
+	insertOrderItemBatches,
+	planOrderLines,
+	restoreOrderStockEffects,
+} from '$lib/inventory/orders.server';
 import { buildStockLabel } from '$lib/stockLabel';
 import { subscriptionWriteActionBlockedForRequest } from '$lib/subscription/server';
 
@@ -148,11 +159,33 @@ const FETCH_ORDERS_QUERY = `
       unit
       order_items(order_by: [{ created_at: asc }, { id: asc }]) {
         stock_id
+        product_id
         quantity
         unit
         line_total
         unit_price
         factor_snapshot
+        product {
+          id
+          name
+          default_unit
+          factor
+          attributes
+          product_type {
+            id
+            name
+          }
+        }
+        order_item_batches {
+          stock_id
+          quantity
+          unit_price
+          line_total
+          stock {
+            batch_number
+            selling_price
+          }
+        }
         stock {
           unit
           type
@@ -431,12 +464,14 @@ async function verifyCustomerInCompany(
   }
 }
 
-async function fetchStocksForBranch(branchId: string) {
+async function fetchProductsForOrders(companyId: string | null, branchId: string | null) {
+  if (!companyId || !branchId) return [];
   try {
-    const data = await gql<{ stock: unknown[] }>(FETCH_STOCKS_BY_BRANCH_QUERY, {
+    const data = await gql<{ products: unknown[] }>(FETCH_PRODUCTS_FOR_ORDERS_QUERY, {
+      companyId,
       branchId,
     });
-    return data.stock ?? [];
+    return data.products ?? [];
   } catch {
     return [];
   }
@@ -473,6 +508,10 @@ async function fetchOrders(merchantId: string) {
       const fallbackId = String(rec.stock_id ?? '').slice(0, 8) + '…';
       const itemNames = items
         .map((it) => {
+          const p = it.product;
+          if (p && typeof p === 'object') {
+            return buildProductLabel(p as Parameters<typeof buildProductLabel>[0]);
+          }
           const s = it.stock;
           if (s && typeof s === 'object') return buildStockLabel(s as Record<string, unknown>);
           const sid = String(it.stock_id ?? '').trim();
@@ -704,6 +743,7 @@ type OrderInsertObject = {
 type OrderItemInsertObject = {
   order_id: string;
   stock_id: string;
+  product_id: string;
   quantity: number;
   unit_price: number;
   factor_snapshot: number;
@@ -780,7 +820,7 @@ async function fetchStocksByIdsForOrder(stockIds: string[]): Promise<StockRowFor
   }
 }
 
-type OrderLineInput = { stock_id: string; quantity: number; unit_price: number; unit?: string };
+type OrderLineInput = { product_id: string; quantity: number; unit_price: number };
 
 export const load: PageServerLoad = async ({ request, parent }) => {
   const { merchantContext } = await parent();
@@ -801,11 +841,11 @@ export const load: PageServerLoad = async ({ request, parent }) => {
     companyId = await fetchBranchCompany(merchantBranchId);
   }
 
-  const [ordersBlock, stocks, branches] = await Promise.all([
+  const [ordersBlock, products, branches] = await Promise.all([
     merchantId
       ? fetchOrders(merchantId)
       : Promise.resolve({ orders: [] as unknown[], payments: [] as Record<string, unknown>[] }),
-    merchantBranchId ? fetchStocksForBranch(merchantBranchId) : Promise.resolve([]),
+    fetchProductsForOrders(companyId, merchantBranchId),
     fetchBranchesForCompany(companyId),
   ]);
 
@@ -813,7 +853,7 @@ export const load: PageServerLoad = async ({ request, parent }) => {
     orders: ordersBlock.orders,
     payments: ordersBlock.payments,
     customers: customerCtx.customers,
-    stocks,
+    products,
     branches,
     merchantId,
     merchantBranchId,
@@ -851,23 +891,23 @@ export const actions: Actions = {
     }
 
     if (lines.length === 0) {
-      return { success: false, message: 'Add at least one stock line' };
+      return { success: false, message: 'Add at least one product line' };
     }
 
     if (lines.length > 15) {
       return { success: false, message: 'Too many lines (max 15)' };
     }
 
-    const uniqueStockIds = [...new Set(lines.map((l) => l.stock_id))];
-    if (uniqueStockIds.length !== lines.length) {
-      return { success: false, message: 'Duplicate stock in order lines' };
+    const uniqueProductIds = [...new Set(lines.map((l) => l.product_id))];
+    if (uniqueProductIds.length !== lines.length) {
+      return { success: false, message: 'Duplicate product in order lines' };
     }
 
     for (const line of lines) {
       const q = Number(line.quantity);
       const up = Number(line.unit_price);
-      if (!line.stock_id) {
-        return { success: false, message: 'Each line needs a stock item and quantity' };
+      if (!line.product_id) {
+        return { success: false, message: 'Each line needs a product and quantity' };
       }
       if (!Number.isFinite(q) || q < 1) {
         return { success: false, message: 'Quantity must be at least 1' };
@@ -881,6 +921,10 @@ export const actions: Actions = {
     }
 
     const merchantBranchId = await fetchMerchantBranchId(userId);
+    if (!merchantBranchId) {
+      return { success: false, message: 'You must be assigned to a branch to create orders' };
+    }
+
     const customerCtx = await fetchCustomersByMerchant(userId, merchantBranchId);
     let companyId = customerCtx.companyId;
     if (!companyId && merchantBranchId) {
@@ -913,58 +957,30 @@ export const actions: Actions = {
     const customer_address = String(customer.address ?? '').trim();
     const customer_phone = phoneToNumeric(customer.phone ?? customer.phone_number);
 
-    const stockRows = await fetchStocksByIdsForOrder(uniqueStockIds);
-    const stockById = new Map(stockRows.map((s) => [s.id, s]));
+    let plans;
+    try {
+      plans = await planOrderLines({
+        lines: lines.map((l) => ({
+          product_id: l.product_id,
+          quantity: Number(l.quantity),
+          unit_price: Number(l.unit_price),
+        })),
+        branchId: merchantBranchId,
+      });
+    } catch (err) {
+      return {
+        success: false,
+        message: err instanceof Error ? err.message : 'Could not plan order lines',
+      };
+    }
 
-    const orderItems: Array<{
-      stock_id: string;
-      quantity: number;
-      unit_price: number;
-      factor_snapshot: number;
-      line_total: number;
-      unit: string | null;
-    }> = [];
     let totalOrderQuantity = 0;
     let totalOrderAmount = 0;
     let headerUnit: string | null = null;
-
-    for (const line of lines) {
-      const stockRow = stockById.get(line.stock_id);
-      if (!stockRow) {
-        return { success: false, message: 'One or more stock items were not found' };
-      }
-      if (merchantBranchId != null && stockRow.branch !== merchantBranchId) {
-        return { success: false, message: 'Stock is not in your branch' };
-      }
-      const available = Number(stockRow.quantity);
-      const q = Number(line.quantity);
-      const unitPrice = Number(line.unit_price);
-      if (!Number.isFinite(available) || q > available) {
-        return {
-          success: false,
-          message: `Quantity exceeds available stock for one or more lines`,
-        };
-      }
-
-      const f = resolveOrderFactor(stockRow);
-      const total_amount = q * unitPrice * f;
-      const rawUnit = stockRow.unit;
-      const orderUnit =
-        rawUnit != null && String(rawUnit).trim() !== ''
-          ? String(rawUnit).trim()
-          : null;
-
-      totalOrderQuantity += q;
-      totalOrderAmount += total_amount;
-      headerUnit = headerUnit ?? orderUnit;
-      orderItems.push({
-        stock_id: line.stock_id,
-        quantity: q,
-        unit_price: unitPrice,
-        factor_snapshot: f,
-        line_total: total_amount,
-        unit: orderUnit,
-      });
+    for (const plan of plans) {
+      totalOrderQuantity += plan.quantity;
+      totalOrderAmount += plan.line_total;
+      headerUnit = headerUnit ?? plan.unit;
     }
 
     const orderObject: OrderInsertObject = {
@@ -974,24 +990,20 @@ export const actions: Actions = {
       customer_address,
       customer_phone,
       order_quantity: totalOrderQuantity,
-      // Legacy NOT NULL column on `orders`; line-level truth is in `order_items`.
-      stock_id: orderItems[0].stock_id,
+      stock_id: plans[0].legacy_stock_id,
       total_amount: totalOrderAmount,
       outstanding_amount: totalOrderAmount,
       status: 'unpaid',
       unit: headerUnit,
     };
 
-    const decremented: Array<{ stock_id: string; quantity: number }> = [];
+    const allSlices = plans.flatMap((p) =>
+      p.slices.map((s) => ({ stock_id: s.stock_id, quantity: s.quantity })),
+    );
+
     try {
-      for (const line of orderItems) {
-        await incrementStockQuantity(line.stock_id, -line.quantity);
-        decremented.push({ stock_id: line.stock_id, quantity: line.quantity });
-      }
+      await decrementStockSlices(allSlices);
     } catch (err) {
-      for (const line of decremented) {
-        await incrementStockQuantity(line.stock_id, line.quantity).catch(() => {});
-      }
       return {
         success: false,
         message: `Failed to reserve stock quantities: ${err instanceof Error ? err.message : 'Unknown error'}`,
@@ -1001,17 +1013,56 @@ export const actions: Actions = {
     let inserted: { id: string };
     try {
       inserted = await insertOrder(orderObject);
-      await insertOrderItemsBulk(
-        orderItems.map((line) => ({
-          ...line,
+      const insertedItems = await insertOrderItemsBulk(
+        plans.map((plan) => ({
           order_id: inserted.id,
+          stock_id: plan.legacy_stock_id,
+          product_id: plan.product_id,
+          quantity: plan.quantity,
+          unit_price: plan.unit_price,
+          factor_snapshot: plan.factor,
+          line_total: plan.line_total,
+          unit: plan.unit,
           created_by: userId,
         })),
       );
-    } catch (err) {
-      for (const line of decremented) {
-        await incrementStockQuantity(line.stock_id, line.quantity).catch(() => {});
+
+      const batchObjects: Array<{
+        order_item_id: string;
+        stock_id: string;
+        quantity: number;
+        unit_price: number;
+        factor_snapshot: number;
+        line_total: number;
+        created_by: string;
+      }> = [];
+
+      for (let i = 0; i < plans.length; i++) {
+        const itemId = insertedItems[i]?.id;
+        if (!itemId) throw new Error('Order item insert missing id');
+        for (const slice of plans[i].slices) {
+          batchObjects.push({
+            order_item_id: itemId,
+            stock_id: slice.stock_id,
+            quantity: slice.quantity,
+            unit_price: slice.unit_price_snapshot,
+            factor_snapshot: slice.factor_snapshot,
+            line_total: slice.line_total,
+            created_by: userId,
+          });
+        }
       }
+
+      await insertOrderItemBatches(batchObjects);
+      await applyOrderStockEffects({
+        plans,
+        companyId,
+        branchId: merchantBranchId,
+        orderId: inserted.id,
+        userId,
+      });
+    } catch (err) {
+      await incrementStockSlices(allSlices).catch(() => {});
       return {
         success: false,
         message: `Failed to create order: ${err instanceof Error ? err.message : 'Unknown error'}`,
@@ -1169,10 +1220,16 @@ export const actions: Actions = {
       }
     }
 
+    let restoreSlices: Awaited<ReturnType<typeof fetchCancelRestoreSlices>> = {
+      slices: [],
+      unit: null,
+    };
     try {
-      for (const line of orderRow.lines) {
-        await incrementStockQuantity(line.stock_id, line.quantity);
+      restoreSlices = await fetchCancelRestoreSlices(orderId);
+      if (restoreSlices.slices.length === 0) {
+        return { success: false, message: 'Order has no stock lines to restore' };
       }
+      await incrementStockSlices(restoreSlices.slices);
     } catch (error) {
       return {
         success: false,
@@ -1183,15 +1240,26 @@ export const actions: Actions = {
     try {
       const result = await cancelOrderInDatabase(orderId);
       if (!result?.id) {
-        for (const line of orderRow.lines) {
-          await incrementStockQuantity(line.stock_id, -line.quantity).catch(() => {});
-        }
+        await decrementStockSlices(restoreSlices.slices).catch(() => {});
         return { success: false, message: 'Order could not be cancelled' };
       }
 
       if (orderRow.stock_branch) {
         const companyId = await fetchBranchCompany(orderRow.stock_branch);
         if (companyId) {
+          try {
+            await restoreOrderStockEffects({
+              slices: restoreSlices.slices,
+              companyId,
+              branchId: orderRow.stock_branch,
+              orderId,
+              userId: merchantId,
+              unit: restoreSlices.unit,
+            });
+          } catch {
+            // Stock qty already restored; movement audit failure is non-fatal for cancel.
+          }
+
           try {
             const orderDebitSum = await sumOrderLedgerOrderDebits(orderId);
             /**
@@ -1300,8 +1368,8 @@ export const actions: Actions = {
       };
     } catch (error) {
       try {
-        for (const line of orderRow.lines) {
-          await incrementStockQuantity(line.stock_id, -line.quantity);
+        if (restoreSlices.slices.length > 0) {
+          await decrementStockSlices(restoreSlices.slices);
         }
       } catch {
         // Rollback failed; stock may be overstated until corrected manually.

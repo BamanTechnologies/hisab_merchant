@@ -35,19 +35,23 @@ export function formatCoffeeCapacityWithUnit(
   return `${cap}${u}`;
 }
 
-export function buildStockLabel(stock: StockLabelInput): string {
+/**
+ * Build the identity portion of a stock/product label (no type suffix).
+ * Standards per type: see `src/lib/inventory/PRODUCT_NAMING.md`.
+ */
+export function buildStockDescriptor(stock: StockLabelInput): string {
   const attrs = stock.attributes ?? {};
-  const typeSuffix = formatProductTypeLabel(stock.type ?? stock.product_type ?? null);
   const typeKey = String(stock.type ?? stock.product_type ?? "")
     .trim()
     .toLowerCase();
+
   if (typeKey === "coffee_tools") {
     const name = attrs.name != null ? String(attrs.name).trim() : "";
     const capU = formatCoffeeCapacityWithUnit(attrs);
-    const descriptor =
-      [name, capU].filter(Boolean).join(" ").trim() || "Stock";
-    return `${descriptor} (${typeSuffix})`.trim();
+    const descriptor = [name, capU].filter(Boolean).join(" ").trim();
+    return descriptor || "Stock";
   }
+
   const thickness =
     attrs.thickness != null
       ? String(attrs.thickness).trim()
@@ -67,5 +71,11 @@ export function buildStockLabel(stock: StockLabelInput): string {
   const glassBits = [thickness ? `${thickness}mm` : "", color, figure].filter(Boolean);
   const descriptor = glassBits.length > 0 ? glassBits.join(" ") : model || country || "Stock";
   const suffix = country && !descriptor.includes(country) ? ` ${country}` : "";
-  return `${descriptor}${suffix} (${typeSuffix})`.trim();
+  return `${descriptor}${suffix}`.trim();
+}
+
+export function buildStockLabel(stock: StockLabelInput): string {
+  const typeSuffix = formatProductTypeLabel(stock.type ?? stock.product_type ?? null);
+  const descriptor = buildStockDescriptor(stock);
+  return `${descriptor} (${typeSuffix})`.trim();
 }

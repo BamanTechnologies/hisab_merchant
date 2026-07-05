@@ -7,7 +7,7 @@
 		onclick: () => void;
 		ascActive?: boolean;
 		descActive?: boolean;
-		align?: "left" | "center";
+		align?: "left" | "center" | "right";
 	};
 
 	let {
@@ -19,17 +19,25 @@
 	}: Props = $props();
 
 	const sortActive = $derived(ascActive || descActive);
+
+	const alignClass = $derived(
+		align === "center"
+			? "w-full justify-center"
+			: align === "right"
+				? "w-full justify-end"
+				: "",
+	);
 </script>
 
 <button
 	type="button"
-	class="{mc.sortBtn} {align === 'center' ? 'w-full justify-center' : ''}"
+	class="{mc.sortBtn} {alignClass}"
 	onclick={(e) => {
 		e.stopPropagation();
 		onclick();
 	}}
 >
-	<span>{label}</span>
+	<span class="whitespace-nowrap">{label}</span>
 	<ArrowDownUp
 		size={14}
 		strokeWidth={2}

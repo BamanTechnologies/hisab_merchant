@@ -138,7 +138,7 @@
             {/if}
           </div>
           {#if isAuthenticated}
-            <Button variant="outline" href="/stocks" size="sm">{$_('openDashboard')}</Button>
+            <Button variant="outline" href="/products" size="sm">{$_('openDashboard')}</Button>
             <Button onclick={handleLogout} size="sm" class="bg-info text-info-foreground hover:bg-info/90">{$_('logout')}</Button>
           {:else}
             <a href="/sign-in" class="text-info hover:opacity-80 transition-opacity text-sm font-medium">{$_('signIn')}</a>
@@ -181,7 +181,7 @@
             {/each}
           </div>
           {#if isAuthenticated}
-            <Button variant="outline" href="/stocks" class="w-full">{$_('openDashboard')}</Button>
+            <Button variant="outline" href="/products" class="w-full">{$_('openDashboard')}</Button>
             <Button onclick={handleLogout} class="w-full bg-info text-info-foreground hover:bg-info/90">{$_('logout')}</Button>
           {:else}
             <a href="/sign-in" class="block py-2 text-center text-info hover:opacity-80 transition-opacity text-sm font-medium">{$_('signIn')}</a>
@@ -207,7 +207,7 @@
         </p>
         <div class="flex flex-col sm:flex-row gap-4 justify-center items-center pt-4">
           <Button
-            href={isAuthenticated ? "/stocks" : "/sign-in"}
+            href={isAuthenticated ? "/products" : "/sign-in"}
             size="lg"
             class="bg-info text-info-foreground hover:bg-info/90 min-w-[200px]"
           >
@@ -424,7 +424,7 @@
         <p class="text-xl text-white/90 mb-8 max-w-2xl mx-auto">
           {$_('ctaDesc')}
         </p>
-        <Button href={isAuthenticated ? "/stocks" : "/sign-in"} size="lg" class="bg-info text-info-foreground hover:bg-info/90 min-w-[200px]">
+        <Button href={isAuthenticated ? "/products" : "/sign-in"} size="lg" class="bg-info text-info-foreground hover:bg-info/90 min-w-[200px]">
           {isAuthenticated ? $_('openDashboard') : $_('getStartedNow')}
           <Icon iconName="icon/arrow-right" size={20} />
         </Button>
