@@ -2,7 +2,7 @@
   import { deserialize, enhance } from "$app/forms";
   import { invalidateAll } from "$app/navigation";
   import { onMount, tick } from "svelte";
-  import { Pencil, Plus, RefreshCw, Trash2, X } from "@lucide/svelte";
+  import { Eye, Pencil, Plus, RefreshCw, Trash2, X } from "@lucide/svelte";
   import InvestorMultiSelect from "$lib/components/InvestorMultiSelect.svelte";
   import TablePagination from "$lib/components/TablePagination.svelte";
   import TableSearchInput from "$lib/components/TableSearchInput.svelte";
@@ -229,10 +229,16 @@
     );
   });
 
+  function displayLabel(text: string): string {
+    return text
+      .replaceAll("_", " ")
+      .replace(/\b\w/g, (m) => m.toUpperCase());
+  }
+
   function branchLabel(branchId: string | null | undefined): string {
     if (!branchId) return "—";
     const b = branches.find((x) => x.id === branchId);
-    if (b?.name) return b.name;
+    if (b?.name) return displayLabel(b.name);
     return branchId.slice(0, 8) + "…";
   }
 
@@ -884,6 +890,14 @@
             <td class={mc.td}>{formatDate(batch.created_at)}</td>
             <td class={mc.tdCenter}>
               <div class="flex items-center justify-center gap-1.5">
+                <a
+                  href="/stocks/{batch.id}"
+                  class={mc.actionBtn}
+                  aria-label="View stock"
+                  title="View stock details"
+                >
+                  <Eye size={14} strokeWidth={2} />
+                </a>
                 <button
                   type="button"
                   class={mc.actionBtn}

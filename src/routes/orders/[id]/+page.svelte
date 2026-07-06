@@ -11,6 +11,16 @@
   import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
   import type { PageData } from "./$types";
 
+  type ProductType = {
+    id: string;
+    name: string;
+  };
+
+  type StockProduct={
+    id:string
+    product_type?: ProductType | null;
+  }
+
   type OrderStock = {
     id: string;
     product_type?: string | null;
@@ -29,6 +39,7 @@
     thickness?: number | string | null;
     factor?: number | null;
     unit?: string | null;
+    product?: StockProduct | null;
   };
 
   type OrderItem = {
@@ -82,14 +93,14 @@
     coffee_tools: ["name", "capacity", "capacity_unit"],
   };
   function stockTypeKey(s: OrderStock): string {
-    return String(s.type ?? s.product_type ?? "").trim().toLowerCase();
+    return String(s.type ?? s.product_type ?? s.product?.product_type?.name ?? "").trim().toLowerCase();
   }
   function stockAttr(s: OrderStock, key: string): string {
     if (stockTypeKey(s) === "coffee_tools" && key === "capacity") {
       const merged = formatCoffeeCapacityWithUnit(s.attributes);
       if (merged) return merged;
     }
-    const attrs = s.attributes ?? {};
+    const attrs = {...(s.product?.attributes ?? {}), ...(s.attributes ?? {})};
     const fallback: Record<string, unknown> = {
       model_number: s.model_number,
       country: s.country,
@@ -109,7 +120,7 @@
   }
 
   function orderStockAttrEntries(s: OrderStock): [string, string][] {
-    const attrs = s.attributes ?? {};
+    const attrs = {...(s.product?.attributes ?? {}), ...(s.attributes ?? {})};
     if (stockTypeKey(s) !== "coffee_tools") {
       return Object.entries(attrs).map(([k, v]) => [
         k,

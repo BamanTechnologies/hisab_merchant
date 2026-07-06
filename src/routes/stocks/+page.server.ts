@@ -1,23 +1,21 @@
-import type { PageServerLoad, Actions } from './$types';
-import { getUserIdFromRequest } from '$lib/auth';
-import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
+import type { PageServerLoad, Actions } from "./$types";
+import { getUserIdFromRequest } from "$lib/auth";
+import { fetchMerchantBranchId } from "$lib/merchantBranch.server";
 import {
-	fetchBranchCompanyId,
-	fetchInvestorsForCompany,
-} from '$lib/companyInvestors.server';
-import { config, getGraphQLHeaders } from '$lib/config';
-import { insertStockMovements } from '$lib/inventory/movements.server';
+  fetchBranchCompanyId,
+  fetchInvestorsForCompany,
+} from "$lib/companyInvestors.server";
+import { config, getGraphQLHeaders } from "$lib/config";
+import { insertStockMovements } from "$lib/inventory/movements.server";
 import {
-	parseOptionalString,
-	parseReceiveLines,
-	parseUnit,
-} from '$lib/inventory/parseForm';
-import { subscriptionWriteActionBlockedForRequest } from '$lib/subscription/server';
-import { resolveUniqueBatchNumber } from '$lib/inventory/batchNumber';
-import {
-	resolveReceiveExpiryDate,
-} from '$lib/inventory/companyStockFields';
-import { normalizeProductTypeName } from '$lib/inventory/parseForm';
+  parseOptionalString,
+  parseReceiveLines,
+  parseUnit,
+} from "$lib/inventory/parseForm";
+import { subscriptionWriteActionBlockedForRequest } from "$lib/subscription/server";
+import { resolveUniqueBatchNumber } from "$lib/inventory/batchNumber";
+import { resolveReceiveExpiryDate } from "$lib/inventory/companyStockFields";
+import { normalizeProductTypeName } from "$lib/inventory/parseForm";
 
 const FETCH_COMPANY_NAME_QUERY = `
   query CompanyNameForStocks($id: uuid!) {
@@ -180,151 +178,161 @@ const DELETE_STOCK_MUTATION = `
 `;
 
 async function fetchBranchesForCompany(companyId: string | null) {
-	if (!companyId) return [];
-	try {
-		const data = await gql<{ branches: { id: string; name?: string | null }[] }>(
-			FETCH_BRANCHES_FOR_COMPANY_QUERY,
-			{ companyId },
-		);
-		return data.branches ?? [];
-	} catch {
-		return [];
-	}
+  if (!companyId) return [];
+  try {
+    const data = await gql<{
+      branches: { id: string; name?: string | null }[];
+    }>(FETCH_BRANCHES_FOR_COMPANY_QUERY, { companyId });
+    return data.branches ?? [];
+  } catch {
+    return [];
+  }
 }
 
-async function fetchCompanyBatchNumbers(companyId: string | null): Promise<string[]> {
-	if (!companyId) return [];
-	try {
-		const branchData = await gql<{ branches: { id: string }[] }>(
-			FETCH_BRANCH_IDS_FOR_COMPANY_QUERY,
-			{ companyId },
-		);
-		const branchIds = (branchData.branches ?? []).map((b) => b.id).filter(Boolean);
-		if (branchIds.length === 0) return [];
+async function fetchCompanyBatchNumbers(
+  companyId: string | null,
+): Promise<string[]> {
+  if (!companyId) return [];
+  try {
+    const branchData = await gql<{ branches: { id: string }[] }>(
+      FETCH_BRANCH_IDS_FOR_COMPANY_QUERY,
+      { companyId },
+    );
+    const branchIds = (branchData.branches ?? [])
+      .map((b) => b.id)
+      .filter(Boolean);
+    if (branchIds.length === 0) return [];
 
-		const data = await gql<{ stock: { batch_number?: string | null }[] }>(
-			FETCH_COMPANY_BATCH_NUMBERS_QUERY,
-			{ branchIds },
-		);
-		const numbers = new Set<string>();
-		for (const row of data.stock ?? []) {
-			const n = row.batch_number?.trim();
-			if (n) numbers.add(n);
-		}
-		return [...numbers];
-	} catch {
-		return [];
-	}
+    const data = await gql<{ stock: { batch_number?: string | null }[] }>(
+      FETCH_COMPANY_BATCH_NUMBERS_QUERY,
+      { branchIds },
+    );
+    const numbers = new Set<string>();
+    for (const row of data.stock ?? []) {
+      const n = row.batch_number?.trim();
+      if (n) numbers.add(n);
+    }
+    return [...numbers];
+  } catch {
+    return [];
+  }
 }
 
-async function fetchCompanyName(companyId: string | null): Promise<string | null> {
-	if (!companyId) return null;
-	try {
-		const data = await gql<{ companies_by_pk: { name?: string | null } | null }>(
-			FETCH_COMPANY_NAME_QUERY,
-			{ id: companyId },
-		);
-		const name = data.companies_by_pk?.name?.trim();
-		return name || null;
-	} catch {
-		return null;
-	}
+async function fetchCompanyName(
+  companyId: string | null,
+): Promise<string | null> {
+  if (!companyId) return null;
+  try {
+    const data = await gql<{
+      companies_by_pk: { name?: string | null } | null;
+    }>(FETCH_COMPANY_NAME_QUERY, { id: companyId });
+    const name = data.companies_by_pk?.name?.trim();
+    return name || null;
+  } catch {
+    return null;
+  }
 }
 
-async function gql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
-	const response = await fetch(config.graphql.endpoint, {
-		method: 'POST',
-		headers: getGraphQLHeaders(),
-		body: JSON.stringify({ query, variables }),
-	});
+async function gql<T>(
+  query: string,
+  variables?: Record<string, unknown>,
+): Promise<T> {
+  const response = await fetch(config.graphql.endpoint, {
+    method: "POST",
+    headers: getGraphQLHeaders(),
+    body: JSON.stringify({ query, variables }),
+  });
 
-	if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-	const result = await response.json();
-	if (result.errors) throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
-	return result.data as T;
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  const result = await response.json();
+  if (result.errors)
+    throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
+  return result.data as T;
 }
 
 async function fetchStocks(
-	merchantBranchId: string | null,
-	companyId: string | null,
+  merchantBranchId: string | null,
+  companyId: string | null,
 ): Promise<{
-	rows: Record<string, unknown>[];
-	error: string | null;
-	scope: 'branch' | 'company' | 'all';
+  rows: Record<string, unknown>[];
+  error: string | null;
+  scope: "branch" | "company" | "all";
 }> {
-	const runQuery = async (
-		query: string,
-		variables?: Record<string, unknown>,
-	): Promise<Record<string, unknown>[]> => {
-		const response = await fetch(config.graphql.endpoint, {
-			method: 'POST',
-			headers: getGraphQLHeaders(),
-			body: JSON.stringify({ query, variables }),
-		});
+  const runQuery = async (
+    query: string,
+    variables?: Record<string, unknown>,
+  ): Promise<Record<string, unknown>[]> => {
+    const response = await fetch(config.graphql.endpoint, {
+      method: "POST",
+      headers: getGraphQLHeaders(),
+      body: JSON.stringify({ query, variables }),
+    });
 
-		if (!response.ok) {
-			throw new Error(`HTTP error! status: ${response.status}`);
-		}
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
 
-		const result = await response.json();
+    const result = await response.json();
 
-		if (result.errors) {
-			throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
-		}
+    if (result.errors) {
+      throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
+    }
 
-		return result.data?.stock ?? [];
-	};
+    return result.data?.stock ?? [];
+  };
 
-	try {
-		if (merchantBranchId) {
-			const branchRows = await runQuery(FETCH_STOCKS_BY_BRANCH_QUERY, {
-				branchId: merchantBranchId,
-			});
-			if (branchRows.length > 0) {
-				return { rows: branchRows, error: null, scope: 'branch' };
-			}
-			if (companyId) {
-				try {
-					const branchData = await gql<{ branches: { id: string }[] }>(
-						FETCH_BRANCH_IDS_FOR_COMPANY_QUERY,
-						{ companyId },
-					);
-					const branchIds = (branchData.branches ?? []).map((b) => b.id).filter(Boolean);
-					if (branchIds.length > 0) {
-						const companyRows = await runQuery(FETCH_STOCKS_BY_BRANCHES_QUERY, {
-							branchIds,
-						});
-						if (companyRows.length > 0) {
-							return { rows: companyRows, error: null, scope: 'company' };
-						}
-					}
-				} catch (fallbackErr) {
-					console.error('[stocks load] company fallback failed', fallbackErr);
-				}
-			}
-			return { rows: branchRows, error: null, scope: 'branch' };
-		}
+  try {
+    if (merchantBranchId) {
+      const branchRows = await runQuery(FETCH_STOCKS_BY_BRANCH_QUERY, {
+        branchId: merchantBranchId,
+      });
+      if (branchRows.length > 0) {
+        return { rows: branchRows, error: null, scope: "branch" };
+      }
+      if (companyId) {
+        try {
+          const branchData = await gql<{ branches: { id: string }[] }>(
+            FETCH_BRANCH_IDS_FOR_COMPANY_QUERY,
+            { companyId },
+          );
+          const branchIds = (branchData.branches ?? [])
+            .map((b) => b.id)
+            .filter(Boolean);
+          if (branchIds.length > 0) {
+            const companyRows = await runQuery(FETCH_STOCKS_BY_BRANCHES_QUERY, {
+              branchIds,
+            });
+            if (companyRows.length > 0) {
+              return { rows: companyRows, error: null, scope: "company" };
+            }
+          }
+        } catch (fallbackErr) {
+          console.error("[stocks load] company fallback failed", fallbackErr);
+        }
+      }
+      return { rows: branchRows, error: null, scope: "branch" };
+    }
 
-		const allRows = await runQuery(FETCH_STOCKS_ALL_QUERY);
-		return { rows: allRows, error: null, scope: 'all' };
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Failed to load stock';
-		console.error('[stocks load]', message);
-		return { rows: [], error: message, scope: 'all' };
-	}
+    const allRows = await runQuery(FETCH_STOCKS_ALL_QUERY);
+    return { rows: allRows, error: null, scope: "all" };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to load stock";
+    console.error("[stocks load]", message);
+    return { rows: [], error: message, scope: "all" };
+  }
 }
 
 async function fetchProductsForReceive(companyId: string | null) {
-	if (!companyId) return [];
-	try {
-		const data = await gql<{ products: Record<string, unknown>[] }>(
-			FETCH_PRODUCTS_FOR_RECEIVE_QUERY,
-			{ companyId },
-		);
-		return data.products ?? [];
-	} catch {
-		return [];
-	}
+  if (!companyId) return [];
+  try {
+    const data = await gql<{ products: Record<string, unknown>[] }>(
+      FETCH_PRODUCTS_FOR_RECEIVE_QUERY,
+      { companyId },
+    );
+    return data.products ?? [];
+  } catch {
+    return [];
+  }
 }
 
 const FETCH_PRODUCT_TYPES_QUERY = `
@@ -340,344 +348,376 @@ const FETCH_PRODUCT_TYPES_QUERY = `
 `;
 
 async function fetchProductTypes(merchantId: string | null) {
-	if (!merchantId) return [];
-	try {
-		const data = await gql<{ product_types: Record<string, unknown>[] }>(
-			FETCH_PRODUCT_TYPES_QUERY,
-			{ merchantId },
-		);
-		return data.product_types ?? [];
-	} catch {
-		return [];
-	}
+  if (!merchantId) return [];
+  try {
+    const data = await gql<{ product_types: Record<string, unknown>[] }>(
+      FETCH_PRODUCT_TYPES_QUERY,
+      { merchantId },
+    );
+    return data.product_types ?? [];
+  } catch {
+    return [];
+  }
 }
 
-function assertBranchAllowed(branchId: string | null, merchantBranchId: string | null) {
-	if (merchantBranchId && branchId && branchId !== merchantBranchId) {
-		throw new Error('You can only manage stock for your assigned branch');
-	}
+function assertBranchAllowed(
+  branchId: string | null,
+  merchantBranchId: string | null,
+) {
+  if (merchantBranchId && branchId && branchId !== merchantBranchId) {
+    throw new Error("You can only manage stock for your assigned branch");
+  }
 }
 
 export const load: PageServerLoad = async ({ request, parent }) => {
-	const { merchantContext } = await parent();
-	const merchantId =
-		merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
-	const merchantBranchId =
-		merchantContext?.merchantBranchId ??
-		(merchantId ? await fetchMerchantBranchId(merchantId) : null);
+  const { merchantContext } = await parent();
+  const merchantId =
+    merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
+  const merchantBranchId =
+    merchantContext?.merchantBranchId ??
+    (merchantId ? await fetchMerchantBranchId(merchantId) : null);
 
-	let companyId = merchantContext?.companyId ?? null;
-	if (!companyId && merchantBranchId) {
-		companyId = await fetchBranchCompanyId(merchantBranchId);
-	}
+  let companyId = merchantContext?.companyId ?? null;
+  if (!companyId && merchantBranchId) {
+    companyId = await fetchBranchCompanyId(merchantBranchId);
+  }
 
-	const [stocksResult, products, investors, productTypes, branches, companyName, existingBatchNumbers] =
-		await Promise.all([
-		fetchStocks(merchantBranchId, companyId),
-		fetchProductsForReceive(companyId),
-		fetchInvestorsForCompany(companyId),
-		fetchProductTypes(merchantId),
-		fetchBranchesForCompany(companyId),
-		fetchCompanyName(companyId),
-		fetchCompanyBatchNumbers(companyId),
-	]);
+  const [
+    stocksResult,
+    products,
+    investors,
+    productTypes,
+    branches,
+    companyName,
+    existingBatchNumbers,
+  ] = await Promise.all([
+    fetchStocks(merchantBranchId, companyId),
+    fetchProductsForReceive(companyId),
+    fetchInvestorsForCompany(companyId),
+    fetchProductTypes(merchantId),
+    fetchBranchesForCompany(companyId),
+    fetchCompanyName(companyId),
+    fetchCompanyBatchNumbers(companyId),
+  ]);
 
-	const typeById = new Map<string, { id: string; name?: string | null }>();
-	for (const raw of productTypes as Array<Record<string, unknown>>) {
-		const id = typeof raw.id === 'string' ? raw.id : '';
-		if (!id) continue;
-		typeById.set(id, { id, name: raw.name == null ? null : String(raw.name) });
-	}
+  const typeById = new Map<string, { id: string; name?: string | null }>();
+  for (const raw of productTypes as Array<Record<string, unknown>>) {
+    const id = typeof raw.id === "string" ? raw.id : "";
+    if (!id) continue;
+    typeById.set(id, { id, name: raw.name == null ? null : String(raw.name) });
+  }
 
-	const stocks = (stocksResult.rows ?? []).map((s: Record<string, unknown>) => {
-		const productTypeRef = s.product_type;
-		if (productTypeRef && typeof productTypeRef === 'object') return s;
-		const ptId = typeof productTypeRef === 'string' ? productTypeRef : '';
-		const pt = ptId ? typeById.get(ptId) : undefined;
-		return {
-			...s,
-			product_type: pt ? { id: pt.id, name: pt.name ?? null } : null,
-		};
-	});
+  const stocks = (stocksResult.rows ?? []).map((s: Record<string, unknown>) => {
+    const productTypeRef = s.product_type;
+    if (productTypeRef && typeof productTypeRef === "object") return s;
+    const ptId = typeof productTypeRef === "string" ? productTypeRef : "";
+    const pt = ptId ? typeById.get(ptId) : undefined;
+    return {
+      ...s,
+      product_type: pt ? { id: pt.id, name: pt.name ?? null } : null,
+    };
+  });
 
-	return {
-		stocks,
-		stocksLoadError: stocksResult.error,
-		stocksLoadScope: stocksResult.scope,
-		products,
-		investors,
-		productTypes,
-		branches,
-		merchantId,
-		merchantBranchId,
-		companyId,
-		companyName,
-		existingBatchNumbers,
-	};
+  return {
+    stocks,
+    stocksLoadError: stocksResult.error,
+    stocksLoadScope: stocksResult.scope,
+    products,
+    investors,
+    productTypes,
+    branches,
+    merchantId,
+    merchantBranchId,
+    companyId,
+    companyName,
+    existingBatchNumbers,
+  };
 };
 
 export const actions: Actions = {
-	receiveStock: async ({ request }) => {
-		const blocked = await subscriptionWriteActionBlockedForRequest(request);
-		if (blocked) return blocked;
+  receiveStock: async ({ request }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
 
-		const userId = getUserIdFromRequest(request);
-		if (!userId) return { success: false, message: 'Authentication required' };
+    const userId = getUserIdFromRequest(request);
+    if (!userId) return { success: false, message: "Authentication required" };
 
-		const merchantBranchId = await fetchMerchantBranchId(userId);
-		let companyId = merchantBranchId ? await fetchBranchCompanyId(merchantBranchId) : null;
-		if (!companyId) return { success: false, message: 'Company could not be resolved' };
+    const merchantBranchId = await fetchMerchantBranchId(userId);
+    let companyId = merchantBranchId
+      ? await fetchBranchCompanyId(merchantBranchId)
+      : null;
+    if (!companyId)
+      return { success: false, message: "Company could not be resolved" };
 
-		const formData = await request.formData();
-		const branchRaw = parseOptionalString(formData.get('branch'));
-		const batchNumberRaw = parseOptionalString(formData.get('batch_number'));
-		const companyLabel = (await fetchCompanyName(companyId)) ?? 'Company';
-		const takenBatchNumbers = await fetchCompanyBatchNumbers(companyId);
-		const batchNumber = resolveUniqueBatchNumber(
-			companyLabel,
-			takenBatchNumbers,
-			batchNumberRaw,
-		);
+    const formData = await request.formData();
+    const branchRaw = parseOptionalString(formData.get("branch"));
+    const batchNumberRaw = parseOptionalString(formData.get("batch_number"));
+    const companyLabel = (await fetchCompanyName(companyId)) ?? "Company";
+    const takenBatchNumbers = await fetchCompanyBatchNumbers(companyId);
+    const batchNumber = resolveUniqueBatchNumber(
+      companyLabel,
+      takenBatchNumbers,
+      batchNumberRaw,
+    );
 
-		if (!branchRaw) return { success: false, message: 'Branch is required' };
+    if (!branchRaw) return { success: false, message: "Branch is required" };
 
-		try {
-			assertBranchAllowed(branchRaw, merchantBranchId);
-		} catch (e) {
-			return {
-				success: false,
-				message: e instanceof Error ? e.message : 'Branch not allowed',
-			};
-		}
+    try {
+      assertBranchAllowed(branchRaw, merchantBranchId);
+    } catch (e) {
+      return {
+        success: false,
+        message: e instanceof Error ? e.message : "Branch not allowed",
+      };
+    }
 
-		let lines;
-		try {
-			lines = parseReceiveLines(String(formData.get('lines') ?? ''));
-		} catch (e) {
-			return {
-				success: false,
-				message: e instanceof Error ? e.message : 'Invalid receive lines',
-			};
-		}
+    let lines;
+    try {
+      lines = parseReceiveLines(String(formData.get("lines") ?? ""));
+    } catch (e) {
+      return {
+        success: false,
+        message: e instanceof Error ? e.message : "Invalid receive lines",
+      };
+    }
 
-		const receiveTypeKeys: string[] = [];
-		for (const line of lines) {
-			if (line.mode === 'new') {
-				receiveTypeKeys.push(line.product_type_name);
-				continue;
-			}
-			const prod = await gql<{
-				products_by_pk: { product_type: { name?: string | null } | null } | null;
-			}>(
-				`query ($id: uuid!) { products_by_pk(id: $id) { product_type { name } } }`,
-				{ id: line.product_id },
-			);
-			const typeName = prod.products_by_pk?.product_type?.name;
-			if (typeName) receiveTypeKeys.push(normalizeProductTypeName(String(typeName)));
-		}
+    const receiveTypeKeys: string[] = [];
+    for (const line of lines) {
+      if (line.mode === "new") {
+        receiveTypeKeys.push(line.product_type_name);
+        continue;
+      }
+      const prod = await gql<{
+        products_by_pk: {
+          product_type: { name?: string | null } | null;
+        } | null;
+      }>(
+        `query ($id: uuid!) { products_by_pk(id: $id) { product_type { name } } }`,
+        { id: line.product_id },
+      );
+      const typeName = prod.products_by_pk?.product_type?.name;
+      if (typeName)
+        receiveTypeKeys.push(normalizeProductTypeName(String(typeName)));
+    }
 
-		const expiryRaw = resolveReceiveExpiryDate(
-			receiveTypeKeys,
-			parseOptionalString(formData.get('expiry_date')),
-		);
+    const expiryRaw = resolveReceiveExpiryDate(
+      receiveTypeKeys,
+      parseOptionalString(formData.get("expiry_date")),
+    );
 
-		const createdStockIds: string[] = [];
+    const createdStockIds: string[] = [];
 
-		try {
-			for (const line of lines) {
-				let productId: string;
-				let unit: string;
-				let investors: string[] = [];
+    try {
+      for (const line of lines) {
+        let productId: string;
+        let unit: string;
+        let investors: string[] = [];
 
-				if (line.mode === 'new') {
-					const ins = await gql<{
-						insert_products_one: { id: string; default_unit: string; investors: string[] } | null;
-					}>(INSERT_PRODUCT_MUTATION, {
-						object: {
-							company_id: companyId,
-							product_type_id: line.product_type_id,
-							name: line.name,
-							default_unit: line.default_unit,
-							attributes: line.attributes,
-							investors: line.investors,
-							factor: line.factor,
-							barcode: line.barcode,
-							qr_code: line.qr_code,
-							is_active: true,
-							created_by: userId,
-						},
-					});
-					if (!ins.insert_products_one?.id) throw new Error('Product was not created');
-					productId = ins.insert_products_one.id;
-					unit = line.default_unit;
-					investors = line.investors;
-				} else {
-					productId = line.product_id;
-					const prod = await gql<{
-						products_by_pk: {
-							id: string;
-							default_unit: string;
-							investors: string[];
-						} | null;
-					}>(
-						`query ($id: uuid!) { products_by_pk(id: $id) { id default_unit investors } }`,
-						{ id: productId },
-					);
-					if (!prod.products_by_pk?.id) throw new Error('Product not found');
-					unit = prod.products_by_pk.default_unit;
-					investors = prod.products_by_pk.investors ?? [];
-				}
+        if (line.mode === "new") {
+          const ins = await gql<{
+            insert_products_one: {
+              id: string;
+              default_unit: string;
+              investors: string[];
+            } | null;
+          }>(INSERT_PRODUCT_MUTATION, {
+            object: {
+              company_id: companyId,
+              product_type_id: line.product_type_id,
+              name: line.name,
+              default_unit: line.default_unit,
+              attributes: line.attributes,
+              investors: line.investors,
+              factor: line.factor,
+              barcode: line.barcode,
+              qr_code: line.qr_code,
+              is_active: true,
+              created_by: userId,
+            },
+          });
+          if (!ins.insert_products_one?.id)
+            throw new Error("Product was not created");
+          productId = ins.insert_products_one.id;
+          unit = line.default_unit;
+          investors = line.investors;
+        } else {
+          productId = line.product_id;
+          const prod = await gql<{
+            products_by_pk: {
+              id: string;
+              default_unit: string;
+              investors: string[];
+            } | null;
+          }>(
+            `query ($id: uuid!) { products_by_pk(id: $id) { id default_unit investors } }`,
+            { id: productId },
+          );
+          if (!prod.products_by_pk?.id) throw new Error("Product not found");
+          unit = prod.products_by_pk.default_unit;
+          investors = prod.products_by_pk.investors ?? [];
+        }
 
-				const stockIns = await gql<{
-					insert_stock_one: { id: string; product_id: string | null } | null;
-				}>(INSERT_STOCK_MUTATION, {
-					object: {
-						branch: branchRaw,
-						product_id: productId,
-						batch_number: batchNumber,
-						expiry_date: expiryRaw,
-						purchased_price: line.purchased_price,
-						selling_price: line.selling_price,
-						quantity: line.quantity,
-						unit,
-						investors,
-						created_by: userId,
-						updated_by: userId,
-					},
-				});
+        const stockIns = await gql<{
+          insert_stock_one: { id: string; product_id: string | null } | null;
+        }>(INSERT_STOCK_MUTATION, {
+          object: {
+            branch: branchRaw,
+            product_id: productId,
+            batch_number: batchNumber,
+            expiry_date: expiryRaw,
+            purchased_price: line.purchased_price,
+            selling_price: line.selling_price,
+            quantity: line.quantity,
+            unit,
+            investors,
+            created_by: userId,
+            updated_by: userId,
+          },
+        });
 
-				const stockRow = stockIns.insert_stock_one;
-				if (!stockRow?.id) throw new Error('Batch was not created');
-				createdStockIds.push(stockRow.id);
+        const stockRow = stockIns.insert_stock_one;
+        if (!stockRow?.id) throw new Error("Batch was not created");
+        createdStockIds.push(stockRow.id);
 
-				await insertStockMovements([
-					{
-						company_id: companyId,
-						branch_id: branchRaw,
-						stock_id: stockRow.id,
-						product_id: productId,
-						movement_type: 'PURCHASE',
-						quantity_delta: line.quantity,
-						unit,
-						unit_cost: line.purchased_price,
-						unit_price: line.selling_price,
-						reference_type: 'receive',
-						note: batchNumber ? `Receive batch ${batchNumber}` : 'Stock received',
-						created_by: userId,
-					},
-				]);
-			}
+        await insertStockMovements([
+          {
+            company_id: companyId,
+            branch_id: branchRaw,
+            stock_id: stockRow.id,
+            product_id: productId,
+            movement_type: "PURCHASE",
+            quantity_delta: line.quantity,
+            unit,
+            unit_cost: line.purchased_price,
+            unit_price: line.selling_price,
+            reference_type: "receive",
+            note: batchNumber
+              ? `Receive batch ${batchNumber}`
+              : "Stock received",
+            created_by: userId,
+          },
+        ]);
+      }
 
-			return {
-				success: true,
-				message:
-					lines.length === 1
-						? 'Batch received successfully'
-						: `${lines.length} batches received successfully`,
-			};
-		} catch (err) {
-			for (const id of createdStockIds) {
-				await gql(DELETE_STOCK_MUTATION, { id }).catch(() => {});
-			}
-			return {
-				success: false,
-				message: `Failed to receive stock: ${err instanceof Error ? err.message : 'Unknown error'}`,
-			};
-		}
-	},
+      return {
+        success: true,
+        message:
+          lines.length === 1
+            ? "Batch received successfully"
+            : `${lines.length} batches received successfully`,
+      };
+    } catch (err) {
+      for (const id of createdStockIds) {
+        await gql(DELETE_STOCK_MUTATION, { id }).catch(() => {});
+      }
+      return {
+        success: false,
+        message: `Failed to receive stock: ${err instanceof Error ? err.message : "Unknown error"}`,
+      };
+    }
+  },
 
-	updateBatch: async ({ request }) => {
-		const blocked = await subscriptionWriteActionBlockedForRequest(request);
-		if (blocked) return blocked;
+  updateBatch: async ({ request }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
 
-		const userId = getUserIdFromRequest(request);
-		if (!userId) return { success: false, message: 'Authentication required' };
+    const userId = getUserIdFromRequest(request);
+    if (!userId) return { success: false, message: "Authentication required" };
 
-		const merchantBranchId = await fetchMerchantBranchId(userId);
-		const formData = await request.formData();
-		const id = String(formData.get('id') ?? '').trim();
-		const quantity = Number(formData.get('quantity'));
-		const batch_number = parseOptionalString(formData.get('batch_number'));
+    const merchantBranchId = await fetchMerchantBranchId(userId);
+    const formData = await request.formData();
+    const id = String(formData.get("id") ?? "").trim();
+    const quantity = Number(formData.get("quantity"));
+    const batch_number = parseOptionalString(formData.get("batch_number"));
 
-		if (!id) return { success: false, message: 'Batch ID is required' };
-		if (!Number.isFinite(quantity) || quantity < 0) {
-			return { success: false, message: 'Valid quantity is required' };
-		}
+    if (!id) return { success: false, message: "Batch ID is required" };
+    if (!Number.isFinite(quantity) || quantity < 0) {
+      return { success: false, message: "Valid quantity is required" };
+    }
 
-		const existing = await gql<{
-			stock_by_pk: {
-				branch?: string | null;
-				purchased_price?: number | null;
-				selling_price?: number | null;
-				expiry_date?: string | null;
-			} | null;
-		}>(
-			`query ($id: uuid!) { stock_by_pk(id: $id) { branch purchased_price selling_price expiry_date } }`,
-			{ id },
-		);
-		if (!existing.stock_by_pk) return { success: false, message: 'Batch not found' };
+    const existing = await gql<{
+      stock_by_pk: {
+        branch?: string | null;
+        purchased_price?: number | null;
+        selling_price?: number | null;
+        expiry_date?: string | null;
+      } | null;
+    }>(
+      `query ($id: uuid!) { stock_by_pk(id: $id) { branch purchased_price selling_price expiry_date } }`,
+      { id },
+    );
+    if (!existing.stock_by_pk)
+      return { success: false, message: "Batch not found" };
 
-		try {
-			assertBranchAllowed(existing.stock_by_pk.branch ?? null, merchantBranchId);
-		} catch (e) {
-			return {
-				success: false,
-				message: e instanceof Error ? e.message : 'Branch not allowed',
-			};
-		}
+    try {
+      assertBranchAllowed(
+        existing.stock_by_pk.branch ?? null,
+        merchantBranchId,
+      );
+    } catch (e) {
+      return {
+        success: false,
+        message: e instanceof Error ? e.message : "Branch not allowed",
+      };
+    }
 
-		try {
-			const row = await gql<{ update_stock_by_pk: { id: string } | null }>(
-				UPDATE_STOCK_BATCH_MUTATION,
-				{
-					id,
-					set: {
-						purchased_price: existing.stock_by_pk.purchased_price,
-						selling_price: existing.stock_by_pk.selling_price,
-						expiry_date: existing.stock_by_pk.expiry_date ?? null,
-						quantity,
-						batch_number,
-						updated_by: userId,
-						updated_at: new Date().toISOString(),
-					},
-				},
-			);
-			if (!row.update_stock_by_pk?.id) {
-				return { success: false, message: 'Batch was not updated' };
-			}
-			return { success: true, message: 'Batch updated successfully' };
-		} catch (err) {
-			return {
-				success: false,
-				message: `Failed to update batch: ${err instanceof Error ? err.message : 'Unknown error'}`,
-			};
-		}
-	},
+    try {
+      const row = await gql<{ update_stock_by_pk: { id: string } | null }>(
+        UPDATE_STOCK_BATCH_MUTATION,
+        {
+          id,
+          set: {
+            purchased_price: existing.stock_by_pk.purchased_price,
+            selling_price: existing.stock_by_pk.selling_price,
+            expiry_date: existing.stock_by_pk.expiry_date ?? null,
+            quantity,
+            batch_number,
+            updated_by: userId,
+            updated_at: new Date().toISOString(),
+          },
+        },
+      );
+      if (!row.update_stock_by_pk?.id) {
+        return { success: false, message: "Batch was not updated" };
+      }
+      return { success: true, message: "Batch updated successfully" };
+    } catch (err) {
+      return {
+        success: false,
+        message: `Failed to update batch: ${err instanceof Error ? err.message : "Unknown error"}`,
+      };
+    }
+  },
 
-	deleteStock: async ({ request }) => {
-		const blocked = await subscriptionWriteActionBlockedForRequest(request);
-		if (blocked) return blocked;
+  deleteStock: async ({ request }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
 
-		const stockId = String((await request.formData()).get('stockId') ?? '').trim();
-		if (!stockId) return { success: false, message: 'Batch ID is required' };
+    const stockId = String(
+      (await request.formData()).get("stockId") ?? "",
+    ).trim();
+    if (!stockId) return { success: false, message: "Batch ID is required" };
 
-		const row = await gql<{ stock_by_pk: { quantity: unknown } | null }>(
-			`query ($id: uuid!) { stock_by_pk(id: $id) { quantity } }`,
-			{ id: stockId },
-		);
-		const qty = Number(row.stock_by_pk?.quantity ?? 0);
-		if (!Number.isFinite(qty) || qty !== 0) {
-			return { success: false, message: 'Only zero-quantity batches can be deleted' };
-		}
+    const row = await gql<{ stock_by_pk: { quantity: unknown } | null }>(
+      `query ($id: uuid!) { stock_by_pk(id: $id) { quantity } }`,
+      { id: stockId },
+    );
+    const qty = Number(row.stock_by_pk?.quantity ?? 0);
+    if (!Number.isFinite(qty) || qty !== 0) {
+      return {
+        success: false,
+        message: "Only zero-quantity batches can be deleted",
+      };
+    }
 
-		try {
-			await gql(DELETE_STOCK_MUTATION, { id: stockId });
-			return { success: true, message: 'Batch deleted successfully' };
-		} catch (err) {
-			return {
-				success: false,
-				message: `Failed to delete batch: ${err instanceof Error ? err.message : 'Unknown error'}`,
-			};
-		}
-	},
+    try {
+      await gql(DELETE_STOCK_MUTATION, { id: stockId });
+      return { success: true, message: "Batch deleted successfully" };
+    } catch (err) {
+      return {
+        success: false,
+        message: `Failed to delete batch: ${err instanceof Error ? err.message : "Unknown error"}`,
+      };
+    }
+  },
 };
