@@ -337,10 +337,12 @@
 
   function productOptionLabel(p: ProductRow): string {
     const label = buildProductLabel(p as ProductRecord);
-    const avail = productAvailableQty(p);
+    const positive = positiveBatchesForProduct(p);
+    const avail = positive.reduce((sum, b) => sum + parseQty(b.quantity), 0);
     const unit = p.default_unit?.trim();
     const qtyHint = unit ? `${avail} ${unit} avail` : `${avail} avail`;
-    return `${label} (${qtyHint})`;
+    const batchHint = positive.length === 1 ? "1 batch" : `${positive.length} batches`;
+    return `${label} (${qtyHint}, from ${batchHint})`;
   }
 
   function productSearchHaystack(p: ProductRow): string {
@@ -440,16 +442,17 @@
   });
 
   function selectProductForRow(rowId: string, productId: string) {
-    orderLines = orderLines.map((r) =>
-      r.rowId === rowId
-        ? {
-            ...r,
-            productId,
-            unitPrice:
-              productId === "" ? 0 : defaultUnitPriceForProduct(productId),
-          }
-        : r,
-    );
+    orderLines = orderLines.map((r) => {
+      if (r.rowId !== rowId) return r;
+      const qty = Number(r.quantity);
+      const price =
+        productId === ""
+          ? 0
+          : Number.isFinite(qty) && qty >= 1
+            ? fifoWeightedUnitPrice(productId, qty)
+            : defaultUnitPriceForProduct(productId);
+      return { ...r, productId, unitPrice: price };
+    });
     productPickerRowId = null;
     productSearchQuery = "";
   }
@@ -473,6 +476,19 @@
     if (!product) return 0;
     const batches = toFifoBatches(positiveBatchesForProduct(product));
     return defaultUnitPriceFromBatches(batches);
+  }
+
+  function fifoWeightedUnitPrice(productId: string, qty: number): number {
+    if (!productId || qty < 1) return 0;
+    const product = getProduct(productId);
+    if (!product) return 0;
+    const batches = toFifoBatches(positiveBatchesForProduct(product));
+    const { slices, remaining } = allocateFifo(batches, qty);
+    if (slices.length === 0 || remaining > 0) return 0;
+    const totalQty = slices.reduce((s, sl) => s + sl.quantity, 0);
+    if (totalQty <= 0) return 0;
+    const totalValue = slices.reduce((s, sl) => s + sl.quantity * sl.selling_price, 0);
+    return totalValue / totalQty;
   }
 
   function lineProductUnitLabel(row: LineRow): string {
@@ -1170,6 +1186,10 @@
                   bind:value={row.quantity}
                   disabled={createSubmitting}
                   oninput={() => {
+                    const q = Number(row.quantity);
+                    if (Number.isFinite(q) && q >= 1) {
+                      row.unitPrice = fifoWeightedUnitPrice(row.productId, q);
+                    }
                     orderLines = [...orderLines];
                   }}
                 />

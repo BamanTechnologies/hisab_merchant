@@ -42,13 +42,31 @@
     product?: StockProduct | null;
   };
 
+  type OrderItemBatch = {
+    stock_id: string;
+    quantity: number;
+    unit_price?: number | null;
+    line_total?: number | null;
+    factor_snapshot?: number | null;
+    stock?: {
+      id: string;
+      selling_price: number;
+      quantity: number;
+      batch_number?: string | null;
+      created_at: string;
+      unit?: string | null;
+    } | null;
+  };
+
   type OrderItem = {
+    id: string;
     stock_id: string;
     quantity: number;
     unit?: string | null;
     unit_price?: number | string | null;
     line_total?: number | string | null;
     factor_snapshot?: number | string | null;
+    order_item_batches?: OrderItemBatch[] | null;
     stock?: OrderStock | null;
   };
 
@@ -171,11 +189,13 @@
     return order?.stock
       ? [
           {
+            id: "",
             stock_id: order.stock_id,
             quantity: order.order_quantity,
             unit: order.unit ?? order.stock.unit ?? null,
             unit_price: undefined,
             line_total: order.total_amount,
+            order_item_batches: [],
             stock: order.stock,
           } satisfies OrderItem,
         ]
@@ -215,6 +235,17 @@
     paginateSlice(orderItems, lineItemsPage, lineItemsPageSize),
   );
 
+  let expandedRows = $state(new Set<number>());
+  function toggleRow(index: number) {
+    const next = new Set(expandedRows);
+    if (next.has(index)) {
+      next.delete(index);
+    } else {
+      next.add(index);
+    }
+    expandedRows = next;
+  }
+
   // Define bank list once as the single source of truth
   const banks = [
     "Commercial Bank of Ethiopia (CBE)",
@@ -245,6 +276,20 @@
   let paymentFormPending = $state(false);
   let payAmount = $state<number | undefined>(undefined);
   let payMethod = $state<(typeof banks)[number] | "">("");
+  function parseMoney(value: string | number): number {
+    if (typeof value === "number") return value;
+
+    return Number(value.replace(/[$,]/g, ""));
+}
+const remainingAfterPay = $derived.by(() => {
+    if (!order) return 0;
+
+    const outstanding = parseMoney(order.outstanding_amount);
+    const payment = payAmount ?? 0;
+
+    return Math.max(0, outstanding - payment);
+});
+
   let errorMessage = $state("");
   let successMessage = $state("");
 
@@ -347,8 +392,21 @@
             <tbody>
               {#each pagedOrderItems as item, i (`${item.stock_id}-${(lineItemsPage - 1) * lineItemsPageSize + i}`)}
                 {@const s = item.stock}
-                <tr class="hover:bg-gray-50 dark:hover:bg-white/5">
-                  <td class={mc.colNum}>{(lineItemsPage - 1) * lineItemsPageSize + i + 1}</td>
+                {@const globalIdx = (lineItemsPage - 1) * lineItemsPageSize + i}
+                {@const hasMultipleBatches = (item.order_item_batches?.length ?? 0) > 1}
+                <tr
+                  class="hover:bg-gray-50 dark:hover:bg-white/5"
+                  onclick={hasMultipleBatches ? () => toggleRow(globalIdx) : undefined}
+                  role={hasMultipleBatches ? "button" : undefined}
+                  tabindex={hasMultipleBatches ? 0 : undefined}
+                  onkeydown={hasMultipleBatches ? (e) => (e.key === "Enter" || e.key === " ") && toggleRow(globalIdx) : undefined}
+                >
+                  <td class={mc.colNum}>
+                    {#if hasMultipleBatches}
+                      <span class="expand-toggle">{expandedRows.has(globalIdx) ? "▼" : "▶"}</span>
+                    {/if}
+                    {globalIdx + 1}
+                  </td>
                   <td class={mc.td}>{s ? reportStockTypeLabel(stockTypeKey(s)) : "—"}</td>
                   {#if dynamicFields.length > 0}
                     {#each dynamicFields as f}
@@ -379,13 +437,35 @@
                   </td>
                   <td class="{mc.td} text-gray-500 dark:text-gray-400">{s ? stockInvestorLabels(s) : "—"}</td>
                   <td class={mc.td}>
-                    {#if s}
+                    {#if !hasMultipleBatches && s}
                       <a class={mc.link} href="/stocks/{s.id}">View stock</a>
-                    {:else}
-                      —
                     {/if}
                   </td>
                 </tr>
+                {#if hasMultipleBatches && expandedRows.has(globalIdx)}
+                  {#each item.order_item_batches! as batch, bIdx}
+                    {@const batchPrice = parseMoney(batch.stock?.selling_price ?? 0)}
+                    {@const batchTotal = batch.quantity * batchPrice}
+                    <tr class="batch-sub-row">
+                      <td class={mc.colNum}></td>
+                      <td class={mc.td} colspan={dynamicFields.length > 0 ? dynamicFields.length + 1 : 2}>
+                        <span class="batch-label">
+                          Batch #{bIdx + 1}
+                          {#if batch.stock?.batch_number}
+                            <span class="batch-number">({batch.stock.batch_number})</span>
+                          {/if}
+                        </span>
+                      </td>
+                      <td class={mc.td}>{batch.quantity}</td>
+                      <td class={mc.td}>{formatMoney(batchPrice)}</td>
+                      <td class="{mc.td} font-semibold">{formatMoney(batchTotal)}</td>
+                      <td class={mc.td}></td>
+                      <td class={mc.td}>
+                        <a class={mc.link} href="/stocks/{batch.stock_id}">View stock</a>
+                      </td>
+                    </tr>
+                  {/each}
+                {/if}
               {/each}
             </tbody>
           </table>
@@ -490,6 +570,16 @@
             </select>
           </label>
         </div>
+        {#if order}
+          <div class="pay-summary">
+            <p>Total: <strong>{formatMoney(order.total_amount)}</strong></p>
+            <p>Outstanding: <strong>{formatMoney(order.outstanding_amount)}</strong></p>
+            <p>
+              Remaining after payment:
+              <strong>{formatMoney(remainingAfterPay)}</strong>
+            </p>
+          </div>
+        {/if}
         </fieldset>
         <footer>
           <button
@@ -688,6 +778,38 @@
   .label_text {
     color: #e5e7eb;
     font-weight: 700;
+  }
+  .pay-summary {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
+    font-size: 0.875rem;
+    line-height: 1.75;
+  }
+
+  .expand-toggle {
+    display: inline-block;
+    width: 1.2em;
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.7rem;
+  }
+  .batch-sub-row td {
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.25rem !important;
+    font-size: 0.8rem;
+  }
+  .batch-sub-row {
+    background: color-mix(in oklab, var(--surface-2), transparent 60%);
+  }
+  .batch-label {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  .batch-number {
+    opacity: 0.6;
+    font-size: 0.75rem;
   }
 
   @media (max-width: 720px) {

@@ -30,12 +30,28 @@ const FETCH_ORDER_FOR_MERCHANT_QUERY = `
       outstanding_amount
       unit
       order_items(order_by: [{ created_at: asc }, { id: asc }]) {
+        id
         stock_id
         quantity
         unit
         unit_price
         line_total
         factor_snapshot
+        order_item_batches(order_by: [{ created_at: asc }, { id: asc }]) {
+          stock_id
+          quantity
+          unit_price
+          line_total
+          factor_snapshot
+          stock {
+            id
+            selling_price
+            quantity
+            batch_number
+            created_at
+            unit
+          }
+        }
         stock {
           id
           branch
