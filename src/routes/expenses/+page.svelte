@@ -1,7 +1,9 @@
 <script lang="ts">
   import { deserialize } from "$app/forms";
-  import { onMount } from "svelte";
+  import { goto } from "$app/navigation";
+  import { page } from "$app/stores";
   import TablePagination from "$lib/components/TablePagination.svelte";
+  import TableSearchInput from "$lib/components/TableSearchInput.svelte";
   import TableSortHeader from "$lib/components/TableSortHeader.svelte";
   import SummaryMetricCard from "$lib/components/SummaryMetricCard.svelte";
   import { mc } from "$lib/merchant-styles.js";
@@ -11,7 +13,6 @@
     SUBSCRIPTION_BLOCKED_MESSAGE,
     subscriptionBlocksMutations,
   } from "$lib/subscription/client";
-  import { paginateSlice } from "$lib/pagination.js";
   import { afterToast, showToast, TOAST_MS } from "$lib/toast";
   import type { PageData } from "./$types";
 
@@ -20,23 +21,35 @@
   let { data }: { data: PageData } = $props();
 
   let expenses = $state(data.expenses as ExpenseRow[]);
-  let typeFilter = $state<"all" | "operation" | "major">("all");
-  let dateRangePreset = $state<"all" | "today" | "last7" | "last30" | "custom">(
-    "all",
+  let totalCount = $state((data as { totalCount: number }).totalCount ?? 0);
+  let totalOperationalExpenseAmount = $state(
+    (data as { totalOperationalExpenseAmount: number }).totalOperationalExpenseAmount ?? 0,
   );
-  let customDateFrom = $state("");
-  let customDateTo = $state("");
-  /** "all" or a category value from `categories` (operation + major rows store `category`). */
-  let categoryFilter = $state<string>("all");
-  let sortColumn = $state<string>("none");
-  let sortDirection = $state<"asc" | "desc">("asc");
-  let tablePage = $state(1);
-  let tablePageSize = $state(10);
-  let listStateReady = $state(false);
+  let totalMajorExpenseAmount = $state(
+    (data as { totalMajorExpenseAmount: number }).totalMajorExpenseAmount ?? 0,
+  );
 
-  $effect(() => {
-    expenses = data.expenses as ExpenseRow[];
-  });
+  let searchQuery = $state($page.url.searchParams.get("search") ?? "");
+  let typeFilter = $state(
+    ($page.url.searchParams.get("type") as "all" | "operation" | "major") ?? "all",
+  );
+  let dateRangePreset = $state(
+    ($page.url.searchParams.get("dateRange") as "all" | "today" | "last7" | "last30" | "custom") ?? "all",
+  );
+  let customDateFrom = $state($page.url.searchParams.get("from") ?? "");
+  let customDateTo = $state($page.url.searchParams.get("to") ?? "");
+  let categoryFilter = $state($page.url.searchParams.get("category") ?? "all");
+  let sortColumn = $state<string>(
+    $page.url.searchParams.get("sort") ?? "none",
+  );
+  let sortDirection = $state<"asc" | "desc">(
+    ($page.url.searchParams.get("dir") as "asc" | "desc") ?? "desc",
+  );
+  let tablePage = $state(Number($page.url.searchParams.get("page")) || 1);
+  let tablePageSize = $state(Number($page.url.searchParams.get("pageSize")) || 10);
+  let searchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  let filterDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  let suppressPageNav = $state(false);
 
   let showModal = $state(false);
   let submitting = $state(false);
@@ -56,160 +69,100 @@
   const paymentTypes = data.paymentTypes ?? [];
   const expenseTypes = data.expenseTypes ?? ["operation", "major"];
   const categories = data.categories ?? [];
-  const EXPENSE_LIST_STATE_KEY = "expenses:list-state:v2";
-
-  function expenseCreatedInRange(ex: ExpenseRow): boolean {
-    const now = new Date();
-    const startOfDay = (d: Date) =>
-      new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-    const endOfDay = (d: Date) =>
-      new Date(
-        d.getFullYear(),
-        d.getMonth(),
-        d.getDate(),
-        23,
-        59,
-        59,
-        999,
-      ).getTime();
-    const todayStart = startOfDay(now);
-    const fromInputTs = customDateFrom
-      ? startOfDay(new Date(customDateFrom))
-      : null;
-    const toInputTs = customDateTo ? endOfDay(new Date(customDateTo)) : null;
-    const created = new Date(ex.created_at ?? "").getTime();
-    if (!Number.isFinite(created)) return false;
-    if (dateRangePreset === "all") return true;
-    if (dateRangePreset === "today") {
-      return created >= todayStart && created <= endOfDay(now);
-    }
-    if (dateRangePreset === "last7") {
-      const from = todayStart - 6 * 24 * 60 * 60 * 1000;
-      return created >= from && created <= endOfDay(now);
-    }
-    if (dateRangePreset === "last30") {
-      const from = todayStart - 29 * 24 * 60 * 60 * 1000;
-      return created >= from && created <= endOfDay(now);
-    }
-    if (dateRangePreset === "custom") {
-      if (fromInputTs != null && created < fromInputTs) return false;
-      if (toInputTs != null && created > toInputTs) return false;
-      return true;
-    }
-    return true;
-  }
-
-  function expenseMatchesCategory(ex: ExpenseRow): boolean {
-    if (categoryFilter === "all") return true;
-    return (
-      String(ex.category ?? "")
-        .trim()
-        .toLowerCase() === categoryFilter.trim().toLowerCase()
-    );
-  }
-
-  const filteredExpenses = $derived.by(() => {
-    const byType =
-      typeFilter === "all"
-        ? expenses
-        : expenses.filter(
-            (ex) => (ex.expense_type ?? "operation") === typeFilter,
-          );
-    return byType.filter(
-      (ex) => expenseCreatedInRange(ex) && expenseMatchesCategory(ex),
-    );
-  });
-
-  const displayOperationalTotal = $derived.by(() => {
-    let s = 0;
-    for (const e of filteredExpenses) {
-      if (String(e.expense_type ?? "operation").toLowerCase() === "operation")
-        s += Number(e.amount ?? 0);
-    }
-    return s;
-  });
-  const displayMajorTotal = $derived.by(() => {
-    let s = 0;
-    for (const e of filteredExpenses) {
-      if (String(e.expense_type ?? "").toLowerCase() === "major")
-        s += Number(e.amount ?? 0);
-    }
-    return s;
-  });
   const isMajorOnly = $derived(typeFilter === "major");
   const isOperationOnly = $derived(typeFilter === "operation");
-  const sortedExpenses = $derived.by(() => {
-    const base = filteredExpenses;
-    if (sortColumn === "none") return base;
-    return [...base].sort((a, b) => {
-      const av =
-        sortColumn === "date"
-          ? new Date(a.created_at ?? 0).getTime()
-          : sortColumn === "amount"
-            ? Number(a.amount ?? 0)
-            : sortColumn === "type"
-              ? String(a.expense_type ?? "").toLowerCase()
-              : sortColumn === "paid_by"
-                ? String(a.from_person ?? "").toLowerCase()
-                : sortColumn === "sent_to"
-                  ? String(a.sent_to ?? "").toLowerCase()
-                  : sortColumn === "from_account"
-                    ? String(a.from_account ?? "").toLowerCase()
-                    : sortColumn === "to_account"
-                      ? String(a.to_account ?? "").toLowerCase()
-                      : sortColumn === "category"
-                        ? String(a.category ?? "").toLowerCase()
-                        : String(a.payment_type ?? "").toLowerCase();
-      const bv =
-        sortColumn === "date"
-          ? new Date(b.created_at ?? 0).getTime()
-          : sortColumn === "amount"
-            ? Number(b.amount ?? 0)
-            : sortColumn === "type"
-              ? String(b.expense_type ?? "").toLowerCase()
-              : sortColumn === "paid_by"
-                ? String(b.from_person ?? "").toLowerCase()
-                : sortColumn === "sent_to"
-                  ? String(b.sent_to ?? "").toLowerCase()
-                  : sortColumn === "from_account"
-                    ? String(b.from_account ?? "").toLowerCase()
-                    : sortColumn === "to_account"
-                      ? String(b.to_account ?? "").toLowerCase()
-                      : sortColumn === "category"
-                        ? String(b.category ?? "").toLowerCase()
-                        : String(b.payment_type ?? "").toLowerCase();
-      const cmp =
-        typeof av === "number" && typeof bv === "number"
-          ? av - bv
-          : String(av).localeCompare(String(bv));
-      return sortDirection === "asc" ? cmp : -cmp;
-    });
+  const hasFilters = $derived(
+    searchQuery || typeFilter !== "all" || dateRangePreset !== "all" || categoryFilter !== "all",
+  );
+
+  $effect(() => {
+    expenses = data.expenses as ExpenseRow[];
+    totalCount = (data as { totalCount: number }).totalCount ?? 0;
+    totalOperationalExpenseAmount = (data as { totalOperationalExpenseAmount: number }).totalOperationalExpenseAmount ?? 0;
+    totalMajorExpenseAmount = (data as { totalMajorExpenseAmount: number }).totalMajorExpenseAmount ?? 0;
   });
 
-  const expensesPaginationResetKey = $derived(
-    `${typeFilter}|${dateRangePreset}|${customDateFrom}|${customDateTo}|${categoryFilter}|${sortColumn}|${sortDirection}`,
-  );
-  const pagedExpenses = $derived(
-    paginateSlice(sortedExpenses, tablePage, tablePageSize),
-  );
+  function allParamsFromState(): URLSearchParams {
+    const p = new URLSearchParams();
+    if (searchQuery) p.set("search", searchQuery);
+    if (typeFilter && typeFilter !== "all") p.set("type", typeFilter);
+    if (dateRangePreset && dateRangePreset !== "all")
+      p.set("dateRange", dateRangePreset);
+    if (dateRangePreset === "custom") {
+      if (customDateFrom) p.set("from", customDateFrom);
+      if (customDateTo) p.set("to", customDateTo);
+    }
+    if (categoryFilter && categoryFilter !== "all")
+      p.set("category", categoryFilter);
+    if (sortColumn && sortColumn !== "none") {
+      p.set("sort", sortColumn);
+      p.set("dir", sortDirection);
+    }
+    p.set("page", String(tablePage));
+    p.set("pageSize", String(tablePageSize));
+    return p;
+  }
+
+  function navigateWithState() {
+    const params = allParamsFromState();
+    const qs = params.toString();
+    goto(qs ? `/expenses?${qs}` : "/expenses", { replaceState: true, keepFocus: true });
+  }
+
+  $effect(() => {
+    const q = searchQuery;
+    const currentSearch = $page.url.searchParams.get("search") ?? "";
+    if (q === currentSearch) return;
+
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => {
+      suppressPageNav = true;
+      tablePage = 1;
+      navigateWithState();
+      suppressPageNav = false;
+    }, 300);
+  });
+
+  $effect(() => {
+    void typeFilter;
+    void dateRangePreset;
+    void categoryFilter;
+    void customDateFrom;
+    void customDateTo;
+    if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
+    filterDebounceTimer = setTimeout(() => {
+      if (suppressPageNav) return;
+      tablePage = 1;
+      navigateWithState();
+    }, 300);
+    return () => {
+      if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
+    };
+  });
+
+  $effect(() => {
+    if (suppressPageNav) return;
+    void sortColumn;
+    void sortDirection;
+    void tablePage;
+    void tablePageSize;
+    navigateWithState();
+  });
 
   function paymentLabel(p: string) {
     if (p === "bank transfer") return "Bank transfer";
     return p.charAt(0).toUpperCase() + p.slice(1);
   }
+
   function expenseTypeLabel(t: string) {
     const tr = get(_);
-    const x = String(t ?? "")
-      .trim()
-      .toLowerCase();
+    const x = String(t ?? "").trim().toLowerCase();
     if (x === "major") return tr("major");
     return tr("operation");
   }
 
   function categoryLabel(c: string) {
-    const v = String(c ?? "")
-      .trim()
-      .toLowerCase();
+    const v = String(c ?? "").trim().toLowerCase();
     if (!v) return "—";
     if (v === "lc") return "LC";
     return String(c).replace(/\b\w/g, (ch) => ch.toUpperCase());
@@ -234,6 +187,7 @@
     const s = String(text).trim().replace(/\s+/g, " ");
     return s.length > max ? `${s.slice(0, max)}…` : s;
   }
+
   function formatMoney(v: number | string | null | undefined): string {
     const n =
       typeof v === "string"
@@ -246,6 +200,7 @@
     });
     return `ETB ${amount}`;
   }
+
   function detailsEntries(ex: ExpenseRow): Array<[string, string]> {
     const t = get(_);
     const type = String(ex.expense_type ?? "operation").toLowerCase();
@@ -266,6 +221,7 @@
       [t("receiptOptional"), receiptPreview(ex.receipt)],
     ];
   }
+
   function cycleSort(col: string) {
     if (sortColumn !== col) {
       sortColumn = col;
@@ -278,6 +234,7 @@
       sortDirection = "asc";
     }
   }
+
   function isSortActive(col: string, dir: "asc" | "desc") {
     return sortColumn === col && sortDirection === dir;
   }
@@ -353,120 +310,6 @@
       submitting = false;
     }
   }
-
-  function applyListStateFromParams(params: URLSearchParams) {
-    const nextType = String(params.get("type") ?? "")
-      .trim()
-      .toLowerCase();
-    if (
-      nextType === "operation" ||
-      nextType === "major" ||
-      nextType === "all"
-    ) {
-      typeFilter = nextType;
-    } else {
-      typeFilter = "all";
-    }
-
-    const d = String(params.get("date") ?? "")
-      .trim()
-      .toLowerCase();
-    if (
-      d === "today" ||
-      d === "last7" ||
-      d === "last30" ||
-      d === "custom" ||
-      d === "all"
-    ) {
-      if (d === "today") dateRangePreset = "today";
-      else if (d === "last7") dateRangePreset = "last7";
-      else if (d === "last30") dateRangePreset = "last30";
-      else if (d === "custom") dateRangePreset = "custom";
-      else dateRangePreset = "all";
-    } else {
-      dateRangePreset = "all";
-    }
-    customDateFrom = String(params.get("from") ?? "").trim();
-    customDateTo = String(params.get("to") ?? "").trim();
-
-    const catRaw = String(
-      params.get("category") ?? params.get("cat") ?? "",
-    ).trim();
-    if (!catRaw || catRaw.toLowerCase() === "all") {
-      categoryFilter = "all";
-    } else {
-      const found = categories.find(
-        (c) => c.toLowerCase() === catRaw.toLowerCase(),
-      );
-      categoryFilter = found ?? "all";
-    }
-  }
-
-  onMount(() => {
-    const params = new URLSearchParams(window.location.search);
-    const hasUrlState =
-      params.has("type") ||
-      params.has("date") ||
-      params.has("from") ||
-      params.has("to") ||
-      params.has("category") ||
-      params.has("cat");
-    if (hasUrlState) {
-      applyListStateFromParams(params);
-    } else {
-      try {
-        const raw = window.sessionStorage.getItem(EXPENSE_LIST_STATE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw) as {
-            type?: string;
-            date?: string;
-            from?: string;
-            to?: string;
-            category?: string;
-          };
-          const fallback = new URLSearchParams();
-          if (typeof parsed.type === "string")
-            fallback.set("type", parsed.type);
-          if (typeof parsed.date === "string")
-            fallback.set("date", parsed.date);
-          if (typeof parsed.from === "string")
-            fallback.set("from", parsed.from);
-          if (typeof parsed.to === "string") fallback.set("to", parsed.to);
-          if (typeof parsed.category === "string")
-            fallback.set("category", parsed.category);
-          applyListStateFromParams(fallback);
-        }
-      } catch {}
-    }
-    listStateReady = true;
-  });
-
-  $effect(() => {
-    if (!listStateReady) return;
-    const params = new URLSearchParams();
-    if (typeFilter !== "all") params.set("type", typeFilter);
-    if (dateRangePreset !== "all") params.set("date", dateRangePreset);
-    if (dateRangePreset === "custom") {
-      if (customDateFrom) params.set("from", customDateFrom);
-      if (customDateTo) params.set("to", customDateTo);
-    }
-    if (categoryFilter !== "all") params.set("category", categoryFilter);
-    const qs = params.toString();
-    const url = qs
-      ? `${window.location.pathname}?${qs}`
-      : window.location.pathname;
-    window.history.replaceState(window.history.state, "", url);
-    window.sessionStorage.setItem(
-      EXPENSE_LIST_STATE_KEY,
-      JSON.stringify({
-        type: typeFilter,
-        date: dateRangePreset,
-        from: customDateFrom,
-        to: customDateTo,
-        category: categoryFilter,
-      }),
-    );
-  });
 </script>
 
 <section class={mc.pageHeader}>
@@ -475,15 +318,7 @@
     <p class={mc.pageSubtitle}>{$_('pageExpensesSubtitle')}</p>
   </div>
   <div class="flex flex-wrap items-end gap-3">
-    <label>
-      <span class={mc.filterLabel}>{$_('type')}</span>
-      <select class={mc.filterSelect} bind:value={typeFilter}>
-        <option value="all">{$_('all')}</option>
-        {#each expenseTypes as t}
-          <option value={t}>{expenseTypeLabel(t)}</option>
-        {/each}
-      </select>
-    </label>
+    <TableSearchInput bind:value={searchQuery} placeholder={$_('searchDots')} />
     <button
       type="button"
       class={mc.primaryBtn}
@@ -514,18 +349,27 @@
 
 <section class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2" aria-label="Expense totals">
   <SummaryMetricCard
-    value={formatMoney(displayOperationalTotal)}
+    value={formatMoney(totalOperationalExpenseAmount)}
     label={$_('totalOperationalExpenses')}
     icon="four"
   />
   <SummaryMetricCard
-    value={formatMoney(displayMajorTotal)}
+    value={formatMoney(totalMajorExpenseAmount)}
     label={$_('totalMajorExpenses')}
     icon="six"
   />
 </section>
 
 <section class={mc.filterSection} aria-label="Filter expenses">
+  <label>
+    <span class={mc.filterLabel}>{$_('type')}</span>
+    <select class={mc.filterSelect} bind:value={typeFilter}>
+      <option value="all">{$_('all')}</option>
+      {#each expenseTypes as t}
+        <option value={t}>{expenseTypeLabel(t)}</option>
+      {/each}
+    </select>
+  </label>
   <label>
     <span class={mc.filterLabel}>{$_('dateRange')}</span>
     <select class={mc.filterSelect} bind:value={dateRangePreset}>
@@ -602,7 +446,7 @@
       {/if}
     </thead>
     <tbody>
-      {#each pagedExpenses as ex, i}
+      {#each expenses as ex, i}
         {#if isMajorOnly}
           <tr class="hover:bg-gray-50 dark:hover:bg-white/5">
             <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
@@ -645,17 +489,13 @@
           </tr>
         {/if}
       {/each}
-      {#if filteredExpenses.length === 0 && data.merchantBranchId}
+      {#if expenses.length === 0 && data.merchantBranchId}
         <tr>
           <td
             colspan={typeFilter === "all" ? 5 : typeFilter === "major" ? 7 : 9}
             class={mc.emptyCell}
           >
-              {#if expenses.length > 0}
-                {$_('noExpensesFiltered')}
-              {:else}
-                {$_('noExpensesEmpty')}
-              {/if}
+            {hasFilters ? $_('noExpensesFiltered') : $_('noExpensesEmpty')}
           </td>
         </tr>
       {/if}
@@ -665,7 +505,7 @@
             colspan={typeFilter === "all" ? 5 : typeFilter === "major" ? 7 : 9}
             class={mc.emptyCell}
           >
-              {$_('noBranchExpensesSee')}
+            {$_('noBranchExpensesSee')}
           </td>
         </tr>
       {/if}
@@ -675,8 +515,8 @@
   <TablePagination
     bind:page={tablePage}
     bind:pageSize={tablePageSize}
-    total={sortedExpenses.length}
-    resetKey={expensesPaginationResetKey}
+    total={totalCount}
+    resetKey={totalCount}
   />
 </section>
 

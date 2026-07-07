@@ -22,11 +22,28 @@ const FETCH_STOCK_BY_PK_QUERY = `
       investors
       merchant {
         id
+        first_name
+        last_name
       }
       purchased_price
       quantity
       selling_price
       unit
+      model_number
+      country
+      color
+      figure
+      thickness
+      factor
+      product {
+        id
+        name
+        product_type {
+          id
+          name
+        }
+        attributes
+      }
     }
   }
 `;

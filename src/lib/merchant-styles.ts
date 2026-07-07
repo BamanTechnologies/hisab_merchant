@@ -35,11 +35,11 @@ export const mc = {
 		"shrink-0 whitespace-nowrap text-sm font-medium leading-none text-gray-500 dark:text-gray-400",
 	table: "w-full min-w-[640px] border-collapse text-sm",
 	/** Table header row — #f2f2f2, 30px height */
-	th: "h-[30px] border-b border-[#e6eaed] bg-[#f2f2f2] px-4 text-left text-sm font-medium text-[#1a1a1a] dark:border-white/10 dark:bg-[#111827] dark:text-gray-200",
+	th: "h-[30px] whitespace-nowrap border-b border-[#e6eaed] bg-[#f2f2f2] px-4 text-left text-sm font-medium text-[#1a1a1a] dark:border-white/10 dark:bg-[#111827] dark:text-gray-200",
 	thCenter:
-		"h-[30px] border-b border-[#e6eaed] bg-[#f2f2f2] px-4 text-center text-sm font-medium text-[#1a1a1a] dark:border-white/10 dark:bg-[#111827] dark:text-gray-200",
+		"h-[30px] whitespace-nowrap border-b border-[#e6eaed] bg-[#f2f2f2] px-4 text-center text-sm font-medium text-[#1a1a1a] dark:border-white/10 dark:bg-[#111827] dark:text-gray-200",
 	thRight:
-		"h-[30px] border-b border-[#e6eaed] bg-[#f2f2f2] px-4 text-right text-sm font-medium text-[#1a1a1a] dark:border-white/10 dark:bg-[#111827] dark:text-gray-200",
+		"h-[30px] whitespace-nowrap border-b border-[#e6eaed] bg-[#f2f2f2] px-4 text-right text-sm font-medium text-[#1a1a1a] dark:border-white/10 dark:bg-[#111827] dark:text-gray-200",
 	td: "border-b border-gray-100 px-4 py-2 align-middle text-sm text-gray-700 dark:border-white/5 dark:text-gray-300",
 	tdRight: "border-b border-gray-100 px-4 py-2 text-right align-middle text-sm text-gray-700 dark:border-white/5 dark:text-gray-300",
 	tdCenter: "border-b border-gray-100 px-4 py-2 text-center align-middle text-sm text-gray-700 dark:border-white/5 dark:text-gray-300",
@@ -51,7 +51,7 @@ export const mc = {
 	emptyCell:
 		"border-b border-gray-100 px-4 py-8 text-center text-sm text-gray-500 dark:border-white/5 dark:text-gray-400",
 	sortBtn:
-		"inline-flex h-[30px] items-center gap-1.5 border-0 bg-transparent p-0 text-sm font-medium text-[#1a1a1a] transition-colors hover:text-[#1a1a1a]/80 dark:text-gray-200 dark:hover:text-white",
+		"inline-flex h-[30px] max-w-full items-center gap-1.5 border-0 bg-transparent p-0 text-sm font-medium text-[#1a1a1a] transition-colors hover:text-[#1a1a1a]/80 dark:text-gray-200 dark:hover:text-white",
 	actionBtn:
 		"inline-flex size-[30px] shrink-0 items-center justify-center rounded-[5px] border border-[#e6eaed] bg-white text-gray-600 transition hover:bg-gray-50 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10",
 	actionBtnDanger:

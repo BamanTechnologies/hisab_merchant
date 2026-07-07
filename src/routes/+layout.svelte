@@ -3,7 +3,7 @@
 	import favicon from "$lib/assets/favicon.svg";
 	import ToastHost from "$lib/ToastHost.svelte";
 	import SubscriptionWarningBar from "$lib/components/SubscriptionWarningBar.svelte";
-	import { subscriptionStore } from "$lib/subscription/client";
+	import { subscriptionSnapshot, subscriptionStore } from "$lib/subscription/client";
 	import { browser } from "$app/environment";
 	import { navigating, page } from "$app/state";
 	import { goto } from "$app/navigation";
@@ -19,6 +19,7 @@
 		Package,
 		Receipt,
 		ShoppingCart,
+		ShoppingBag,
 		Sun,
 		Users,
 		Wallet,
@@ -49,6 +50,7 @@
 	];
 
 	const APP_PREFIXES = [
+		"/products",
 		"/stocks",
 		"/transfers",
 		"/orders",
@@ -62,15 +64,29 @@
 		APP_PREFIXES.some((prefix) => page.url.pathname.startsWith(prefix)),
 	);
 
-	const navItems = $derived([
-		{ href: "/stocks", label: $_('navStocks'), icon: Package, match: "/stocks" },
-		{ href: "/transfers", label: $_('navTransfers'), icon: ArrowLeftRight, match: "/transfers" },
-		{ href: "/orders", label: $_('navOrders'), icon: ShoppingCart, match: "/orders" },
-		{ href: "/customers", label: $_('navCustomers'), icon: Users, match: "/customers" },
-		{ href: "/payments", label: $_('navPayments'), icon: Wallet, match: "/payments" },
-		{ href: "/expenses", label: $_('navExpenses'), icon: Receipt, match: "/expenses" },
-		{ href: "/reports", label: $_('navReports'), icon: BarChart3, match: "/reports" },
-	]);
+	const navItems = $derived.by(() => {
+		const items = [
+			{ href: "/products", label: $_('navProducts'), icon: ShoppingBag, match: "/products" },
+			{ href: "/stocks", label: $_('navStocks'), icon: Package, match: "/stocks" },
+			{ href: "/transfers", label: $_('navTransfers'), icon: ArrowLeftRight, match: "/transfers" },
+			{ href: "/orders", label: $_('navOrders'), icon: ShoppingCart, match: "/orders" },
+			{ href: "/customers", label: $_('navCustomers'), icon: Users, match: "/customers" },
+			{ href: "/payments", label: $_('navPayments'), icon: Wallet, match: "/payments" },
+			{ href: "/expenses", label: $_('navExpenses'), icon: Receipt, match: "/expenses" },
+			{ href: "/reports", label: $_('navReports'), icon: BarChart3, match: "/reports" },
+		] as const;
+		if (data.merchantContext?.routeAccess.products === false) {
+			return items.filter((item) => item.href !== "/products");
+		}
+		return items;
+	});
+
+	const subscriptionBarVisible = $derived(
+		$subscriptionStore.loaded &&
+			!$subscriptionStore.error &&
+			$subscriptionSnapshot.showWarningBar &&
+			!!$subscriptionSnapshot.warningMessage,
+	);
 
 	$effect(() => {
 		const serverOk = data.merchantContext != null;
@@ -194,12 +210,12 @@
 				<a
 					href="/"
 					class="flex items-center"
-					aria-label="Go to landing page"
+					aria-label="Go to homepage"
 				>
 					<img
 						src="/logonew.png"
 						alt="Bamanstock"
-						class="h-14 w-auto max-w-full object-cover md:h-20"
+						class="-mt-4 h-14 w-auto max-w-full object-cover md:h-20"
 					/>
 				</a>
 				<button
@@ -301,11 +317,11 @@
 				>
 					<Menu size={22} strokeWidth={2} />
 				</button>
-				<a href="/" class="flex items-center" aria-label="Go to landing page">
+				<a href="/" class="flex items-center" aria-label="Go to homepage">
 					<img
 						src="/logonew.png"
 						alt="Bamanstock"
-						class="h-14 w-auto max-w-full object-cover"
+						class="h-14 w-auto max-w-full object-cover md:h-20"
 					/>
 				</a>
 				<button
@@ -323,7 +339,7 @@
 				</button>
 			</header>
 
-				{#if isAuthenticated}
+				{#if isAuthenticated && subscriptionBarVisible}
 					<SubscriptionWarningBar />
 				{/if}
 			</div>

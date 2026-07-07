@@ -1,5 +1,10 @@
 import { config, getGraphQLHeaders } from '$lib/config';
 import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
+import {
+	resolveDefaultAppRoute,
+	resolveMerchantRouteAccess,
+	type MerchantRouteAccess,
+} from '$lib/merchantAccess.server';
 
 const BRANCH_ROW_FOR_CONTEXT_QUERY = `
   query MerchantContextBranch($id: uuid!) {
@@ -30,12 +35,16 @@ async function gql<T>(query: string, variables?: Record<string, unknown>): Promi
   return result.data as T;
 }
 
+export type { MerchantRouteAccess };
+
 /** Resolved once in the root layout for authenticated users (see `+layout.server.ts`). */
 export type MerchantAppContext = {
   merchantId: string;
   merchantBranchId: string | null;
   companyId: string | null;
   branch: { id: string; name: string | null } | null;
+  routeAccess: MerchantRouteAccess;
+  defaultAppRoute: '/products' | '/stocks';
 };
 
 /**
@@ -45,13 +54,24 @@ export type MerchantAppContext = {
 export async function fetchMerchantAppContext(merchantId: string): Promise<MerchantAppContext> {
   const merchantBranchId = await fetchMerchantBranchId(merchantId);
 
-  if (!merchantBranchId) {
+  const finish = (
+    partial: Omit<MerchantAppContext, 'routeAccess' | 'defaultAppRoute'>,
+  ): MerchantAppContext => {
+    const routeAccess = resolveMerchantRouteAccess(partial);
     return {
+      ...partial,
+      routeAccess,
+      defaultAppRoute: resolveDefaultAppRoute(routeAccess),
+    };
+  };
+
+  if (!merchantBranchId) {
+    return finish({
       merchantId,
       merchantBranchId: null,
       companyId: null,
       branch: null,
-    };
+    });
   }
 
   try {
@@ -65,26 +85,26 @@ export async function fetchMerchantAppContext(merchantId: string): Promise<Merch
 
     const row = data.branches_by_pk;
     if (!row) {
-      return {
+      return finish({
         merchantId,
         merchantBranchId,
         companyId: null,
         branch: null,
-      };
+      });
     }
 
-    return {
+    return finish({
       merchantId,
       merchantBranchId,
       companyId: row.company ?? null,
       branch: { id: row.id, name: row.name ?? null },
-    };
+    });
   } catch {
-    return {
+    return finish({
       merchantId,
       merchantBranchId,
       companyId: null,
       branch: null,
-    };
+    });
   }
 }

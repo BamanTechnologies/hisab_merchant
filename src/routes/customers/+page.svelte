@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { goto } from "$app/navigation";
+	import { page } from "$app/stores";
 	import TablePagination from "$lib/components/TablePagination.svelte";
+	import TableSearchInput from "$lib/components/TableSearchInput.svelte";
 	import { mc } from "$lib/merchant-styles.js";
-	import { paginateSlice } from "$lib/pagination.js";
 	import type { PageData } from "./$types";
 	import type { CustomerListRow } from "./+page.server";
 	import { _ } from "svelte-i18n";
@@ -10,16 +11,51 @@
 	let { data }: { data: PageData } = $props();
 
 	let customers = $state(data.customers as CustomerListRow[]);
-	let tablePage = $state(1);
-	let tablePageSize = $state(10);
+	let totalCount = $state((data as { totalCount: number }).totalCount ?? 0);
+
+	let searchQuery = $state($page.url.searchParams.get("search") ?? "");
+	let tablePage = $state(Number($page.url.searchParams.get("page")) || 1);
+	let tablePageSize = $state(Number($page.url.searchParams.get("pageSize")) || 10);
+	let searchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+	let suppressPageNav = $state(false);
 
 	$effect(() => {
 		customers = data.customers as CustomerListRow[];
+		totalCount = (data as { totalCount: number }).totalCount ?? 0;
 	});
 
-	const pagedCustomers = $derived(
-		paginateSlice(customers, tablePage, tablePageSize),
-	);
+	function navigateWithState() {
+		const params = new URLSearchParams();
+		if (searchQuery) params.set("search", searchQuery);
+		if (tablePage > 1) params.set("page", String(tablePage));
+		if (tablePageSize !== 10) params.set("pageSize", String(tablePageSize));
+		const qs = params.toString();
+		goto(qs ? `/customers?${qs}` : "/customers", { replaceState: true, keepFocus: true });
+	}
+
+	$effect(() => {
+		const q = searchQuery;
+		const currentSearch = $page.url.searchParams.get("search") ?? "";
+		if (q === currentSearch) return;
+
+		clearTimeout(searchDebounceTimer);
+		searchDebounceTimer = setTimeout(() => {
+			suppressPageNav = true;
+			tablePage = 1;
+			navigateWithState();
+			suppressPageNav = false;
+		}, 300);
+	});
+
+	$effect(() => {
+		if (suppressPageNav) return;
+		const pg = tablePage;
+		const ps = tablePageSize;
+		const urlPage = Number($page.url.searchParams.get("page")) || 1;
+		const urlPageSize = Number($page.url.searchParams.get("pageSize")) || 10;
+		if (pg === urlPage && ps === urlPageSize) return;
+		navigateWithState();
+	});
 
 	function fullName(c: CustomerListRow) {
 		return [c.first_name, c.last_name].filter(Boolean).join(" ").trim() || "—";
@@ -53,11 +89,12 @@
 		<h1 class={mc.pageTitle}>{$_('pageCustomersTitle')}</h1>
 		<p class={mc.pageSubtitle}>{$_('pageCustomersSubtitle')}</p>
 	</div>
+	<TableSearchInput bind:value={searchQuery} placeholder={$_('searchDots')} />
 </section>
 
 {#if !data.companyId}
 	<p class="mb-4 text-sm text-red-700">{$_('noBranchLinkedCustomers')}</p>
-{:else if customers.length === 0}
+{:else if totalCount === 0}
 	<p class="mb-4 text-sm text-gray-500">{$_('noCustomersRegistered')}</p>
 {/if}
 
@@ -74,7 +111,7 @@
 				</tr>
 			</thead>
 			<tbody>
-				{#each pagedCustomers as c, i}
+				{#each customers as c, i}
 					<tr
 						class={mc.rowClickable}
 						onclick={() => goto(`/customers/${c.id}`)}
@@ -88,7 +125,7 @@
 						<td class={mc.td}>{dash(c.phone_number)}</td>
 					</tr>
 				{/each}
-				{#if customers.length === 0 && data.companyId}
+				{#if customers.length === 0 && totalCount === 0 && data.companyId}
 					<tr>
 						<td colspan="5" class={mc.emptyCell}>{$_('noCustomersDisplay')}</td>
 					</tr>
@@ -99,7 +136,7 @@
 	<TablePagination
 		bind:page={tablePage}
 		bind:pageSize={tablePageSize}
-		total={customers.length}
-		resetKey={customers.length}
+		total={totalCount}
+		resetKey={totalCount}
 	/>
 </section>

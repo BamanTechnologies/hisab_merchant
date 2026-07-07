@@ -16,6 +16,13 @@
     last_name: string;
     phone_number: string;
   };
+  type ProductRef = {
+    id?: string | null;
+    name?: string | null;
+    product_type?: { id?: string | null; name?: string | null } | null;
+    attributes?: Record<string, unknown> | null;
+  };
+
   type Stock = {
     id: string;
     product_type?: { id?: string | null; name?: string | null } | null;
@@ -31,12 +38,15 @@
     investors: string[];
     merchant: {
       id: string;
+      first_name?: string | null;
+      last_name?: string | null;
     };
     quantity: number;
     selling_price: number | string;
     factor?: number | null;
     thickness?: number | string | null;
     unit?: string | null;
+    product?: ProductRef | null;
   };
 
   type TransferBranch = { id: string; name?: string | null };
@@ -138,7 +148,7 @@
       .replace(/\b\w/g, (m) => m.toUpperCase());
   }
   function productTypeName() {
-    return String(stock?.product_type?.name ?? stock?.type ?? "")
+    return String(stock?.product_type?.name ?? stock?.product?.product_type?.name ?? stock?.type ?? "")
       .trim()
       .toLowerCase();
   }
@@ -154,7 +164,7 @@
       const merged = formatCoffeeCapacityWithUnit(stock?.attributes ?? null);
       if (merged) return merged;
     }
-    const attrs = (stock?.attributes ?? {}) as Record<string, unknown>;
+    const attrs = {...(stock?.product?.attributes ?? {}), ...(stock?.attributes ?? {})} as Record<string, unknown>;
     const fallback: Record<string, unknown> = {
       model_number: stock?.model_number,
       country: stock?.country,
@@ -195,18 +205,33 @@
     return u ? `${stock.quantity} ${u}` : String(stock.quantity);
   });
 
+  const productName = $derived(
+    stock?.product?.name?.trim() ? stock.product.name : null,
+  );
+  const staffName = $derived(
+    stock
+      ? [stock.merchant?.first_name, stock.merchant?.last_name]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || "—"
+      : "—",
+  );
+
   const stockDetailRows = $derived.by(() => {
     if (!stock) return [] as { label: string; value: string }[];
-    const rows: { label: string; value: string }[] = [
-      {
-        label: "Origin",
-        value: stock.origin ? (originBranchName ?? "—") : "—",
-      },
-    ];
+    const rows: { label: string; value: string }[] = [];
+    if (productName) {
+      rows.push({ label: "Product", value: productName });
+    }
+    rows.push({
+      label: "Origin",
+      value: stock.origin ? (originBranchName ?? "—") : "—",
+    });
     for (const key of dynamicFields) {
       rows.push({ label: attributeLabel(key), value: attr(key) });
     }
     rows.push({ label: "Investors", value: investorNames });
+    rows.push({ label: "Staff", value: staffName });
     return rows;
   });
 

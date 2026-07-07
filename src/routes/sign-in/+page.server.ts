@@ -1,6 +1,7 @@
 import type { Actions } from './$types';
 import { getUserIdFromToken } from '$lib/auth';
 import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
+import { fetchMerchantAppContext } from '$lib/merchantContext.server';
 import { config, getGraphQLHeaders } from '$lib/config';
 
 // GraphQL mutation to login
@@ -55,6 +56,9 @@ export const actions: Actions = {
 
       const userId = loginResult.token ? getUserIdFromToken(loginResult.token) : null;
       const merchantBranchId = userId ? await fetchMerchantBranchId(userId) : null;
+      const defaultAppRoute = userId
+        ? (await fetchMerchantAppContext(userId)).defaultAppRoute
+        : '/products';
 
       if (loginResult.token) {
         cookies.set('authToken', loginResult.token, {
@@ -77,6 +81,7 @@ export const actions: Actions = {
       return {
         token: loginResult.token,
         merchantBranchId,
+        defaultAppRoute,
       };
     } catch {
       cookies.delete('authToken', { path: '/' });

@@ -1,44 +1,85 @@
-import type { PageServerLoad, Actions } from './$types';
-import { getUserIdFromRequest } from '$lib/auth';
-import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
+import type { PageServerLoad, Actions } from "./$types";
+import { getUserIdFromRequest } from "$lib/auth";
+import { fetchMerchantBranchId } from "$lib/merchantBranch.server";
 import {
   fetchBranchCompanyId,
   fetchInvestorsForCompany,
-} from '$lib/companyInvestors.server';
-import { config, getGraphQLHeaders } from '$lib/config';
-import { subscriptionWriteActionBlockedForRequest } from '$lib/subscription/server';
+} from "$lib/companyInvestors.server";
+import { config, getGraphQLHeaders } from "$lib/config";
+import { insertStockMovements } from "$lib/inventory/movements.server";
+import {
+  parseOptionalString,
+  parseReceiveLines,
+  parseUnit,
+} from "$lib/inventory/parseForm";
+import { subscriptionWriteActionBlockedForRequest } from "$lib/subscription/server";
+import { resolveUniqueBatchNumber } from "$lib/inventory/batchNumber";
+import { resolveReceiveExpiryDate } from "$lib/inventory/companyStockFields";
+import { normalizeProductTypeName } from "$lib/inventory/parseForm";
+
+const FETCH_COMPANY_NAME_QUERY = `
+  query CompanyNameForStocks($id: uuid!) {
+    companies_by_pk(id: $id) {
+      name
+    }
+  }
+`;
+
+const FETCH_COMPANY_BATCH_NUMBERS_QUERY = `
+  query CompanyBatchNumbers($branchIds: [uuid!]!) {
+    stock(
+      where: {
+        _and: [
+          { branch: { _in: $branchIds } }
+          { batch_number: { _is_null: false } }
+        ]
+      }
+    ) {
+      batch_number
+    }
+  }
+`;
 
 const STOCK_FIELDS = `
       id
       branch
       origin
-      type
-      product_type
-      attributes
-      created_by
-      investors
-      merchant {
-        id
-      }
+      product_id
+      batch_number
+      expiry_date
       purchased_price
       quantity
       selling_price
+      created_at
+      type
+      product_type
+      attributes
       unit
+      factor
+      model_number
+      country
+      color
+      figure
+      thickness
+      product {
+        id
+        name
+        default_unit
+        factor
+        attributes
+        investors
+        is_active
+        product_type {
+          id
+          name
+        }
+      }
 `;
 
-// GraphQL query to fetch stocks (optionally scoped to a branch)
-const FETCH_STOCKS_BY_BRANCH_QUERY = `
-  query GetStocksByBranch($branchId: uuid!) {
-    stock(where: { branch: { _eq: $branchId } }) {
-${STOCK_FIELDS}
-    }
-  }
-`;
-
-const FETCH_STOCKS_ALL_QUERY = `
-  query GetStocksAll {
-    stock {
-${STOCK_FIELDS}
+const FETCH_BRANCH_IDS_FOR_COMPANY_QUERY = `
+  query BranchIdsForCompanyStocks($companyId: uuid!) {
+    branches(where: { company: { _eq: $companyId } }) {
+      id
     }
   }
 `;
@@ -52,177 +93,61 @@ const FETCH_BRANCHES_FOR_COMPANY_QUERY = `
   }
 `;
 
-const FETCH_PRODUCT_TYPES_QUERY = `
-  query GetProductTypes($merchantId: uuid!) {
-    product_types(
-      where: { merchant_id: { _eq: $merchantId } }
-      order_by: [{ name: asc }, { created_at: asc }]
-    ) {
-      id
-      name
-      merchant_id
-      created_at
+const FETCH_STOCKS_QUERY = `
+  query StocksList($filter: stock_bool_exp, $order: [stock_order_by!], $limit: Int, $offset: Int) {
+    stock(where: $filter, limit: $limit, offset: $offset, order_by: $order) {
+${STOCK_FIELDS}
+    }
+    total_stocks: stock_aggregate(where: $filter) {
+      aggregate {
+        count
+      }
     }
   }
 `;
 
-async function fetchStocks(merchantBranchId: string | null) {
-  try {
-    const query = merchantBranchId ? FETCH_STOCKS_BY_BRANCH_QUERY : FETCH_STOCKS_ALL_QUERY;
-    const body: Record<string, unknown> = { query };
-    if (merchantBranchId) {
-      body.variables = { branchId: merchantBranchId };
-    }
-
-    const response = await fetch(config.graphql.endpoint, {
-      method: 'POST',
-      headers: getGraphQLHeaders(),
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const result = await response.json();
-
-    if (result.errors) {
-      throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
-    }
-
-    return result.data.stock;
-  } catch {
-    return [];
-  }
-}
-
-async function fetchBranchesForCompany(companyId: string | null) {
-  if (!companyId) return [];
-  try {
-    const response = await fetch(config.graphql.endpoint, {
-      method: 'POST',
-      headers: getGraphQLHeaders(),
-      body: JSON.stringify({
-        query: FETCH_BRANCHES_FOR_COMPANY_QUERY,
-        variables: { companyId },
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const result = await response.json();
-
-    if (result.errors) {
-      throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
-    }
-
-    return result.data.branches ?? [];
-  } catch {
-    return [];
-  }
-}
-
-async function fetchProductTypes(merchantId: string | null) {
-  if (!merchantId) return [];
-  try {
-    const response = await fetch(config.graphql.endpoint, {
-      method: 'POST',
-      headers: getGraphQLHeaders(),
-      body: JSON.stringify({
-        query: FETCH_PRODUCT_TYPES_QUERY,
-        variables: { merchantId },
-      }),
-    });
-
-    if (!response.ok) return [];
-    const result = await response.json();
-    if (result.errors) return [];
-    return result.data.product_types ?? [];
-  } catch {
-    return [];
-  }
-}
-
-export const load: PageServerLoad = async ({ request, parent }) => {
-  const { merchantContext } = await parent();
-  const merchantId =
-    merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
-  const merchantBranchId =
-    merchantContext?.merchantBranchId ??
-    (merchantId ? await fetchMerchantBranchId(merchantId) : null);
-
-  let companyId = merchantContext?.companyId ?? null;
-  if (!companyId && merchantBranchId) {
-    companyId = await fetchBranchCompanyId(merchantBranchId);
-  }
-
-  const [stocksRaw, investors, branches, productTypes] = await Promise.all([
-    fetchStocks(merchantBranchId),
-    fetchInvestorsForCompany(companyId),
-    fetchBranchesForCompany(companyId),
-    fetchProductTypes(merchantId),
-  ]);
-
-  const typeById = new Map<string, { id: string; name?: string | null }>();
-  for (const raw of productTypes as Array<Record<string, unknown>>) {
-    const id = typeof raw.id === 'string' ? raw.id : '';
-    if (!id) continue;
-    const name = raw.name == null ? null : String(raw.name);
-    typeById.set(id, { id, name });
-  }
-  const stocks = (stocksRaw ?? []).map((s: Record<string, unknown>) => {
-    const productTypeRef = s.product_type;
-    if (productTypeRef && typeof productTypeRef === 'object') return s;
-    const ptId = typeof productTypeRef === 'string' ? productTypeRef : '';
-    const pt = ptId ? typeById.get(ptId) : undefined;
-    return {
-      ...s,
-      product_type: pt ? { id: pt.id, name: pt.name ?? null } : null,
-    };
-  });
-
-  return {
-    stocks,
-    investors,
-    branches,
-    productTypes,
-    merchantId,
-    merchantBranchId,
-  };
-};
-
-const CREATE_STOCK_MUTATION = `
-  mutation CreateStock(
-    $branch: uuid
-    $created_by: uuid
-    $investors: [uuid!]
-    $purchased_price: money
-    $quantity: numeric
-    $selling_price: money
-    $product_type: uuid
-    $attributes: jsonb
-    $type: String
-    $unit: String
-  ) {
-    insert_stock(
-      objects: {
-        branch: $branch
-        created_by: $created_by
-        investors: $investors
-        purchased_price: $purchased_price
-        quantity: $quantity
-        selling_price: $selling_price
-        product_type: $product_type
-        attributes: $attributes
-        type: $type
-        unit: $unit
-      }
+const FETCH_PRODUCTS_FOR_RECEIVE_QUERY = `
+  query ProductsForReceive($companyId: uuid!) {
+    products(
+      where: { _and: [{ company_id: { _eq: $companyId } }, { is_active: { _eq: true } }] }
+      order_by: [{ name: asc }]
     ) {
-      returning {
+      id
+      name
+      default_unit
+      factor
+      attributes
+      product_type {
         id
+        name
       }
+    }
+  }
+`;
+
+const INSERT_PRODUCT_MUTATION = `
+  mutation InsertProductForReceive($object: products_insert_input!) {
+    insert_products_one(object: $object) {
+      id
+      default_unit
+      investors
+    }
+  }
+`;
+
+const INSERT_STOCK_MUTATION = `
+  mutation InsertStockBatch($object: stock_insert_input!) {
+    insert_stock_one(object: $object) {
+      id
+      product_id
+    }
+  }
+`;
+
+const UPDATE_STOCK_BATCH_MUTATION = `
+  mutation UpdateStockBatch($id: uuid!, $set: stock_set_input!) {
+    update_stock_by_pk(pk_columns: { id: $id }, _set: $set) {
+      id
     }
   }
 `;
@@ -235,434 +160,576 @@ const DELETE_STOCK_MUTATION = `
   }
 `;
 
-const UPDATE_STOCK_MUTATION = `
-  mutation UpdateStock(
-    $id: uuid!
-    $branch: uuid
-    $purchased_price: money
-    $quantity: numeric
-    $selling_price: money
-    $product_type: uuid
-    $attributes: jsonb
-    $type: String
-    $unit: String
-    $updated_at: timestamptz
-    $updated_by: uuid
-  ) {
-    update_stock_by_pk(
-      pk_columns: { id: $id }
-      _set: {
-        branch: $branch
-        purchased_price: $purchased_price
-        quantity: $quantity
-        selling_price: $selling_price
-        product_type: $product_type
-        attributes: $attributes
-        type: $type
-        unit: $unit
-        updated_at: $updated_at
-        updated_by: $updated_by
-      }
+async function fetchBranchesForCompany(companyId: string | null) {
+  if (!companyId) return [];
+  try {
+    const data = await gql<{
+      branches: { id: string; name?: string | null }[];
+    }>(FETCH_BRANCHES_FOR_COMPANY_QUERY, { companyId });
+    return data.branches ?? [];
+  } catch {
+    return [];
+  }
+}
+
+async function fetchCompanyBatchNumbers(
+  companyId: string | null,
+): Promise<string[]> {
+  if (!companyId) return [];
+  try {
+    const branchData = await gql<{ branches: { id: string }[] }>(
+      FETCH_BRANCH_IDS_FOR_COMPANY_QUERY,
+      { companyId },
+    );
+    const branchIds = (branchData.branches ?? [])
+      .map((b) => b.id)
+      .filter(Boolean);
+    if (branchIds.length === 0) return [];
+
+    const data = await gql<{ stock: { batch_number?: string | null }[] }>(
+      FETCH_COMPANY_BATCH_NUMBERS_QUERY,
+      { branchIds },
+    );
+    const numbers = new Set<string>();
+    for (const row of data.stock ?? []) {
+      const n = row.batch_number?.trim();
+      if (n) numbers.add(n);
+    }
+    return [...numbers];
+  } catch {
+    return [];
+  }
+}
+
+async function fetchCompanyName(
+  companyId: string | null,
+): Promise<string | null> {
+  if (!companyId) return null;
+  try {
+    const data = await gql<{
+      companies_by_pk: { name?: string | null } | null;
+    }>(FETCH_COMPANY_NAME_QUERY, { id: companyId });
+    const name = data.companies_by_pk?.name?.trim();
+    return name || null;
+  } catch {
+    return null;
+  }
+}
+
+async function gql<T>(
+  query: string,
+  variables?: Record<string, unknown>,
+): Promise<T> {
+  const response = await fetch(config.graphql.endpoint, {
+    method: "POST",
+    headers: getGraphQLHeaders(),
+    body: JSON.stringify({ query, variables }),
+  });
+
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  const result = await response.json();
+  if (result.errors)
+    throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
+  return result.data as T;
+}
+
+async function fetchProductsForReceive(companyId: string | null) {
+  if (!companyId) return [];
+  try {
+    const data = await gql<{ products: Record<string, unknown>[] }>(
+      FETCH_PRODUCTS_FOR_RECEIVE_QUERY,
+      { companyId },
+    );
+    return data.products ?? [];
+  } catch {
+    return [];
+  }
+}
+
+const FETCH_PRODUCT_TYPES_QUERY = `
+  query StockProductTypes($merchantId: uuid!) {
+    product_types(
+      where: { merchant_id: { _eq: $merchantId } }
+      order_by: [{ name: asc }]
     ) {
       id
+      name
     }
   }
 `;
 
-function parseOptionalString(raw: FormDataEntryValue | null): string | null {
-  if (raw === null || raw === undefined) return null;
-  const s = String(raw).trim();
-  return s === '' ? null : s;
-}
-
-async function createStock(stockData: {
-  branch: string | null;
-  investors: string[];
-  purchased_price: number;
-  quantity: number;
-  selling_price: number;
-  product_type: string;
-  attributes: Record<string, unknown>;
-  type: string;
-  unit: string;
-  userId: string;
-}) {
-  const variables = {
-    branch: stockData.branch,
-    created_by: stockData.userId,
-    investors: stockData.investors,
-    purchased_price: stockData.purchased_price,
-    quantity: stockData.quantity,
-    selling_price: stockData.selling_price,
-    product_type: stockData.product_type,
-    attributes: stockData.attributes,
-    type: stockData.type,
-    unit: stockData.unit,
-  };
-
-  const response = await fetch(config.graphql.endpoint, {
-    method: 'POST',
-    headers: getGraphQLHeaders(),
-    body: JSON.stringify({
-      query: CREATE_STOCK_MUTATION,
-      variables,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
-  }
-
-  const result = await response.json();
-
-  if (result.errors) {
-    throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
-  }
-
-  return result.data.insert_stock.returning[0];
-}
-
-async function deleteStock(stockId: string) {
-  const variables = {
-    id: stockId,
-  };
-
-  const response = await fetch(config.graphql.endpoint, {
-    method: 'POST',
-    headers: getGraphQLHeaders(),
-    body: JSON.stringify({
-      query: DELETE_STOCK_MUTATION,
-      variables,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
-  }
-
-  const result = await response.json();
-
-  if (result.errors) {
-    throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
-  }
-
-  return result.data.delete_stock_by_pk;
-}
-
-async function updateStock(stockData: {
-  id: string;
-  branch: string | null;
-  purchased_price: number;
-  quantity: number;
-  selling_price: number;
-  product_type: string;
-  attributes: Record<string, unknown>;
-  type: string;
-  unit: string;
-  updated_by: string;
-}) {
-  const variables = {
-    id: stockData.id,
-    branch: stockData.branch,
-    purchased_price: stockData.purchased_price,
-    quantity: stockData.quantity,
-    selling_price: stockData.selling_price,
-    product_type: stockData.product_type,
-    attributes: stockData.attributes,
-    type: stockData.type,
-    unit: stockData.unit,
-    updated_at: new Date().toISOString(),
-    updated_by: stockData.updated_by,
-  };
-
-  const response = await fetch(config.graphql.endpoint, {
-    method: 'POST',
-    headers: getGraphQLHeaders(),
-    body: JSON.stringify({
-      query: UPDATE_STOCK_MUTATION,
-      variables,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
-  }
-
-  const result = await response.json();
-  if (result.errors) {
-    throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
-  }
-
-  return result.data.update_stock_by_pk;
-}
-
-const MAX_UNIT_LENGTH = 64;
-
-function parseUnit(raw: FormDataEntryValue | null): string | null {
-  const s = String(raw ?? '').trim();
-  if (!s) return null;
-  if (s.length > MAX_UNIT_LENGTH) return null;
-  return s;
-}
-
-function normalizeStockType(raw: string): string {
-  const t = raw.trim();
-  if (t === 'brake_pad' || t === 'break_pad') return 'brake_lining';
-  return t;
-}
-
-function parseAttributes(raw: FormDataEntryValue | null): Record<string, unknown> {
-  if (raw == null) return {};
-  const s = String(raw).trim();
-  if (!s) return {};
+async function fetchProductTypes(merchantId: string | null) {
+  if (!merchantId) return [];
   try {
-    const parsed = JSON.parse(s) as unknown;
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-      if (!k.trim()) continue;
-      if (v == null) continue;
-      if (typeof v === 'string') {
-        const t = v.trim();
-        if (!t) continue;
-        out[k] = t;
-      } else {
-        out[k] = v;
-      }
-    }
-    return out;
+    const data = await gql<{ product_types: Record<string, unknown>[] }>(
+      FETCH_PRODUCT_TYPES_QUERY,
+      { merchantId },
+    );
+    return data.product_types ?? [];
   } catch {
-    return {};
+    return [];
   }
 }
 
-function assertBranchAllowed(branchId: string | null, merchantBranchId: string | null) {
-  if (merchantBranchId && branchId && branchId !== merchantBranchId) {
-    throw new Error('You can only manage stock for your assigned branch');
+async function fetchStocksList(
+  merchantBranchId: string | null,
+  companyId: string | null,
+  search: string,
+  typeFilter: string,
+  sortColumn: string,
+  sortDirection: string,
+  page: number,
+  pageSize: number,
+): Promise<{ rows: Record<string, unknown>[]; totalCount: number; error: string | null }> {
+  const conditions: Record<string, unknown>[] = [];
+  const offset = (page - 1) * pageSize;
+
+  if (merchantBranchId) {
+    conditions.push({ branch: { _eq: merchantBranchId } });
+  } else if (companyId) {
+    try {
+      const branchData = await gql<{ branches: { id: string }[] }>(
+        FETCH_BRANCH_IDS_FOR_COMPANY_QUERY,
+        { companyId },
+      );
+      const branchIds = (branchData.branches ?? []).map((b) => b.id).filter(Boolean);
+      if (branchIds.length > 0) {
+        conditions.push({ branch: { _in: branchIds } });
+      }
+    } catch {
+      // No branch filter if query fails
+    }
+  }
+
+  if (typeFilter !== "all") {
+    conditions.push({
+      _or: [
+        { product: { product_type: { name: { _ilike: typeFilter } } } },
+        { type: { _ilike: typeFilter } },
+      ],
+    });
+  }
+
+  if (search) {
+    conditions.push({
+      _or: [
+        { batch_number: { _ilike: `%${search}%` } },
+        { type: { _ilike: `%${search}%` } },
+        { product: { name: { _ilike: `%${search}%` } } },
+        { product: { product_type: { name: { _ilike: `%${search}%` } } } },
+      ],
+    });
+  }
+
+  const filter: Record<string, unknown> =
+    conditions.length > 0 ? { _and: conditions } : {};
+
+  const sortFieldMap: Record<string, string> = {
+    batch: "batch_number",
+    quantity: "quantity",
+    received: "created_at",
+  };
+  const sortField = sortFieldMap[sortColumn];
+  const order =
+    sortField && sortColumn !== "none"
+      ? [{ [sortField]: sortDirection === "desc" ? "desc" : "asc" }]
+      : [{ created_at: "desc" }];
+
+  try {
+    const data = await gql<{
+      stock: Record<string, unknown>[];
+      total_stocks: { aggregate: { count: number } };
+    }>(FETCH_STOCKS_QUERY, {
+      filter,
+      order,
+      limit: pageSize,
+      offset,
+    });
+    return {
+      rows: data.stock ?? [],
+      totalCount: data.total_stocks?.aggregate?.count ?? 0,
+      error: null,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to load stock";
+    console.error("[stocks load]", message);
+    return { rows: [], totalCount: 0, error: message };
   }
 }
+
+function assertBranchAllowed(
+  branchId: string | null,
+  merchantBranchId: string | null,
+) {
+  if (merchantBranchId && branchId && branchId !== merchantBranchId) {
+    throw new Error("You can only manage stock for your assigned branch");
+  }
+}
+
+export const load: PageServerLoad = async ({ request, parent, url }) => {
+  const { merchantContext } = await parent();
+  const merchantId =
+    merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
+  const merchantBranchId =
+    merchantContext?.merchantBranchId ??
+    (merchantId ? await fetchMerchantBranchId(merchantId) : null);
+
+  let companyId = merchantContext?.companyId ?? null;
+  if (!companyId && merchantBranchId) {
+    companyId = await fetchBranchCompanyId(merchantBranchId);
+  }
+
+  const search = url.searchParams.get("search") ?? "";
+  const typeFilter = url.searchParams.get("type") ?? "all";
+  const sortColumn = url.searchParams.get("sort") ?? "none";
+  const sortDirection = (url.searchParams.get("dir") as "asc" | "desc") ?? "desc";
+  const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+  const pageSize = Math.max(1, Number(url.searchParams.get("pageSize")) || 10);
+
+  const [
+    stocksResult,
+    products,
+    investors,
+    productTypes,
+    branches,
+    companyName,
+    existingBatchNumbers,
+  ] = await Promise.all([
+    fetchStocksList(
+      merchantBranchId,
+      companyId,
+      search,
+      typeFilter,
+      sortColumn,
+      sortDirection,
+      page,
+      pageSize,
+    ),
+    fetchProductsForReceive(companyId),
+    fetchInvestorsForCompany(companyId),
+    fetchProductTypes(merchantId),
+    fetchBranchesForCompany(companyId),
+    fetchCompanyName(companyId),
+    fetchCompanyBatchNumbers(companyId),
+  ]);
+
+  const typeById = new Map<string, { id: string; name?: string | null }>();
+  for (const raw of productTypes as Array<Record<string, unknown>>) {
+    const id = typeof raw.id === "string" ? raw.id : "";
+    if (!id) continue;
+    typeById.set(id, { id, name: raw.name == null ? null : String(raw.name) });
+  }
+
+  const stocks = (stocksResult.rows ?? []).map((s: Record<string, unknown>) => {
+    const productTypeRef = s.product_type;
+    if (productTypeRef && typeof productTypeRef === "object") return s;
+    const ptId = typeof productTypeRef === "string" ? productTypeRef : "";
+    const pt = ptId ? typeById.get(ptId) : undefined;
+    return {
+      ...s,
+      product_type: pt ? { id: pt.id, name: pt.name ?? null } : null,
+    };
+  });
+
+  return {
+    stocks,
+    totalCount: stocksResult.totalCount,
+    stocksLoadError: stocksResult.error,
+    products,
+    investors,
+    productTypes,
+    branches,
+    merchantId,
+    merchantBranchId,
+    companyId,
+    companyName,
+    existingBatchNumbers,
+  };
+};
 
 export const actions: Actions = {
-  createStock: async ({ request }) => {
+  receiveStock: async ({ request }) => {
     const blocked = await subscriptionWriteActionBlockedForRequest(request);
     if (blocked) return blocked;
 
-    const formData = await request.formData();
-
     const userId = getUserIdFromRequest(request);
-    if (!userId) {
-      return {
-        success: false,
-        message: 'Authentication required',
-      };
-    }
+    if (!userId) return { success: false, message: "Authentication required" };
 
     const merchantBranchId = await fetchMerchantBranchId(userId);
+    let companyId = merchantBranchId
+      ? await fetchBranchCompanyId(merchantBranchId)
+      : null;
+    if (!companyId)
+      return { success: false, message: "Company could not be resolved" };
 
-    const purchased_price = Number(formData.get('purchased_price'));
-    const selling_price = Number(formData.get('selling_price'));
-    const quantity = Number(formData.get('quantity'));
-    const branchRaw = parseOptionalString(formData.get('branch'));
-    const productTypeId = parseOptionalString(formData.get('product_type'));
-    const productTypeName = normalizeStockType(String(formData.get('product_type_name') ?? ''));
-    const attributes = parseAttributes(formData.get('attributes'));
-    const unit = parseUnit(formData.get('unit'));
+    const formData = await request.formData();
+    const branchRaw = parseOptionalString(formData.get("branch"));
+    const batchNumberRaw = parseOptionalString(formData.get("batch_number"));
+    const companyLabel = (await fetchCompanyName(companyId)) ?? "Company";
+    const takenBatchNumbers = await fetchCompanyBatchNumbers(companyId);
+    const batchNumber = resolveUniqueBatchNumber(
+      companyLabel,
+      takenBatchNumbers,
+      batchNumberRaw,
+    );
 
-    let investors: string[] = [];
-    try {
-      const parsed = JSON.parse(formData.get('investors') as string) as unknown;
-      investors = Array.isArray(parsed)
-        ? parsed.filter((id): id is string => typeof id === 'string' && id.trim() !== '')
-        : [];
-    } catch {
-      investors = [];
-    }
-
-    if (investors.length === 0) {
-      return {
-        success: false,
-        message: 'Please select at least one investor — this field is required.',
-      };
-    }
-
-    if (!productTypeId) {
-      return { success: false, message: 'Product type is required' };
-    }
-
-    if (!productTypeName) {
-      return { success: false, message: 'Product type name is required' };
-    }
-
-    if (!unit) {
-      return {
-        success: false,
-        message: `Unit is required (max ${MAX_UNIT_LENGTH} characters)`,
-      };
-    }
-
-    if (!branchRaw) {
-      return { success: false, message: 'Branch is required' };
-    }
+    if (!branchRaw) return { success: false, message: "Branch is required" };
 
     try {
       assertBranchAllowed(branchRaw, merchantBranchId);
     } catch (e) {
       return {
         success: false,
-        message: e instanceof Error ? e.message : 'Branch not allowed',
+        message: e instanceof Error ? e.message : "Branch not allowed",
       };
     }
 
-    if (!Number.isFinite(purchased_price) || !Number.isFinite(selling_price) || !Number.isFinite(quantity)) {
-      return { success: false, message: 'Purchased price, selling price, and quantity are required' };
+    let lines;
+    try {
+      lines = parseReceiveLines(String(formData.get("lines") ?? ""));
+    } catch (e) {
+      return {
+        success: false,
+        message: e instanceof Error ? e.message : "Invalid receive lines",
+      };
     }
 
+    const receiveTypeKeys: string[] = [];
+    for (const line of lines) {
+      if (line.mode === "new") {
+        receiveTypeKeys.push(line.product_type_name);
+        continue;
+      }
+      const prod = await gql<{
+        products_by_pk: {
+          product_type: { name?: string | null } | null;
+        } | null;
+      }>(
+        `query ($id: uuid!) { products_by_pk(id: $id) { product_type { name } } }`,
+        { id: line.product_id },
+      );
+      const typeName = prod.products_by_pk?.product_type?.name;
+      if (typeName)
+        receiveTypeKeys.push(normalizeProductTypeName(String(typeName)));
+    }
+
+    const expiryRaw = resolveReceiveExpiryDate(
+      receiveTypeKeys,
+      parseOptionalString(formData.get("expiry_date")),
+    );
+
+    const createdStockIds: string[] = [];
+
     try {
-      const result = await createStock({
-        branch: branchRaw,
-        investors,
-        purchased_price,
-        quantity,
-        selling_price,
-        product_type: productTypeId,
-        attributes,
-        type: productTypeName,
-        unit,
-        userId,
-      });
+      for (const line of lines) {
+        let productId: string;
+        let unit: string;
+        let investors: string[] = [];
+
+        if (line.mode === "new") {
+          const ins = await gql<{
+            insert_products_one: {
+              id: string;
+              default_unit: string;
+              investors: string[];
+            } | null;
+          }>(INSERT_PRODUCT_MUTATION, {
+            object: {
+              company_id: companyId,
+              product_type_id: line.product_type_id,
+              name: line.name,
+              default_unit: line.default_unit,
+              attributes: line.attributes,
+              investors: line.investors,
+              factor: line.factor,
+              barcode: line.barcode,
+              qr_code: line.qr_code,
+              is_active: true,
+              created_by: userId,
+            },
+          });
+          if (!ins.insert_products_one?.id)
+            throw new Error("Product was not created");
+          productId = ins.insert_products_one.id;
+          unit = line.default_unit;
+          investors = line.investors;
+        } else {
+          productId = line.product_id;
+          const prod = await gql<{
+            products_by_pk: {
+              id: string;
+              default_unit: string;
+              investors: string[];
+            } | null;
+          }>(
+            `query ($id: uuid!) { products_by_pk(id: $id) { id default_unit investors } }`,
+            { id: productId },
+          );
+          if (!prod.products_by_pk?.id) throw new Error("Product not found");
+          unit = prod.products_by_pk.default_unit;
+          investors = prod.products_by_pk.investors ?? [];
+        }
+
+        const stockIns = await gql<{
+          insert_stock_one: { id: string; product_id: string | null } | null;
+        }>(INSERT_STOCK_MUTATION, {
+          object: {
+            branch: branchRaw,
+            product_id: productId,
+            batch_number: batchNumber,
+            expiry_date: expiryRaw,
+            purchased_price: line.purchased_price,
+            selling_price: line.selling_price,
+            quantity: line.quantity,
+            unit,
+            investors,
+            created_by: userId,
+            updated_by: userId,
+          },
+        });
+
+        const stockRow = stockIns.insert_stock_one;
+        if (!stockRow?.id) throw new Error("Batch was not created");
+        createdStockIds.push(stockRow.id);
+
+        await insertStockMovements([
+          {
+            company_id: companyId,
+            branch_id: branchRaw,
+            stock_id: stockRow.id,
+            product_id: productId,
+            movement_type: "PURCHASE",
+            quantity_delta: line.quantity,
+            unit,
+            unit_cost: line.purchased_price,
+            unit_price: line.selling_price,
+            reference_type: "receive",
+            note: batchNumber
+              ? `Receive batch ${batchNumber}`
+              : "Stock received",
+            created_by: userId,
+          },
+        ]);
+      }
 
       return {
         success: true,
-        message: 'Stock created successfully',
-        stockId: result.id,
+        message:
+          lines.length === 1
+            ? "Batch received successfully"
+            : `${lines.length} batches received successfully`,
       };
-    } catch (error) {
+    } catch (err) {
+      for (const id of createdStockIds) {
+        await gql(DELETE_STOCK_MUTATION, { id }).catch(() => {});
+      }
       return {
         success: false,
-        message: `Failed to create stock: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Failed to receive stock: ${err instanceof Error ? err.message : "Unknown error"}`,
       };
     }
   },
+
+  updateBatch: async ({ request }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
+    const userId = getUserIdFromRequest(request);
+    if (!userId) return { success: false, message: "Authentication required" };
+
+    const merchantBranchId = await fetchMerchantBranchId(userId);
+    const formData = await request.formData();
+    const id = String(formData.get("id") ?? "").trim();
+    const quantity = Number(formData.get("quantity"));
+    const batch_number = parseOptionalString(formData.get("batch_number"));
+
+    if (!id) return { success: false, message: "Batch ID is required" };
+    if (!Number.isFinite(quantity) || quantity < 0) {
+      return { success: false, message: "Valid quantity is required" };
+    }
+
+    const existing = await gql<{
+      stock_by_pk: {
+        branch?: string | null;
+        purchased_price?: number | null;
+        selling_price?: number | null;
+        expiry_date?: string | null;
+      } | null;
+    }>(
+      `query ($id: uuid!) { stock_by_pk(id: $id) { branch purchased_price selling_price expiry_date } }`,
+      { id },
+    );
+    if (!existing.stock_by_pk)
+      return { success: false, message: "Batch not found" };
+
+    try {
+      assertBranchAllowed(
+        existing.stock_by_pk.branch ?? null,
+        merchantBranchId,
+      );
+    } catch (e) {
+      return {
+        success: false,
+        message: e instanceof Error ? e.message : "Branch not allowed",
+      };
+    }
+
+    try {
+      const row = await gql<{ update_stock_by_pk: { id: string } | null }>(
+        UPDATE_STOCK_BATCH_MUTATION,
+        {
+          id,
+          set: {
+            purchased_price: existing.stock_by_pk.purchased_price,
+            selling_price: existing.stock_by_pk.selling_price,
+            expiry_date: existing.stock_by_pk.expiry_date ?? null,
+            quantity,
+            batch_number,
+            updated_by: userId,
+            updated_at: new Date().toISOString(),
+          },
+        },
+      );
+      if (!row.update_stock_by_pk?.id) {
+        return { success: false, message: "Batch was not updated" };
+      }
+      return { success: true, message: "Batch updated successfully" };
+    } catch (err) {
+      return {
+        success: false,
+        message: `Failed to update batch: ${err instanceof Error ? err.message : "Unknown error"}`,
+      };
+    }
+  },
+
   deleteStock: async ({ request }) => {
     const blocked = await subscriptionWriteActionBlockedForRequest(request);
     if (blocked) return blocked;
 
-    const formData = await request.formData();
-    const stockId = formData.get('stockId') as string;
+    const stockId = String(
+      (await request.formData()).get("stockId") ?? "",
+    ).trim();
+    if (!stockId) return { success: false, message: "Batch ID is required" };
 
-    if (!stockId) {
+    const row = await gql<{ stock_by_pk: { quantity: unknown } | null }>(
+      `query ($id: uuid!) { stock_by_pk(id: $id) { quantity } }`,
+      { id: stockId },
+    );
+    const qty = Number(row.stock_by_pk?.quantity ?? 0);
+    if (!Number.isFinite(qty) || qty !== 0) {
       return {
         success: false,
-        message: 'Stock ID is required',
+        message: "Only zero-quantity batches can be deleted",
       };
     }
 
     try {
-      const result = await deleteStock(stockId);
-
-      return {
-        success: true,
-        message: 'Stock deleted successfully',
-        deletedId: result.id,
-      };
-    } catch (error) {
+      await gql(DELETE_STOCK_MUTATION, { id: stockId });
+      return { success: true, message: "Batch deleted successfully" };
+    } catch (err) {
       return {
         success: false,
-        message: `Failed to delete stock: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      };
-    }
-  },
-  updateStock: async ({ request }) => {
-    const blocked = await subscriptionWriteActionBlockedForRequest(request);
-    if (blocked) return blocked;
-
-    const formData = await request.formData();
-
-    const userId = getUserIdFromRequest(request);
-    if (!userId) {
-      return {
-        success: false,
-        message: 'Authentication required',
-      };
-    }
-
-    const merchantBranchId = await fetchMerchantBranchId(userId);
-
-    const id = formData.get('id') as string;
-    const purchased_price = Number(formData.get('purchased_price'));
-    const selling_price = Number(formData.get('selling_price'));
-    const quantity = Number(formData.get('quantity'));
-    const branchRaw = parseOptionalString(formData.get('branch'));
-    const productTypeId = parseOptionalString(formData.get('product_type'));
-    const productTypeName = normalizeStockType(String(formData.get('product_type_name') ?? ''));
-    const attributes = parseAttributes(formData.get('attributes'));
-    const unit = parseUnit(formData.get('unit'));
-
-    if (!id) {
-      return {
-        success: false,
-        message: 'Stock ID is required',
-      };
-    }
-
-    if (!productTypeId) {
-      return { success: false, message: 'Product type is required' };
-    }
-
-    if (!productTypeName) {
-      return { success: false, message: 'Product type name is required' };
-    }
-
-    if (!unit) {
-      return {
-        success: false,
-        message: `Unit is required (max ${MAX_UNIT_LENGTH} characters)`,
-      };
-    }
-
-    if (!branchRaw) {
-      return { success: false, message: 'Branch is required' };
-    }
-
-    try {
-      assertBranchAllowed(branchRaw, merchantBranchId);
-    } catch (e) {
-      return {
-        success: false,
-        message: e instanceof Error ? e.message : 'Branch not allowed',
-      };
-    }
-
-    if (!Number.isFinite(purchased_price) || !Number.isFinite(selling_price) || !Number.isFinite(quantity)) {
-      return { success: false, message: 'Purchased price, selling price, and quantity are required' };
-    }
-
-    try {
-      const result = await updateStock({
-        id,
-        branch: branchRaw,
-        purchased_price,
-        quantity,
-        selling_price,
-        product_type: productTypeId,
-        attributes,
-        type: productTypeName,
-        unit,
-        updated_by: userId,
-      });
-
-      return {
-        success: true,
-        message: 'Stock updated successfully',
-        stockId: result.id,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: `Failed to update stock: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Failed to delete batch: ${err instanceof Error ? err.message : "Unknown error"}`,
       };
     }
   },
