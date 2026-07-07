@@ -1,5 +1,7 @@
 <script lang="ts">
   import { deserialize, enhance } from "$app/forms";
+  import { goto } from "$app/navigation";
+  import { page } from "$app/stores";
   import { invalidateAll } from "$app/navigation";
   import { onMount, tick } from "svelte";
   import { Eye, Pencil, Plus, RefreshCw, Trash2, X } from "@lucide/svelte";
@@ -12,8 +14,6 @@
     batchAttributeEntries,
     batchAttributeLabel,
     batchAttrValue,
-    batchSearchHaystack,
-    batchSortAttrValue,
     batchTypeKey,
     batchTypeLabel,
   } from "$lib/inventory/stockListDisplay";
@@ -34,7 +34,6 @@
   } from "$lib/inventory/companyStockFields";
   import type { ProductRecord, StockBatchRecord } from "$lib/inventory/types";
   import { mc } from "$lib/merchant-styles.js";
-  import { paginateSlice } from "$lib/pagination.js";
   import {
     SUBSCRIPTION_BLOCKED_MESSAGE,
     subscriptionBlocksMutations,
@@ -86,7 +85,8 @@
 
   let { data }: { data: PageData } = $props();
 
-  const stocks = $derived((data.stocks ?? []) as StockBatch[]);
+  let stocks = $state((data.stocks ?? []) as StockBatch[]);
+  let totalCount = $state((data as { totalCount: number }).totalCount ?? 0);
   const stocksLoadError = $derived(data.stocksLoadError ?? null);
   const products = (data.products ?? []) as Product[];
   const investors = (data.investors ?? []) as Investor[];
@@ -95,15 +95,14 @@
   const existingBatchNumbers = (data.existingBatchNumbers ?? []) as string[];
   const branches = (data.branches ?? []) as Branch[];
 
-  let typeFilter = $state<string>("all");
-  let searchQuery = $state("");
-  let tablePage = $state(1);
-  let tablePageSize = $state(10);
-  let sortColumn = $state<string>("none");
-  let sortDirection = $state<"asc" | "desc">("asc");
-  let listStateReady = $state(false);
-
-  const STOCK_LIST_STATE_KEY = "stocks:list-state:v2";
+  let searchQuery = $state($page.url.searchParams.get("search") ?? "");
+  let typeFilter = $state($page.url.searchParams.get("type") ?? "all");
+  let tablePage = $state(Number($page.url.searchParams.get("page")) || 1);
+  let tablePageSize = $state(Number($page.url.searchParams.get("pageSize")) || 10);
+  let sortColumn = $state<string>($page.url.searchParams.get("sort") ?? "none");
+  let sortDirection = $state<"asc" | "desc">(($page.url.searchParams.get("dir") as "asc" | "desc") ?? "asc");
+  let searchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  let suppressPageNav = $state(false);
 
   let showReceiveModal = $state(false);
   let showEditModal = $state(false);
@@ -134,6 +133,11 @@
 
   const productTypes = (data.productTypes ?? []) as ProductType[];
 
+  $effect(() => {
+    stocks = (data.stocks ?? []) as StockBatch[];
+    totalCount = (data as { totalCount: number }).totalCount ?? 0;
+  });
+
   function isTypeFilter(v: string | null): v is string {
     if (v == null) return false;
     if (v === "all") return true;
@@ -148,97 +152,10 @@
     return names.has(v);
   }
 
-  function isSortColumn(v: string | null): v is string {
-    return v != null && v.trim() !== "";
-  }
-
-  function isSortDirection(v: string | null): v is "asc" | "desc" {
-    return v === "asc" || v === "desc";
-  }
-
-  function applyListStateFromParams(params: URLSearchParams) {
-    const nextType = params.get("type");
-    const nextSort = params.get("sort");
-    const nextDir = params.get("dir");
-
-    typeFilter = isTypeFilter(nextType) ? nextType : "all";
-    sortColumn = isSortColumn(nextSort) ? nextSort : "none";
-    sortDirection = isSortDirection(nextDir) ? nextDir : "asc";
-  }
-
-  function currentListStateParams(): URLSearchParams {
-    const params = new URLSearchParams();
-    if (typeFilter !== "all") params.set("type", typeFilter);
-    if (sortColumn !== "none") {
-      params.set("sort", sortColumn);
-      params.set("dir", sortDirection);
-    }
-    return params;
-  }
-
-  onMount(() => {
-    const params = new URLSearchParams(window.location.search);
-    const hasListStateInUrl =
-      params.has("type") || params.has("sort") || params.has("dir");
-
-    if (hasListStateInUrl) {
-      applyListStateFromParams(params);
-    } else {
-      try {
-        const raw = window.sessionStorage.getItem(STOCK_LIST_STATE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw) as {
-            type?: string;
-            sort?: string;
-            dir?: string;
-          };
-          const fallbackParams = new URLSearchParams();
-          if (typeof parsed.type === "string")
-            fallbackParams.set("type", parsed.type);
-          if (typeof parsed.sort === "string")
-            fallbackParams.set("sort", parsed.sort);
-          if (typeof parsed.dir === "string")
-            fallbackParams.set("dir", parsed.dir);
-          applyListStateFromParams(fallbackParams);
-        }
-      } catch {
-        // Ignore bad persisted state.
-      }
-    }
-
-    listStateReady = true;
-  });
-
-  $effect(() => {
-    if (!listStateReady) return;
-
-    const params = currentListStateParams();
-    const qs = params.toString();
-    const url = qs
-      ? `${window.location.pathname}?${qs}`
-      : window.location.pathname;
-    window.history.replaceState(window.history.state, "", url);
-
-    window.sessionStorage.setItem(
-      STOCK_LIST_STATE_KEY,
-      JSON.stringify({
-        type: typeFilter,
-        sort: sortColumn,
-        dir: sortDirection,
-      }),
-    );
-  });
-
-  function displayLabel(text: string): string {
-    return text
-      .replaceAll("_", " ")
-      .replace(/\b\w/g, (m) => m.toUpperCase());
-  }
-
   function branchLabel(branchId: string | null | undefined): string {
     if (!branchId) return "—";
     const b = branches.find((x) => x.id === branchId);
-    if (b?.name) return displayLabel(b.name);
+    if (b?.name) return b.name.replaceAll("_", " ").replace(/\b\w/g, (m) => m.toUpperCase());
     return branchId.slice(0, 8) + "…";
   }
 
@@ -254,18 +171,6 @@
   const isSingleTypeFilter = $derived(typeFilter !== "all");
   const activeFields = $derived(activeTypeFields(typeFilter));
   const tableColCount = $derived(8 + (isSingleTypeFilter ? activeFields.length : 1));
-
-  const filteredBatches = $derived.by(() => {
-    let list = stocks;
-    if (typeFilter !== "all") {
-      list = list.filter((batch) => batchTypeKey(batch) === typeFilter);
-    }
-    const q = searchQuery.trim().toLowerCase();
-    if (q) {
-      list = list.filter((batch) => batchSearchHaystack(batch).includes(q));
-    }
-    return list;
-  });
 
   function cycleSort(col: string, e?: Event) {
     e?.stopPropagation();
@@ -285,55 +190,51 @@
     return sortColumn === col && sortDirection === dir;
   }
 
-  function batchSortValue(batch: StockBatch, col: string): string | number {
-    switch (col) {
-      case "batch":
-        return String(batch.batch_number ?? "").toLowerCase();
-      case "type":
-        return batchTypeKey(batch);
-      case "branch":
-        return branchLabel(batch.branch).toLowerCase();
-      case "origin":
-        return batch.origin ? branchLabel(batch.origin).toLowerCase() : "";
-      case "quantity":
-        return parseQty(batch.quantity);
-      case "received": {
-        const t = new Date(batch.created_at ?? 0).getTime();
-        return Number.isFinite(t) ? t : 0;
-      }
-      default:
-        return batchSortAttrValue(batch, col);
+  function navigateWithState() {
+    const params = new URLSearchParams();
+    if (searchQuery) params.set("search", searchQuery);
+    if (typeFilter !== "all") params.set("type", typeFilter);
+    if (sortColumn !== "none") {
+      params.set("sort", sortColumn);
+      params.set("dir", sortDirection);
     }
+    if (tablePage > 1) params.set("page", String(tablePage));
+    if (tablePageSize !== 10) params.set("pageSize", String(tablePageSize));
+    const qs = params.toString();
+    goto(qs ? `/stocks?${qs}` : "/stocks", { replaceState: true, keepFocus: true });
   }
 
-  const sortedBatches = $derived.by(() => {
-    if (sortColumn === "none") {
-      return [...filteredBatches].sort((a, b) => {
-        const byBatch = String(a.batch_number ?? "").localeCompare(String(b.batch_number ?? ""));
-        if (byBatch !== 0) return byBatch;
-        const ta = new Date(a.created_at ?? 0).getTime();
-        const tb = new Date(b.created_at ?? 0).getTime();
-        return ta - tb;
-      });
-    }
-    const col = sortColumn;
-    return [...filteredBatches].sort((a, b) => {
-      const av = batchSortValue(a, col);
-      const bv = batchSortValue(b, col);
-      const cmp =
-        typeof av === "number" && typeof bv === "number"
-          ? av - bv
-          : String(av).localeCompare(String(bv));
-      return sortDirection === "asc" ? cmp : -cmp;
-    });
+  $effect(() => {
+    const q = searchQuery;
+    const currentSearch = $page.url.searchParams.get("search") ?? "";
+    if (q === currentSearch) return;
+
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => {
+      suppressPageNav = true;
+      tablePage = 1;
+      navigateWithState();
+      suppressPageNav = false;
+    }, 300);
   });
 
-  const paginationResetKey = $derived(
-    `${typeFilter}|${searchQuery}|${sortColumn}|${sortDirection}`,
-  );
-  const pagedBatches = $derived(
-    paginateSlice(sortedBatches, tablePage, tablePageSize),
-  );
+  $effect(() => {
+    if (suppressPageNav) return;
+    const tf = typeFilter;
+    const sc = sortColumn;
+    const sd = sortDirection;
+    const pg = tablePage;
+    const ps = tablePageSize;
+
+    const urlType = $page.url.searchParams.get("type") ?? "all";
+    const urlSort = $page.url.searchParams.get("sort") ?? "none";
+    const urlDir = $page.url.searchParams.get("dir") ?? "asc";
+    const urlPage = Number($page.url.searchParams.get("page")) || 1;
+    const urlPageSize = Number($page.url.searchParams.get("pageSize")) || 10;
+
+    if (tf === urlType && sc === urlSort && sd === urlDir && pg === urlPage && ps === urlPageSize) return;
+    navigateWithState();
+  });
 
   function parseMoneyValue(value: number | string | null | undefined): number {
     if (value == null || value === "") return 0;
@@ -850,7 +751,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each pagedBatches as batch, i (batch.id)}
+        {#each stocks as batch, i (batch.id)}
           {@const product = resolveBatchProduct(batch)}
           <tr>
             <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
@@ -926,12 +827,14 @@
             </td>
           </tr>
         {/each}
-        {#if filteredBatches.length === 0}
+        {#if stocks.length === 0}
           <tr>
             <td colspan={tableColCount} class={mc.emptyCell}>
-              {#if stocks.length === 0}
+              {#if totalCount === 0}
                 {#if stocksLoadError}
                   Stock could not be loaded — see the error above.
+                {:else if typeFilter !== "all"}
+                  No batches match this type filter.
                 {:else}
                   No stock batches yet. Use Receive stock to add inventory.
                 {/if}
@@ -950,8 +853,8 @@
   <TablePagination
     bind:page={tablePage}
     bind:pageSize={tablePageSize}
-    total={sortedBatches.length}
-    resetKey={paginationResetKey}
+    total={totalCount}
+    resetKey={totalCount}
   />
 </section>
 

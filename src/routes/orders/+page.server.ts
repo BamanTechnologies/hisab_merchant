@@ -1,28 +1,28 @@
-import type { PageServerLoad, Actions } from './$types';
-import { getUserIdFromRequest } from '$lib/auth';
-import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
-import { createPaymentRecord } from '$lib/payments.server';
+import type { PageServerLoad, Actions } from "./$types";
+import { getUserIdFromRequest } from "$lib/auth";
+import { fetchMerchantBranchId } from "$lib/merchantBranch.server";
+import { createPaymentRecord } from "$lib/payments.server";
 import {
   fetchCustomerLatestBalance,
   insertCustomerTransaction,
   sumOrderLedgerCustomerBalancePayments,
   sumOrderLedgerManualCashPayments,
   sumOrderLedgerOrderDebits,
-} from '$lib/customerTransactions.server';
-import { config, getGraphQLHeaders } from '$lib/config';
-import { buildProductLabel } from '$lib/inventory/productLabel';
+} from "$lib/customerTransactions.server";
+import { config, getGraphQLHeaders } from "$lib/config";
+import { buildProductLabel } from "$lib/inventory/productLabel";
 import {
-	applyOrderStockEffects,
-	decrementStockSlices,
-	fetchCancelRestoreSlices,
-	FETCH_PRODUCTS_FOR_ORDERS_QUERY,
-	incrementStockSlices,
-	insertOrderItemBatches,
-	planOrderLines,
-	restoreOrderStockEffects,
-} from '$lib/inventory/orders.server';
-import { buildStockLabel } from '$lib/stockLabel';
-import { subscriptionWriteActionBlockedForRequest } from '$lib/subscription/server';
+  applyOrderStockEffects,
+  decrementStockSlices,
+  fetchCancelRestoreSlices,
+  FETCH_PRODUCTS_FOR_ORDERS_QUERY,
+  incrementStockSlices,
+  insertOrderItemBatches,
+  planOrderLines,
+  restoreOrderStockEffects,
+} from "$lib/inventory/orders.server";
+import { buildStockLabel } from "$lib/stockLabel";
+import { subscriptionWriteActionBlockedForRequest } from "$lib/subscription/server";
 
 const FETCH_BRANCH_BY_PK_QUERY = `
   query OrdersBranchByPk($id: uuid!) {
@@ -140,10 +140,21 @@ const FETCH_STOCKS_BY_IDS_QUERY = `
 
 // GraphQL query to fetch orders for the logged-in merchant
 const FETCH_ORDERS_QUERY = `
-  query GetOrders($merchantId: uuid!) {
+  query GetOrders(
+    $filter: orders_bool_exp!
+    $order: [orders_order_by!]
+    $limit: Int
+    $offset: Int
+    $paymentFilter: payment_bool_exp!
+    $paymentOrder: [payment_order_by!]
+    $paymentLimit: Int
+    $paymentOffset: Int
+  ) {
     orders(
-      where: { created_by: { _eq: $merchantId } }
-      order_by: { created_at: desc }
+      where: $filter
+      order_by: $order
+      limit: $limit
+      offset: $offset
     ) {
       created_at
       created_by
@@ -210,13 +221,36 @@ const FETCH_ORDERS_QUERY = `
         thickness
       }
     }
-    payment(where: { created_by: { _eq: $merchantId } }, order_by: { created_at: desc }) {
+    total_orders: orders_aggregate(where: $filter) {
+      aggregate {
+        count
+      }
+    }
+    summary_orders: orders(
+      where: { _and: [$filter, { status: { _neq: "cancelled" } }] }
+    ) {
+      total_amount
+    }
+    payment(
+      where: $paymentFilter
+      order_by: $paymentOrder
+      limit: $paymentLimit
+      offset: $paymentOffset
+    ) {
       id
       order_id
       amount
       created_at
       payment_method
       created_by
+    }
+    total_payments: payment_aggregate(where: $paymentFilter) {
+      aggregate {
+        count
+      }
+    }
+    summary_payments: payment(where: $paymentFilter) {
+      amount
     }
   }
 `;
@@ -327,9 +361,12 @@ const INSERT_COMPANY_CUSTOMER_MUTATION = `
   }
 `;
 
-async function gql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+async function gql<T>(
+  query: string,
+  variables?: Record<string, unknown>,
+): Promise<T> {
   const response = await fetch(config.graphql.endpoint, {
-    method: 'POST',
+    method: "POST",
     headers: getGraphQLHeaders(),
     body: JSON.stringify({ query, variables }),
   });
@@ -404,7 +441,9 @@ async function fetchCustomersByMerchant(
       ...new Set(
         (junction.company_customer ?? [])
           .map((r) => r?.customer)
-          .filter((id): id is string => typeof id === 'string' && id.length > 0),
+          .filter(
+            (id): id is string => typeof id === "string" && id.length > 0,
+          ),
       ),
     ];
 
@@ -464,13 +503,19 @@ async function verifyCustomerInCompany(
   }
 }
 
-async function fetchProductsForOrders(companyId: string | null, branchId: string | null) {
+async function fetchProductsForOrders(
+  companyId: string | null,
+  branchId: string | null,
+) {
   if (!companyId || !branchId) return [];
   try {
-    const data = await gql<{ products: unknown[] }>(FETCH_PRODUCTS_FOR_ORDERS_QUERY, {
-      companyId,
-      branchId,
-    });
+    const data = await gql<{ products: unknown[] }>(
+      FETCH_PRODUCTS_FOR_ORDERS_QUERY,
+      {
+        companyId,
+        branchId,
+      },
+    );
     return data.products ?? [];
   } catch {
     return [];
@@ -489,40 +534,67 @@ async function fetchBranchesForCompany(companyId: string | null) {
   }
 }
 
-async function fetchOrders(merchantId: string) {
+async function fetchOrders(
+  merchantId: string,
+  filter: Record<string, unknown>,
+  order: Record<string, unknown>[],
+  limit: number,
+  offset: number,
+  paymentFilter: Record<string, unknown>,
+  paymentOrder: Record<string, unknown>[],
+  paymentLimit: number,
+  paymentOffset: number,
+) {
   try {
-    const data = await gql<{ orders: unknown[]; payment: unknown[] }>(FETCH_ORDERS_QUERY, {
-      merchantId,
+    const data = await gql<{
+      orders: unknown[];
+      total_orders: { aggregate: { count: number } };
+      summary_orders: Array<{ total_amount: unknown }>;
+      payment: unknown[];
+      total_payments: { aggregate: { count: number } };
+      summary_payments: Array<{ amount: unknown }>;
+    }>(FETCH_ORDERS_QUERY, {
+      filter,
+      order,
+      limit,
+      offset,
+      paymentFilter,
+      paymentOrder,
+      paymentLimit,
+      paymentOffset,
     });
     const orders = (data.orders ?? []).map((row) => {
-      if (!row || typeof row !== 'object') return row;
+      if (!row || typeof row !== "object") return row;
       const rec = row as Record<string, unknown>;
       const itemsRaw = Array.isArray(rec.order_items) ? rec.order_items : [];
-      const items = itemsRaw.filter(
-        (x): x is Record<string, unknown> => Boolean(x && typeof x === 'object'),
+      const items = itemsRaw.filter((x): x is Record<string, unknown> =>
+        Boolean(x && typeof x === "object"),
       );
       const stock =
-        rec.stock && typeof rec.stock === 'object'
+        rec.stock && typeof rec.stock === "object"
           ? (rec.stock as Record<string, unknown>)
           : null;
-      const fallbackId = String(rec.stock_id ?? '').slice(0, 8) + '…';
+      const fallbackId = String(rec.stock_id ?? "").slice(0, 8) + "…";
       const itemNames = items
         .map((it) => {
           const p = it.product;
-          if (p && typeof p === 'object') {
-            return buildProductLabel(p as Parameters<typeof buildProductLabel>[0]);
+          if (p && typeof p === "object") {
+            return buildProductLabel(
+              p as Parameters<typeof buildProductLabel>[0],
+            );
           }
           const s = it.stock;
-          if (s && typeof s === 'object') return buildStockLabel(s as Record<string, unknown>);
-          const sid = String(it.stock_id ?? '').trim();
-          return sid ? `${sid.slice(0, 8)}…` : '';
+          if (s && typeof s === "object")
+            return buildStockLabel(s as Record<string, unknown>);
+          const sid = String(it.stock_id ?? "").trim();
+          return sid ? `${sid.slice(0, 8)}…` : "";
         })
         .filter((x) => x.length > 0);
       const mergedName =
         itemNames.length === 0
           ? null
           : itemNames.length <= 2
-            ? itemNames.join(' + ')
+            ? itemNames.join(" + ")
             : `${itemNames[0]} +${itemNames.length - 1} more`;
       return {
         ...rec,
@@ -530,11 +602,41 @@ async function fetchOrders(merchantId: string) {
       };
     });
     const payments = (data.payment ?? []).filter(
-      (row): row is Record<string, unknown> => Boolean(row && typeof row === 'object'),
+      (row): row is Record<string, unknown> =>
+        Boolean(row && typeof row === "object"),
     );
-    return { orders, payments };
-  } catch {
-    return { orders: [], payments: [] as Record<string, unknown>[] };
+    const parseMoney = (v: unknown): number => {
+      if (v === null || v === undefined) return 0;
+      if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+      const n = Number(String(v).replace(/[^0-9.-]/g, ""));
+      return Number.isFinite(n) ? n : 0;
+    };
+    const totalOrdersAmount = (data.summary_orders ?? []).reduce(
+      (sum, r) => sum + parseMoney(r.total_amount),
+      0,
+    );
+    const totalPaymentsAmount = (data.summary_payments ?? []).reduce(
+      (sum, r) => sum + parseMoney(r.amount),
+      0,
+    );
+    return {
+      orders,
+      payments,
+      totalOrders: data.total_orders?.aggregate?.count ?? 0,
+      totalPayments: data.total_payments?.aggregate?.count ?? 0,
+      totalOrdersAmount,
+      totalPaymentsAmount,
+    };
+  } catch (e) {
+    console.log("error loading orders new:", e);
+    return {
+      orders: [] as unknown[],
+      payments: [] as Record<string, unknown>[],
+      totalOrders: 0,
+      totalPayments: 0,
+      totalOrdersAmount: 0,
+      totalPaymentsAmount: 0,
+    };
   }
 }
 
@@ -550,8 +652,8 @@ type MerchantOrderCancelRow = {
 
 function parseMoney(v: unknown): number {
   if (v === null || v === undefined) return 0;
-  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
-  const n = Number(String(v).replace(/[^0-9.-]/g, ''));
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  const n = Number(String(v).replace(/[^0-9.-]/g, ""));
   return Number.isFinite(n) ? n : 0;
 }
 
@@ -579,12 +681,19 @@ async function fetchMerchantOrderForCancel(
     if (!row) return null;
     const lines = (row.order_items ?? [])
       .map((it) => ({
-        stock_id: String(it?.stock_id ?? '').trim(),
+        stock_id: String(it?.stock_id ?? "").trim(),
         quantity: Number(it?.quantity),
       }))
-      .filter((it) => it.stock_id !== '' && Number.isFinite(it.quantity) && it.quantity > 0);
-    const fallbackStockId = String((row as { stock_id?: string | null }).stock_id ?? '').trim();
-    const fallbackQty = Number((row as { order_quantity?: unknown }).order_quantity);
+      .filter(
+        (it) =>
+          it.stock_id !== "" && Number.isFinite(it.quantity) && it.quantity > 0,
+      );
+    const fallbackStockId = String(
+      (row as { stock_id?: string | null }).stock_id ?? "",
+    ).trim();
+    const fallbackQty = Number(
+      (row as { order_quantity?: unknown }).order_quantity,
+    );
     const normalizedLines =
       lines.length > 0
         ? lines
@@ -592,12 +701,13 @@ async function fetchMerchantOrderForCancel(
           ? [{ stock_id: fallbackStockId, quantity: fallbackQty }]
           : [];
     if (normalizedLines.length === 0) return null;
-    const customerId = String(row.customer_id ?? '').trim();
+    const customerId = String(row.customer_id ?? "").trim();
     if (!customerId) return null;
-    const firstLineBranch = row.order_items?.find((x) => x?.stock?.branch)?.stock?.branch ?? null;
+    const firstLineBranch =
+      row.order_items?.find((x) => x?.stock?.branch)?.stock?.branch ?? null;
     return {
       id: row.id,
-      status: String(row.status ?? '').trim() || 'unpaid',
+      status: String(row.status ?? "").trim() || "unpaid",
       customer_id: customerId,
       total_amount: parseMoney(row.total_amount),
       outstanding_amount: parseMoney(row.outstanding_amount),
@@ -627,7 +737,10 @@ async function postOrderLedgerAndAutoPay(opts: {
   orderId: string;
   orderTotalAmount: number;
 }): Promise<void> {
-  const sumBefore = await fetchCustomerLatestBalance(opts.companyId, opts.customerId);
+  const sumBefore = await fetchCustomerLatestBalance(
+    opts.companyId,
+    opts.customerId,
+  );
   const extra = Math.max(0, -sumBefore);
   const total = opts.orderTotalAmount;
 
@@ -636,10 +749,10 @@ async function postOrderLedgerAndAutoPay(opts: {
       company: opts.companyId,
       customer: opts.customerId,
       amount: total,
-      type: 'order',
+      type: "order",
       reference: opts.orderId,
-      reference_type: 'order',
-      note: 'Order created',
+      reference_type: "order",
+      note: "Order created",
       created_by: opts.userId,
     });
     return;
@@ -649,7 +762,7 @@ async function postOrderLedgerAndAutoPay(opts: {
     await createPaymentRecord({
       amount: total,
       order_id: opts.orderId,
-      payment_method: 'Customer balance',
+      payment_method: "Customer balance",
       created_by: opts.userId,
     });
 
@@ -657,10 +770,10 @@ async function postOrderLedgerAndAutoPay(opts: {
       company: opts.companyId,
       customer: opts.customerId,
       amount: total,
-      type: 'payment',
+      type: "payment",
       reference: opts.orderId,
-      reference_type: 'order',
-      note: 'Payment from customer balance',
+      reference_type: "order",
+      note: "Payment from customer balance",
       created_by: opts.userId,
     });
     return;
@@ -669,7 +782,7 @@ async function postOrderLedgerAndAutoPay(opts: {
   await createPaymentRecord({
     amount: extra,
     order_id: opts.orderId,
-    payment_method: 'Customer balance',
+    payment_method: "Customer balance",
     created_by: opts.userId,
   });
 
@@ -677,10 +790,10 @@ async function postOrderLedgerAndAutoPay(opts: {
     company: opts.companyId,
     customer: opts.customerId,
     amount: extra,
-    type: 'payment',
+    type: "payment",
     reference: opts.orderId,
-    reference_type: 'order',
-    note: 'Partial payment from customer balance',
+    reference_type: "order",
+    note: "Partial payment from customer balance",
     created_by: opts.userId,
   });
 
@@ -688,17 +801,20 @@ async function postOrderLedgerAndAutoPay(opts: {
     company: opts.companyId,
     customer: opts.customerId,
     amount: total - extra,
-    type: 'order',
+    type: "order",
     reference: opts.orderId,
-    reference_type: 'order',
-    note: 'Order created (unpaid portion after credit)',
+    reference_type: "order",
+    note: "Order created (unpaid portion after credit)",
     created_by: opts.userId,
   });
 }
 
-async function incrementStockQuantity(stockId: string, delta: number): Promise<void> {
+async function incrementStockQuantity(
+  stockId: string,
+  delta: number,
+): Promise<void> {
   if (!Number.isFinite(delta) || delta === 0) {
-    throw new Error('Invalid stock quantity delta');
+    throw new Error("Invalid stock quantity delta");
   }
   const data = await gql<{
     update_stock_by_pk: { id: string } | null;
@@ -707,7 +823,7 @@ async function incrementStockQuantity(stockId: string, delta: number): Promise<v
     delta,
   });
   if (!data.update_stock_by_pk?.id) {
-    throw new Error('Stock row was not updated');
+    throw new Error("Stock row was not updated");
   }
 }
 
@@ -720,7 +836,7 @@ async function cancelOrderInDatabase(orderId: string) {
 }
 
 function phoneToNumeric(phone: string | number | null | undefined): number {
-  const digits = String(phone ?? '').replace(/\D/g, '');
+  const digits = String(phone ?? "").replace(/\D/g, "");
   if (!digits) return 0;
   const n = Number(digits);
   return Number.isFinite(n) ? n : 0;
@@ -757,12 +873,12 @@ async function insertOrder(object: OrderInsertObject): Promise<{ id: string }> {
     insert_orders_one: { id: string } | null;
   }>(CREATE_ORDER_MUTATION, { object });
   const row = data.insert_orders_one;
-  if (!row?.id) throw new Error('Order insert returned no row');
+  if (!row?.id) throw new Error("Order insert returned no row");
   return row;
 }
 
 async function insertOrderItemsBulk(objects: OrderItemInsertObject[]) {
-  if (objects.length === 0) throw new Error('No order items to insert');
+  if (objects.length === 0) throw new Error("No order items to insert");
   const data = await gql<{
     insert_order_items: {
       affected_rows: number;
@@ -793,9 +909,9 @@ type StockRowForOrder = {
 
 function parsePositiveNumber(v: unknown): number | null {
   if (v == null) return null;
-  if (typeof v === 'string' && v.trim() === '') return null;
+  if (typeof v === "string" && v.trim() === "") return null;
   const n =
-    typeof v === 'number' ? v : Number(String(v).replace(/[^0-9.-]/g, ''));
+    typeof v === "number" ? v : Number(String(v).replace(/[^0-9.-]/g, ""));
   if (!Number.isFinite(n) || n <= 0) return null;
   return n;
 }
@@ -808,21 +924,30 @@ function resolveOrderFactor(stockRow: StockRowForOrder): number {
   return 1;
 }
 
-async function fetchStocksByIdsForOrder(stockIds: string[]): Promise<StockRowForOrder[]> {
+async function fetchStocksByIdsForOrder(
+  stockIds: string[],
+): Promise<StockRowForOrder[]> {
   if (stockIds.length === 0) return [];
   try {
-    const data = await gql<{ stock: StockRowForOrder[] }>(FETCH_STOCKS_BY_IDS_QUERY, {
-      ids: stockIds,
-    });
+    const data = await gql<{ stock: StockRowForOrder[] }>(
+      FETCH_STOCKS_BY_IDS_QUERY,
+      {
+        ids: stockIds,
+      },
+    );
     return data.stock ?? [];
   } catch {
     return [];
   }
 }
 
-type OrderLineInput = { product_id: string; quantity: number; unit_price: number };
+type OrderLineInput = {
+  product_id: string;
+  quantity: number;
+  unit_price: number;
+};
 
-export const load: PageServerLoad = async ({ request, parent }) => {
+export const load: PageServerLoad = async ({ request, parent, url }) => {
   const { merchantContext } = await parent();
   const merchantId =
     merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
@@ -833,7 +958,11 @@ export const load: PageServerLoad = async ({ request, parent }) => {
 
   const customerCtx =
     merchantId != null
-      ? await fetchCustomersByMerchant(merchantId, merchantBranchId, knownCompanyId)
+      ? await fetchCustomersByMerchant(
+          merchantId,
+          merchantBranchId,
+          knownCompanyId,
+        )
       : { companyId: null as string | null, customers: [] as CustomerRecord[] };
 
   let companyId = customerCtx.companyId;
@@ -841,10 +970,94 @@ export const load: PageServerLoad = async ({ request, parent }) => {
     companyId = await fetchBranchCompany(merchantBranchId);
   }
 
+  const dateRange = url.searchParams.get("dateRange") ?? "all";
+  const customerName = url.searchParams.get("customer") ?? "";
+  const sort = url.searchParams.get("sort") ?? "none";
+  const dir = url.searchParams.get("dir") ?? "desc";
+  const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+  const pageSize = Math.max(1, Number(url.searchParams.get("pageSize")) || 10);
+  const offset = (page - 1) * pageSize;
+
+  const conditions: Record<string, unknown>[] = [
+    { created_by: { _eq: merchantId } },
+  ];
+
+  if (customerName) {
+    conditions.push({ customer_name: { _eq: customerName } });
+  }
+
+  if (dateRange === "today") {
+    const now = new Date();
+    const start = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    ).toISOString();
+    const end = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      23,
+      59,
+      59,
+      999,
+    ).toISOString();
+    conditions.push({ created_at: { _gte: start, _lte: end } });
+  } else if (dateRange === "last7") {
+    const from = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString();
+    conditions.push({ created_at: { _gte: from } });
+  } else if (dateRange === "last30") {
+    const from = new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString();
+    conditions.push({ created_at: { _gte: from } });
+  } else if (dateRange === "custom") {
+    const from = url.searchParams.get("from") ?? "";
+    const to = url.searchParams.get("to") ?? "";
+    if (from) conditions.push({ created_at: { _gte: from } });
+    if (to) conditions.push({ created_at: { _lte: to } });
+  }
+
+  const filter: Record<string, unknown> = { _and: conditions };
+
+  const sortFieldMap: Record<string, string> = {
+    date: "created_at",
+    stock: "stock_id",
+    customer: "customer_name",
+    quantity: "order_quantity",
+    status: "status",
+    total: "total_amount",
+  };
+  const sortField = sortFieldMap[sort];
+  const order =
+    sortField && sortField !== "none"
+      ? [{ [sortField]: dir }]
+      : [{ created_at: "desc" }];
+
+  const paymentFilter: Record<string, unknown> = {
+    created_by: { _eq: merchantId },
+  };
+  const paymentOrder = [{ created_at: "desc" }];
+
   const [ordersBlock, products, branches] = await Promise.all([
     merchantId
-      ? fetchOrders(merchantId)
-      : Promise.resolve({ orders: [] as unknown[], payments: [] as Record<string, unknown>[] }),
+      ? fetchOrders(
+          merchantId,
+          filter,
+          order,
+          pageSize,
+          offset,
+          paymentFilter,
+          paymentOrder,
+          pageSize,
+          offset,
+        )
+      : Promise.resolve({
+          orders: [] as unknown[],
+          payments: [] as Record<string, unknown>[],
+          totalOrders: 0,
+          totalPayments: 0,
+          totalOrdersAmount: 0,
+          totalPaymentsAmount: 0,
+        }),
     fetchProductsForOrders(companyId, merchantBranchId),
     fetchBranchesForCompany(companyId),
   ]);
@@ -852,6 +1065,10 @@ export const load: PageServerLoad = async ({ request, parent }) => {
   return {
     orders: ordersBlock.orders,
     payments: ordersBlock.payments,
+    totalOrders: ordersBlock.totalOrders,
+    totalPayments: ordersBlock.totalPayments,
+    totalOrdersAmount: ordersBlock.totalOrdersAmount,
+    totalPaymentsAmount: ordersBlock.totalPaymentsAmount,
     customers: customerCtx.customers,
     products,
     branches,
@@ -868,64 +1085,73 @@ export const actions: Actions = {
 
     const userId = getUserIdFromRequest(request);
     if (!userId) {
-      return { success: false, message: 'Authentication required' };
+      return { success: false, message: "Authentication required" };
     }
 
     const formData = await request.formData();
-    const customerId = String(formData.get('customerId') ?? '').trim();
-    const linesRaw = String(formData.get('lines') ?? '').trim();
+    const customerId = String(formData.get("customerId") ?? "").trim();
+    const linesRaw = String(formData.get("lines") ?? "").trim();
 
     if (!customerId) {
-      return { success: false, message: 'Select a customer' };
+      return { success: false, message: "Select a customer" };
     }
 
     let lines: OrderLineInput[] = [];
     try {
       const parsed = JSON.parse(linesRaw) as unknown;
       if (!Array.isArray(parsed)) {
-        return { success: false, message: 'Invalid order lines' };
+        return { success: false, message: "Invalid order lines" };
       }
       lines = parsed as OrderLineInput[];
     } catch {
-      return { success: false, message: 'Invalid order lines JSON' };
+      return { success: false, message: "Invalid order lines JSON" };
     }
 
     if (lines.length === 0) {
-      return { success: false, message: 'Add at least one product line' };
+      return { success: false, message: "Add at least one product line" };
     }
 
     if (lines.length > 15) {
-      return { success: false, message: 'Too many lines (max 15)' };
+      return { success: false, message: "Too many lines (max 15)" };
     }
 
     const uniqueProductIds = [...new Set(lines.map((l) => l.product_id))];
     if (uniqueProductIds.length !== lines.length) {
-      return { success: false, message: 'Duplicate product in order lines' };
+      return { success: false, message: "Duplicate product in order lines" };
     }
 
     for (const line of lines) {
       const q = Number(line.quantity);
       const up = Number(line.unit_price);
       if (!line.product_id) {
-        return { success: false, message: 'Each line needs a product and quantity' };
+        return {
+          success: false,
+          message: "Each line needs a product and quantity",
+        };
       }
       if (!Number.isFinite(q) || q < 1) {
-        return { success: false, message: 'Quantity must be at least 1' };
+        return { success: false, message: "Quantity must be at least 1" };
       }
       if (!Number.isFinite(up) || up <= 0) {
         return {
           success: false,
-          message: 'Each line needs a valid unit price greater than zero',
+          message: "Each line needs a valid unit price greater than zero",
         };
       }
     }
 
     const merchantBranchId = await fetchMerchantBranchId(userId);
     if (!merchantBranchId) {
-      return { success: false, message: 'You must be assigned to a branch to create orders' };
+      return {
+        success: false,
+        message: "You must be assigned to a branch to create orders",
+      };
     }
 
-    const customerCtx = await fetchCustomersByMerchant(userId, merchantBranchId);
+    const customerCtx = await fetchCustomersByMerchant(
+      userId,
+      merchantBranchId,
+    );
     let companyId = customerCtx.companyId;
     if (!companyId && merchantBranchId) {
       companyId = await fetchBranchCompany(merchantBranchId);
@@ -934,7 +1160,7 @@ export const actions: Actions = {
     if (!companyId) {
       return {
         success: false,
-        message: 'Company could not be resolved for your branch',
+        message: "Company could not be resolved for your branch",
       };
     }
 
@@ -946,16 +1172,18 @@ export const actions: Actions = {
     if (!customer) {
       return {
         success: false,
-        message: 'Customer is not valid for your company or branch',
+        message: "Customer is not valid for your company or branch",
       };
     }
 
     const customer_name = [customer.first_name, customer.last_name]
       .filter(Boolean)
-      .join(' ')
+      .join(" ")
       .trim();
-    const customer_address = String(customer.address ?? '').trim();
-    const customer_phone = phoneToNumeric(customer.phone ?? customer.phone_number);
+    const customer_address = String(customer.address ?? "").trim();
+    const customer_phone = phoneToNumeric(
+      customer.phone ?? customer.phone_number,
+    );
 
     let plans;
     try {
@@ -970,7 +1198,8 @@ export const actions: Actions = {
     } catch (err) {
       return {
         success: false,
-        message: err instanceof Error ? err.message : 'Could not plan order lines',
+        message:
+          err instanceof Error ? err.message : "Could not plan order lines",
       };
     }
 
@@ -986,14 +1215,14 @@ export const actions: Actions = {
     const orderObject: OrderInsertObject = {
       created_by: userId,
       customer_id: customerId,
-      customer_name: customer_name || 'Customer',
+      customer_name: customer_name || "Customer",
       customer_address,
       customer_phone,
       order_quantity: totalOrderQuantity,
       stock_id: plans[0].legacy_stock_id,
       total_amount: totalOrderAmount,
       outstanding_amount: totalOrderAmount,
-      status: 'unpaid',
+      status: "unpaid",
       unit: headerUnit,
     };
 
@@ -1006,7 +1235,7 @@ export const actions: Actions = {
     } catch (err) {
       return {
         success: false,
-        message: `Failed to reserve stock quantities: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        message: `Failed to reserve stock quantities: ${err instanceof Error ? err.message : "Unknown error"}`,
       };
     }
 
@@ -1039,7 +1268,7 @@ export const actions: Actions = {
 
       for (let i = 0; i < plans.length; i++) {
         const itemId = insertedItems[i]?.id;
-        if (!itemId) throw new Error('Order item insert missing id');
+        if (!itemId) throw new Error("Order item insert missing id");
         for (const slice of plans[i].slices) {
           batchObjects.push({
             order_item_id: itemId,
@@ -1065,7 +1294,7 @@ export const actions: Actions = {
       await incrementStockSlices(allSlices).catch(() => {});
       return {
         success: false,
-        message: `Failed to create order: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        message: `Failed to create order: ${err instanceof Error ? err.message : "Unknown error"}`,
       };
     }
 
@@ -1080,13 +1309,13 @@ export const actions: Actions = {
     } catch (err) {
       return {
         success: false,
-        message: `Order created but ledger / balance step failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        message: `Order created but ledger / balance step failed: ${err instanceof Error ? err.message : "Unknown error"}`,
       };
     }
 
     return {
       success: true,
-      message: 'Order created successfully',
+      message: "Order created successfully",
     };
   },
 
@@ -1096,25 +1325,28 @@ export const actions: Actions = {
 
     const userId = getUserIdFromRequest(request);
     if (!userId) {
-      return { success: false, message: 'Authentication required' };
+      return { success: false, message: "Authentication required" };
     }
 
     const formData = await request.formData();
-    const first_name = String(formData.get('first_name') ?? '').trim();
-    const last_name = String(formData.get('last_name') ?? '').trim();
-    const address = String(formData.get('address') ?? '').trim();
-    const phone = String(formData.get('phone_number') ?? '').trim();
+    const first_name = String(formData.get("first_name") ?? "").trim();
+    const last_name = String(formData.get("last_name") ?? "").trim();
+    const address = String(formData.get("address") ?? "").trim();
+    const phone = String(formData.get("phone_number") ?? "").trim();
 
     if (!first_name || !last_name) {
-      return { success: false, message: 'First and last name are required' };
+      return { success: false, message: "First and last name are required" };
     }
 
     if (!phone) {
-      return { success: false, message: 'Phone is required' };
+      return { success: false, message: "Phone is required" };
     }
 
     const merchantBranchId = await fetchMerchantBranchId(userId);
-    const customerCtx = await fetchCustomersByMerchant(userId, merchantBranchId);
+    const customerCtx = await fetchCustomersByMerchant(
+      userId,
+      merchantBranchId,
+    );
     let companyId = customerCtx.companyId;
     if (!companyId && merchantBranchId) {
       companyId = await fetchBranchCompany(merchantBranchId);
@@ -1123,14 +1355,14 @@ export const actions: Actions = {
     if (!companyId) {
       return {
         success: false,
-        message: 'Company could not be resolved for your branch',
+        message: "Company could not be resolved for your branch",
       };
     }
 
     if (!merchantBranchId) {
       return {
         success: false,
-        message: 'You must be assigned to a branch to add customers',
+        message: "You must be assigned to a branch to add customers",
       };
     }
 
@@ -1141,12 +1373,12 @@ export const actions: Actions = {
         first_name,
         last_name,
         phone_number: phone,
-        address: address || '',
+        address: address || "",
       });
 
       const created = ins.insert_customers_one;
       if (!created?.id) {
-        return { success: false, message: 'Customer was not created' };
+        return { success: false, message: "Customer was not created" };
       }
 
       await gql(INSERT_COMPANY_CUSTOMER_MUTATION, {
@@ -1159,13 +1391,13 @@ export const actions: Actions = {
 
       return {
         success: true,
-        message: 'Customer added',
+        message: "Customer added",
         customer,
       };
     } catch (err) {
       return {
         success: false,
-        message: `Failed to add customer: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        message: `Failed to add customer: ${err instanceof Error ? err.message : "Unknown error"}`,
       };
     }
   },
@@ -1175,47 +1407,49 @@ export const actions: Actions = {
     if (blocked) return blocked;
 
     const formData = await request.formData();
-    const orderId = formData.get('orderId') as string;
-    const partialRefundRaw = String(formData.get('partialCancelRefund') ?? '').trim();
+    const orderId = formData.get("orderId") as string;
+    const partialRefundRaw = String(
+      formData.get("partialCancelRefund") ?? "",
+    ).trim();
 
     if (!orderId) {
       return {
         success: false,
-        message: 'Order ID is required',
+        message: "Order ID is required",
       };
     }
 
     const merchantId = getUserIdFromRequest(request);
     if (!merchantId) {
-      return { success: false, message: 'Authentication required' };
+      return { success: false, message: "Authentication required" };
     }
 
     const orderRow = await fetchMerchantOrderForCancel(orderId, merchantId);
     if (!orderRow) {
-      return { success: false, message: 'Order not found' };
+      return { success: false, message: "Order not found" };
     }
 
-    const statusNorm = String(orderRow.status ?? '')
+    const statusNorm = String(orderRow.status ?? "")
       .trim()
       .toLowerCase();
 
-    if (statusNorm === 'cancelled') {
-      return { success: false, message: 'This order is already cancelled' };
+    if (statusNorm === "cancelled") {
+      return { success: false, message: "This order is already cancelled" };
     }
-    if (statusNorm === 'paid') {
-      return { success: false, message: 'Paid orders cannot be cancelled' };
+    if (statusNorm === "paid") {
+      return { success: false, message: "Paid orders cannot be cancelled" };
     }
 
-    let partialCancelRefund: '' | 'balance' | 'cash' = '';
-    if (partialRefundRaw === 'balance' || partialRefundRaw === 'cash') {
+    let partialCancelRefund: "" | "balance" | "cash" = "";
+    if (partialRefundRaw === "balance" || partialRefundRaw === "cash") {
       partialCancelRefund = partialRefundRaw;
     }
-    if (statusNorm === 'partially_paid') {
-      if (partialCancelRefund !== 'balance' && partialCancelRefund !== 'cash') {
+    if (statusNorm === "partially_paid") {
+      if (partialCancelRefund !== "balance" && partialCancelRefund !== "cash") {
         return {
           success: false,
           message:
-            'Partially paid orders: choose whether you refunded the customer in cash or left the amount on their balance.',
+            "Partially paid orders: choose whether you refunded the customer in cash or left the amount on their balance.",
         };
       }
     }
@@ -1227,13 +1461,16 @@ export const actions: Actions = {
     try {
       restoreSlices = await fetchCancelRestoreSlices(orderId);
       if (restoreSlices.slices.length === 0) {
-        return { success: false, message: 'Order has no stock lines to restore' };
+        return {
+          success: false,
+          message: "Order has no stock lines to restore",
+        };
       }
       await incrementStockSlices(restoreSlices.slices);
     } catch (error) {
       return {
         success: false,
-        message: `Could not restore stock quantity: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Could not restore stock quantity: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
 
@@ -1241,7 +1478,7 @@ export const actions: Actions = {
       const result = await cancelOrderInDatabase(orderId);
       if (!result?.id) {
         await decrementStockSlices(restoreSlices.slices).catch(() => {});
-        return { success: false, message: 'Order could not be cancelled' };
+        return { success: false, message: "Order could not be cancelled" };
       }
 
       if (orderRow.stock_branch) {
@@ -1271,12 +1508,17 @@ export const actions: Actions = {
              *
              * When ledger splits unpaid (`partial balance`), debits ≈ outstanding — same number.
              */
-            const outstandingAmt = Math.max(0, parseMoney(orderRow.outstanding_amount));
+            const outstandingAmt = Math.max(
+              0,
+              parseMoney(orderRow.outstanding_amount),
+            );
             const debitMag = Math.abs(orderDebitSum);
             let reversalMag = 0;
             if (debitMag > 0) {
               reversalMag =
-                outstandingAmt > 0 ? Math.min(debitMag, outstandingAmt) : debitMag;
+                outstandingAmt > 0
+                  ? Math.min(debitMag, outstandingAmt)
+                  : debitMag;
             } else if (outstandingAmt > 0) {
               reversalMag = outstandingAmt;
             }
@@ -1289,10 +1531,10 @@ export const actions: Actions = {
                 company: companyId,
                 customer: orderRow.customer_id,
                 amount: -debitSign * reversalMag,
-                type: 'adjustment',
+                type: "adjustment",
                 reference: orderId,
-                reference_type: 'order',
-                note: 'Order cancelled — ledger reversal',
+                reference_type: "order",
+                note: "Order cancelled — ledger reversal",
                 created_by: merchantId,
               });
             }
@@ -1302,29 +1544,33 @@ export const actions: Actions = {
              * Reversing only `type: order` leaves those rows — ledger wrongly shows debt matching that slice.
              * Undo balance-application lines first; cash refund then offsets that undo for a net-zero position.
              */
-            if (statusNorm === 'partially_paid') {
-              const balanceAppliedSum = await sumOrderLedgerCustomerBalancePayments(orderId);
-              if (balanceAppliedSum !== 0 && Number.isFinite(balanceAppliedSum)) {
+            if (statusNorm === "partially_paid") {
+              const balanceAppliedSum =
+                await sumOrderLedgerCustomerBalancePayments(orderId);
+              if (
+                balanceAppliedSum !== 0 &&
+                Number.isFinite(balanceAppliedSum)
+              ) {
                 await insertCustomerTransaction({
                   company: companyId,
                   customer: orderRow.customer_id,
                   amount: -balanceAppliedSum,
-                  type: 'adjustment',
+                  type: "adjustment",
                   reference: orderId,
-                  reference_type: 'order',
-                  note: 'Order cancelled — reverse prepaid applied to order',
+                  reference_type: "order",
+                  note: "Order cancelled — reverse prepaid applied to order",
                   created_by: merchantId,
                 });
 
-                if (partialCancelRefund === 'cash') {
+                if (partialCancelRefund === "cash") {
                   await insertCustomerTransaction({
                     company: companyId,
                     customer: orderRow.customer_id,
                     amount: balanceAppliedSum,
-                    type: 'refund',
+                    type: "refund",
                     reference: orderId,
-                    reference_type: 'order',
-                    note: 'Order cancelled — cash refund recorded',
+                    reference_type: "order",
+                    note: "Order cancelled — cash refund recorded",
                     created_by: merchantId,
                   });
                 }
@@ -1334,18 +1580,22 @@ export const actions: Actions = {
                * Manual cash/bank on this order (`payment` with negative amount) does not hit the prepaid undo above.
                * “Refund to customer balance” must convert that slice back into prepaid (negative running balance).
                */
-              if (partialCancelRefund === 'balance') {
-                const manualCashSum = await sumOrderLedgerManualCashPayments(orderId);
+              if (partialCancelRefund === "balance") {
+                const manualCashSum =
+                  await sumOrderLedgerManualCashPayments(orderId);
                 const manualCashPaidMag = Math.max(0, -manualCashSum);
-                if (manualCashPaidMag > 0 && Number.isFinite(manualCashPaidMag)) {
+                if (
+                  manualCashPaidMag > 0 &&
+                  Number.isFinite(manualCashPaidMag)
+                ) {
                   await insertCustomerTransaction({
                     company: companyId,
                     customer: orderRow.customer_id,
                     amount: -manualCashPaidMag,
-                    type: 'adjustment',
+                    type: "adjustment",
                     reference: orderId,
-                    reference_type: 'order',
-                    note: 'Order cancelled — cash payment released to customer balance',
+                    reference_type: "order",
+                    note: "Order cancelled — cash payment released to customer balance",
                     created_by: merchantId,
                   });
                 }
@@ -1354,7 +1604,7 @@ export const actions: Actions = {
           } catch (ledgerErr) {
             return {
               success: false,
-              message: `Order cancelled but ledger reversal failed: ${ledgerErr instanceof Error ? ledgerErr.message : 'Unknown error'}`,
+              message: `Order cancelled but ledger reversal failed: ${ledgerErr instanceof Error ? ledgerErr.message : "Unknown error"}`,
               orderId: result.id,
             };
           }
@@ -1363,7 +1613,7 @@ export const actions: Actions = {
 
       return {
         success: true,
-        message: 'Order cancelled successfully',
+        message: "Order cancelled successfully",
         orderId: result.id,
       };
     } catch (error) {
@@ -1376,7 +1626,7 @@ export const actions: Actions = {
       }
       return {
         success: false,
-        message: `Failed to cancel order: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Failed to cancel order: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   },

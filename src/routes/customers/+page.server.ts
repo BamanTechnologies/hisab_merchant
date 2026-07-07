@@ -1,27 +1,11 @@
-import type { PageServerLoad } from './$types';
-import { getUserIdFromRequest } from '$lib/auth';
-import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
-import { config, getGraphQLHeaders } from '$lib/config';
+import type { PageServerLoad } from "./$types";
+import { getUserIdFromRequest } from "$lib/auth";
+import { fetchMerchantBranchId } from "$lib/merchantBranch.server";
+import { config, getGraphQLHeaders } from "$lib/config";
 
-const FETCH_COMPANY_CUSTOMER_IDS_QUERY = `
-  query CustomersCompanyCustomerIds($companyId: uuid!, $branchId: uuid!) {
-    company_customer(
-      where: {
-        _and: [
-          { company: { _eq: $companyId } }
-          { branch: { _eq: $branchId } }
-        ]
-      }
-    ) {
-      id
-      customer
-    }
-  }
-`;
-
-const FETCH_CUSTOMERS_BY_IDS_QUERY = `
-  query CustomersListByIds($ids: [uuid!]!) {
-    customers(where: { id: { _in: $ids } }) {
+const FETCH_CUSTOMERS_QUERY = `
+  query CustomersList($limit: Int, $offset: Int, $filter: customers_bool_exp, $order: [customers_order_by!]) {
+    customers(where: $filter, limit: $limit, offset: $offset, order_by: $order) {
       id
       first_name
       last_name
@@ -29,12 +13,20 @@ const FETCH_CUSTOMERS_BY_IDS_QUERY = `
       address
       created_at
     }
+    total_customers: customers_aggregate(where: $filter) {
+      aggregate {
+        count
+      }
+    }
   }
 `;
 
-async function gql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+async function gql<T>(
+  query: string,
+  variables?: Record<string, unknown>,
+): Promise<T> {
   const response = await fetch(config.graphql.endpoint, {
-    method: 'POST',
+    method: "POST",
     headers: getGraphQLHeaders(),
     body: JSON.stringify({ query, variables }),
   });
@@ -60,41 +52,59 @@ export type CustomerListRow = {
   created_at?: string | null;
 };
 
-async function fetchCompanyCustomersList(
+async function fetchCustomersList(
   companyId: string,
   branchId: string,
-): Promise<CustomerListRow[]> {
+  search: string,
+  page: number,
+  pageSize: number,
+): Promise<{ customers: CustomerListRow[]; totalCount: number }> {
+  const offset = (page - 1) * pageSize;
+
+  const companyFilter: Record<string, unknown> = {
+    company_customers: {
+      company: { _eq: companyId },
+      branch: { _eq: branchId },
+    },
+  };
+
+  const filter: Record<string, unknown> = search
+    ? {
+        _and: [
+          companyFilter,
+          {
+            _or: [
+              { first_name: { _ilike: `%${search}%` } },
+              { last_name: { _ilike: `%${search}%` } },
+              { phone_number: { _ilike: `%${search}%` } },
+            ],
+          },
+        ],
+      }
+    : companyFilter;
+
+  const order = [{ created_at: "desc" }];
+
   try {
-    const junction = await gql<{
-      company_customer: Array<{ customer: string } | null>;
-    }>(FETCH_COMPANY_CUSTOMER_IDS_QUERY, { companyId, branchId });
-
-    const ids = [
-      ...new Set(
-        (junction.company_customer ?? [])
-          .map((r) => r?.customer)
-          .filter((id): id is string => typeof id === 'string' && id.length > 0),
-      ),
-    ];
-
-    if (ids.length === 0) return [];
-
-    const data = await gql<{ customers: CustomerListRow[] }>(FETCH_CUSTOMERS_BY_IDS_QUERY, {
-      ids,
+    const data = await gql<{
+      customers: CustomerListRow[];
+      total_customers: { aggregate: { count: number } };
+    }>(FETCH_CUSTOMERS_QUERY, {
+      filter,
+      order,
+      limit: pageSize,
+      offset,
     });
-
-    const list = data.customers ?? [];
-    return [...list].sort((a, b) => {
-      const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
-      const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
-      return tb - ta;
-    });
+    return {
+      customers: data.customers ?? [],
+      totalCount: data.total_customers?.aggregate?.count ?? 0,
+    };
   } catch {
-    return [];
+    return { customers: [], totalCount: 0 };
   }
 }
 
-export const load: PageServerLoad = async ({ request, parent }) => {
+export const load: PageServerLoad = async ({ request, parent, url }) => {
   const { merchantContext } = await parent();
   const merchantId =
     merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
@@ -103,13 +113,24 @@ export const load: PageServerLoad = async ({ request, parent }) => {
     merchantContext?.merchantBranchId ??
     (merchantId ? await fetchMerchantBranchId(merchantId) : null);
 
-  const customers =
+  const search = url.searchParams.get("search") ?? "";
+  const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+  const pageSize = Math.max(1, Number(url.searchParams.get("pageSize")) || 10);
+
+  const { customers, totalCount } =
     companyId && merchantBranchId
-      ? await fetchCompanyCustomersList(companyId, merchantBranchId)
-      : [];
+      ? await fetchCustomersList(
+          companyId,
+          merchantBranchId,
+          search,
+          page,
+          pageSize,
+        )
+      : { customers: [], totalCount: 0 };
 
   return {
     customers,
+    totalCount,
     companyId,
     merchantId,
     merchantBranchId,

@@ -4,12 +4,9 @@ import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
 import { config, getGraphQLHeaders } from '$lib/config';
 import { subscriptionWriteActionBlockedForRequest } from '$lib/subscription/server';
 
-const FETCH_EXPENSES_BY_BRANCH_QUERY = `
-  query ExpensesByBranch($branchId: uuid!) {
-    expenses(
-      where: { branch_id: { _eq: $branchId } }
-      order_by: { created_at: desc }
-    ) {
+const FETCH_EXPENSES_QUERY = `
+  query ExpensesByBranch($branchId: uuid!, $filter: expenses_bool_exp, $order: [expenses_order_by!], $limit: Int, $offset: Int) {
+    expenses(where: $filter, limit: $limit, offset: $offset, order_by: $order) {
       id
       created_at
       updated_at
@@ -26,28 +23,19 @@ const FETCH_EXPENSES_BY_BRANCH_QUERY = `
       amount
       receipt
     }
-    operation_expenses_aggregate: expenses_aggregate(
-      where: {
-        _and: [
-          { branch_id: { _eq: $branchId } }
-          { expense_type: { _eq: "operation" } }
-        ]
+    total_expenses: expenses_aggregate(where: $filter) {
+      aggregate {
+        count
       }
-    ) {
+    }
+    operation_expenses_aggregate: expenses_aggregate(where: { _and: [{ branch_id: { _eq: $branchId } }, { expense_type: { _eq: "operation" } }] }) {
       aggregate {
         sum {
           amount
         }
       }
     }
-    major_expenses_aggregate: expenses_aggregate(
-      where: {
-        _and: [
-          { branch_id: { _eq: $branchId } }
-          { expense_type: { _eq: "major" } }
-        ]
-      }
-    ) {
+    major_expenses_aggregate: expenses_aggregate(where: { _and: [{ branch_id: { _eq: $branchId } }, { expense_type: { _eq: "major" } }] }) {
       aggregate {
         sum {
           amount
@@ -106,7 +94,6 @@ type ExpenseRow = {
   created_at: string;
   updated_at?: string | null;
   created_by: string;
-  /** Display name from merchant table */
   created_by_name: string;
   sent_to: string;
   category: string;
@@ -141,10 +128,7 @@ function normalizeExpense(raw: Record<string, unknown>): Omit<ExpenseRow, 'creat
   };
 }
 
-function merchantDisplayName(
-  first?: string | null,
-  last?: string | null,
-): string {
+function merchantDisplayName(first?: string | null, last?: string | null): string {
   const name = [first, last].filter(Boolean).join(' ').trim();
   return name || '—';
 }
@@ -195,7 +179,123 @@ const paymentTypeSet = new Set<string>(PAYMENT_TYPE_VALUES);
 const expenseTypeSet = new Set<string>(EXPENSE_TYPE_VALUES);
 const categorySet = new Set<string>(CATEGORY_VALUES);
 
-export const load: PageServerLoad = async ({ request, parent }) => {
+async function fetchExpenses(
+  branchId: string,
+  search: string,
+  typeFilter: string,
+  dateRange: string,
+  customDateFrom: string,
+  customDateTo: string,
+  categoryFilter: string,
+  sortColumn: string,
+  sortDirection: string,
+  page: number,
+  pageSize: number,
+) {
+  const offset = (page - 1) * pageSize;
+
+  const conditions: Record<string, unknown>[] = [
+    { branch_id: { _eq: branchId } },
+  ];
+
+  if (typeFilter !== 'all') {
+    conditions.push({ expense_type: { _eq: typeFilter } });
+  }
+
+  if (categoryFilter !== 'all') {
+    conditions.push({ category: { _eq: categoryFilter } });
+  }
+
+  if (search) {
+    conditions.push({
+      _or: [
+        { sent_to: { _ilike: `%${search}%` } },
+        { from_person: { _ilike: `%${search}%` } },
+        { category: { _ilike: `%${search}%` } },
+        { note: { _ilike: `%${search}%` } },
+        { payment_type: { _ilike: `%${search}%` } },
+      ],
+    });
+  }
+
+  if (dateRange === 'today') {
+    const now = new Date();
+    const start = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    ).toISOString();
+    const end = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      23, 59, 59, 999,
+    ).toISOString();
+    conditions.push({ created_at: { _gte: start, _lte: end } });
+  } else if (dateRange === 'last7') {
+    const from = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString();
+    conditions.push({ created_at: { _gte: from } });
+  } else if (dateRange === 'last30') {
+    const from = new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString();
+    conditions.push({ created_at: { _gte: from } });
+  } else if (dateRange === 'custom') {
+    if (customDateFrom) conditions.push({ created_at: { _gte: customDateFrom } });
+    if (customDateTo) conditions.push({ created_at: { _lte: customDateTo } });
+  }
+
+  const filter: Record<string, unknown> = { _and: conditions };
+
+  const sortFieldMap: Record<string, string> = {
+    date: 'created_at',
+    amount: 'amount',
+    type: 'expense_type',
+    paid_by: 'from_person',
+    sent_to: 'sent_to',
+    from_account: 'from_account',
+    to_account: 'to_account',
+    category: 'category',
+    payment: 'payment_type',
+  };
+  const sortField = sortFieldMap[sortColumn];
+  const order =
+    sortField && sortColumn !== 'none'
+      ? [{ [sortField]: sortDirection }]
+      : [{ created_at: 'desc' }];
+
+  try {
+    const data = await gql<{
+      expenses: Record<string, unknown>[];
+      total_expenses: { aggregate: { count: number } };
+      operation_expenses_aggregate: {
+        aggregate: { sum: { amount: unknown } | null } | null;
+      } | null;
+      major_expenses_aggregate: {
+        aggregate: { sum: { amount: unknown } | null } | null;
+      } | null;
+    }>(FETCH_EXPENSES_QUERY, {
+      branchId,
+      filter,
+      order,
+      limit: pageSize,
+      offset,
+    });
+
+    return {
+      expenses: data.expenses ?? [],
+      totalCount: data.total_expenses?.aggregate?.count ?? 0,
+      totalOperationalExpenseAmount: parseMoney(
+        data.operation_expenses_aggregate?.aggregate?.sum?.amount ?? 0,
+      ),
+      totalMajorExpenseAmount: parseMoney(
+        data.major_expenses_aggregate?.aggregate?.sum?.amount ?? 0,
+      ),
+    };
+  } catch {
+    return { expenses: [], totalCount: 0, totalOperationalExpenseAmount: 0, totalMajorExpenseAmount: 0 };
+  }
+}
+
+export const load: PageServerLoad = async ({ request, parent, url }) => {
   const { merchantContext } = await parent();
   const merchantId =
     merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
@@ -203,37 +303,42 @@ export const load: PageServerLoad = async ({ request, parent }) => {
     merchantContext?.merchantBranchId ??
     (merchantId ? await fetchMerchantBranchId(merchantId) : null);
 
-  let expenses: ExpenseRow[] = [];
-  let totalOperationalExpenseAmount = 0;
-  let totalMajorExpenseAmount = 0;
+  const search = url.searchParams.get('search') ?? '';
+  const typeFilter = url.searchParams.get('type') ?? 'all';
+  const dateRange = url.searchParams.get('dateRange') ?? 'all';
+  const customDateFrom = url.searchParams.get('from') ?? '';
+  const customDateTo = url.searchParams.get('to') ?? '';
+  const categoryFilter = url.searchParams.get('category') ?? 'all';
+  const sortColumn = url.searchParams.get('sort') ?? 'none';
+  const sortDirection = (url.searchParams.get('dir') as 'asc' | 'desc') ?? 'desc';
+  const page = Math.max(1, Number(url.searchParams.get('page')) || 1);
+  const pageSize = Math.max(1, Number(url.searchParams.get('pageSize')) || 10);
 
-  if (merchantBranchId) {
-    try {
-      const data = await gql<{
-        expenses: Record<string, unknown>[];
-        operation_expenses_aggregate: {
-          aggregate: { sum: { amount: unknown } | null } | null;
-        } | null;
-        major_expenses_aggregate: {
-          aggregate: { sum: { amount: unknown } | null } | null;
-        } | null;
-      }>(FETCH_EXPENSES_BY_BRANCH_QUERY, { branchId: merchantBranchId });
+  const result = merchantBranchId
+    ? await fetchExpenses(
+        merchantBranchId,
+        search,
+        typeFilter,
+        dateRange,
+        customDateFrom,
+        customDateTo,
+        categoryFilter,
+        sortColumn,
+        sortDirection,
+        page,
+        pageSize,
+      )
+    : { expenses: [], totalCount: 0, totalOperationalExpenseAmount: 0, totalMajorExpenseAmount: 0 };
 
-      const rawRows = (data.expenses ?? []).map((r) => normalizeExpense(r));
-      expenses = await attachCreatorNames(rawRows);
-      totalOperationalExpenseAmount = parseMoney(
-        data.operation_expenses_aggregate?.aggregate?.sum?.amount ?? 0,
-      );
-      totalMajorExpenseAmount = parseMoney(
-        data.major_expenses_aggregate?.aggregate?.sum?.amount ?? 0,
-      );
-    } catch {}
-  }
+  const expenses = await attachCreatorNames(
+    (result.expenses ?? []).map((r) => normalizeExpense(r as Record<string, unknown>)),
+  );
 
   return {
     expenses,
-    totalOperationalExpenseAmount,
-    totalMajorExpenseAmount,
+    totalCount: result.totalCount,
+    totalOperationalExpenseAmount: result.totalOperationalExpenseAmount,
+    totalMajorExpenseAmount: result.totalMajorExpenseAmount,
     merchantId,
     merchantBranchId,
     expenseTypes: [...EXPENSE_TYPE_VALUES],

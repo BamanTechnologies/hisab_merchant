@@ -76,14 +76,6 @@ const STOCK_FIELDS = `
       }
 `;
 
-const FETCH_STOCKS_ALL_QUERY = `
-  query StocksAll {
-    stock(order_by: [{ created_at: asc }, { id: asc }]) {
-${STOCK_FIELDS}
-    }
-  }
-`;
-
 const FETCH_BRANCH_IDS_FOR_COMPANY_QUERY = `
   query BranchIdsForCompanyStocks($companyId: uuid!) {
     branches(where: { company: { _eq: $companyId } }) {
@@ -101,24 +93,15 @@ const FETCH_BRANCHES_FOR_COMPANY_QUERY = `
   }
 `;
 
-const FETCH_STOCKS_BY_BRANCHES_QUERY = `
-  query StocksByBranches($branchIds: [uuid!]!) {
-    stock(
-      where: { branch: { _in: $branchIds } }
-      order_by: [{ created_at: asc }, { id: asc }]
-    ) {
+const FETCH_STOCKS_QUERY = `
+  query StocksList($filter: stock_bool_exp, $order: [stock_order_by!], $limit: Int, $offset: Int) {
+    stock(where: $filter, limit: $limit, offset: $offset, order_by: $order) {
 ${STOCK_FIELDS}
     }
-  }
-`;
-
-const FETCH_STOCKS_BY_BRANCH_QUERY = `
-  query StocksByBranch($branchId: uuid!) {
-    stock(
-      where: { branch: { _eq: $branchId } }
-      order_by: [{ created_at: asc }, { id: asc }]
-    ) {
-${STOCK_FIELDS}
+    total_stocks: stock_aggregate(where: $filter) {
+      aggregate {
+        count
+      }
     }
   }
 `;
@@ -250,78 +233,6 @@ async function gql<T>(
   return result.data as T;
 }
 
-async function fetchStocks(
-  merchantBranchId: string | null,
-  companyId: string | null,
-): Promise<{
-  rows: Record<string, unknown>[];
-  error: string | null;
-  scope: "branch" | "company" | "all";
-}> {
-  const runQuery = async (
-    query: string,
-    variables?: Record<string, unknown>,
-  ): Promise<Record<string, unknown>[]> => {
-    const response = await fetch(config.graphql.endpoint, {
-      method: "POST",
-      headers: getGraphQLHeaders(),
-      body: JSON.stringify({ query, variables }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const result = await response.json();
-
-    if (result.errors) {
-      throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
-    }
-
-    return result.data?.stock ?? [];
-  };
-
-  try {
-    if (merchantBranchId) {
-      const branchRows = await runQuery(FETCH_STOCKS_BY_BRANCH_QUERY, {
-        branchId: merchantBranchId,
-      });
-      if (branchRows.length > 0) {
-        return { rows: branchRows, error: null, scope: "branch" };
-      }
-      if (companyId) {
-        try {
-          const branchData = await gql<{ branches: { id: string }[] }>(
-            FETCH_BRANCH_IDS_FOR_COMPANY_QUERY,
-            { companyId },
-          );
-          const branchIds = (branchData.branches ?? [])
-            .map((b) => b.id)
-            .filter(Boolean);
-          if (branchIds.length > 0) {
-            const companyRows = await runQuery(FETCH_STOCKS_BY_BRANCHES_QUERY, {
-              branchIds,
-            });
-            if (companyRows.length > 0) {
-              return { rows: companyRows, error: null, scope: "company" };
-            }
-          }
-        } catch (fallbackErr) {
-          console.error("[stocks load] company fallback failed", fallbackErr);
-        }
-      }
-      return { rows: branchRows, error: null, scope: "branch" };
-    }
-
-    const allRows = await runQuery(FETCH_STOCKS_ALL_QUERY);
-    return { rows: allRows, error: null, scope: "all" };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to load stock";
-    console.error("[stocks load]", message);
-    return { rows: [], error: message, scope: "all" };
-  }
-}
-
 async function fetchProductsForReceive(companyId: string | null) {
   if (!companyId) return [];
   try {
@@ -360,6 +271,92 @@ async function fetchProductTypes(merchantId: string | null) {
   }
 }
 
+async function fetchStocksList(
+  merchantBranchId: string | null,
+  companyId: string | null,
+  search: string,
+  typeFilter: string,
+  sortColumn: string,
+  sortDirection: string,
+  page: number,
+  pageSize: number,
+): Promise<{ rows: Record<string, unknown>[]; totalCount: number; error: string | null }> {
+  const conditions: Record<string, unknown>[] = [];
+  const offset = (page - 1) * pageSize;
+
+  if (merchantBranchId) {
+    conditions.push({ branch: { _eq: merchantBranchId } });
+  } else if (companyId) {
+    try {
+      const branchData = await gql<{ branches: { id: string }[] }>(
+        FETCH_BRANCH_IDS_FOR_COMPANY_QUERY,
+        { companyId },
+      );
+      const branchIds = (branchData.branches ?? []).map((b) => b.id).filter(Boolean);
+      if (branchIds.length > 0) {
+        conditions.push({ branch: { _in: branchIds } });
+      }
+    } catch {
+      // No branch filter if query fails
+    }
+  }
+
+  if (typeFilter !== "all") {
+    conditions.push({
+      _or: [
+        { product: { product_type: { name: { _ilike: typeFilter } } } },
+        { type: { _ilike: typeFilter } },
+      ],
+    });
+  }
+
+  if (search) {
+    conditions.push({
+      _or: [
+        { batch_number: { _ilike: `%${search}%` } },
+        { type: { _ilike: `%${search}%` } },
+        { product: { name: { _ilike: `%${search}%` } } },
+        { product: { product_type: { name: { _ilike: `%${search}%` } } } },
+      ],
+    });
+  }
+
+  const filter: Record<string, unknown> =
+    conditions.length > 0 ? { _and: conditions } : {};
+
+  const sortFieldMap: Record<string, string> = {
+    batch: "batch_number",
+    quantity: "quantity",
+    received: "created_at",
+  };
+  const sortField = sortFieldMap[sortColumn];
+  const order =
+    sortField && sortColumn !== "none"
+      ? [{ [sortField]: sortDirection === "desc" ? "desc" : "asc" }]
+      : [{ created_at: "desc" }];
+
+  try {
+    const data = await gql<{
+      stock: Record<string, unknown>[];
+      total_stocks: { aggregate: { count: number } };
+    }>(FETCH_STOCKS_QUERY, {
+      filter,
+      order,
+      limit: pageSize,
+      offset,
+    });
+    return {
+      rows: data.stock ?? [],
+      totalCount: data.total_stocks?.aggregate?.count ?? 0,
+      error: null,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to load stock";
+    console.error("[stocks load]", message);
+    return { rows: [], totalCount: 0, error: message };
+  }
+}
+
 function assertBranchAllowed(
   branchId: string | null,
   merchantBranchId: string | null,
@@ -369,7 +366,7 @@ function assertBranchAllowed(
   }
 }
 
-export const load: PageServerLoad = async ({ request, parent }) => {
+export const load: PageServerLoad = async ({ request, parent, url }) => {
   const { merchantContext } = await parent();
   const merchantId =
     merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
@@ -382,6 +379,13 @@ export const load: PageServerLoad = async ({ request, parent }) => {
     companyId = await fetchBranchCompanyId(merchantBranchId);
   }
 
+  const search = url.searchParams.get("search") ?? "";
+  const typeFilter = url.searchParams.get("type") ?? "all";
+  const sortColumn = url.searchParams.get("sort") ?? "none";
+  const sortDirection = (url.searchParams.get("dir") as "asc" | "desc") ?? "desc";
+  const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+  const pageSize = Math.max(1, Number(url.searchParams.get("pageSize")) || 10);
+
   const [
     stocksResult,
     products,
@@ -391,7 +395,16 @@ export const load: PageServerLoad = async ({ request, parent }) => {
     companyName,
     existingBatchNumbers,
   ] = await Promise.all([
-    fetchStocks(merchantBranchId, companyId),
+    fetchStocksList(
+      merchantBranchId,
+      companyId,
+      search,
+      typeFilter,
+      sortColumn,
+      sortDirection,
+      page,
+      pageSize,
+    ),
     fetchProductsForReceive(companyId),
     fetchInvestorsForCompany(companyId),
     fetchProductTypes(merchantId),
@@ -420,8 +433,8 @@ export const load: PageServerLoad = async ({ request, parent }) => {
 
   return {
     stocks,
+    totalCount: stocksResult.totalCount,
     stocksLoadError: stocksResult.error,
-    stocksLoadScope: stocksResult.scope,
     products,
     investors,
     productTypes,

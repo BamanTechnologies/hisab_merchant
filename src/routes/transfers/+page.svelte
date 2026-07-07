@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { goto } from "$app/navigation";
+	import { page } from "$app/stores";
 	import TablePagination from "$lib/components/TablePagination.svelte";
 	import { mc } from "$lib/merchant-styles.js";
-	import { paginateSlice } from "$lib/pagination.js";
 	import type { PageData } from "./$types";
 	import { _ } from "svelte-i18n";
 
@@ -25,51 +25,23 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const transfers = (data.transfers ?? []) as Transfer[];
+	let transfers = $state((data.transfers ?? []) as Transfer[]);
+	let totalCount = $state((data as { totalCount: number }).totalCount ?? 0);
 	const branches = (data.branches ?? []) as Branch[];
 	const merchants = (data.merchants ?? []) as Merchant[];
 
-	let fromFilter = $state("");
-	let toFilter = $state("");
-	let destinationMerchantFilter = $state("");
-	let createdByFilter = $state("");
-	let tablePage = $state(1);
-	let tablePageSize = $state(10);
+	let fromFilter = $state($page.url.searchParams.get("from") ?? "");
+	let toFilter = $state($page.url.searchParams.get("to") ?? "");
+	let destinationMerchantFilter = $state($page.url.searchParams.get("destination_merchant") ?? "");
+	let createdByFilter = $state($page.url.searchParams.get("created_by") ?? "");
+	let tablePage = $state(Number($page.url.searchParams.get("page")) || 1);
+	let tablePageSize = $state(Number($page.url.searchParams.get("pageSize")) || 10);
+	let filterDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+	let suppressPageNav = $state(false);
 
-	const filteredTransfers = $derived.by(() =>
-		transfers.filter((t) => {
-			if (fromFilter && t.from !== fromFilter) return false;
-			if (toFilter && t.to !== toFilter) return false;
-			if (destinationMerchantFilter && t.destination_merchant !== destinationMerchantFilter) {
-				return false;
-			}
-			if (createdByFilter && t.created_by !== createdByFilter) return false;
-			return true;
-		}),
-	);
-
-	const paginationResetKey = $derived(
-		`${fromFilter}|${toFilter}|${destinationMerchantFilter}|${createdByFilter}`,
-	);
-
-	const pagedTransfers = $derived(
-		paginateSlice(filteredTransfers, tablePage, tablePageSize),
-	);
-
-	const senderMerchantIds = $derived.by(() => {
-		const ids = new Set<string>();
-		for (const t of transfers) {
-			if (t.created_by) ids.add(t.created_by);
-		}
-		return Array.from(ids);
-	});
-
-	const destinationMerchantIds = $derived.by(() => {
-		const ids = new Set<string>();
-		for (const t of transfers) {
-			if (t.destination_merchant) ids.add(t.destination_merchant);
-		}
-		return Array.from(ids);
+	$effect(() => {
+		transfers = (data.transfers ?? []) as Transfer[];
+		totalCount = (data as { totalCount: number }).totalCount ?? 0;
 	});
 
 	function branchName(id: string | null | undefined) {
@@ -103,6 +75,46 @@
 		const n = Number(v ?? 0);
 		return Number.isFinite(n) ? n.toLocaleString() : "—";
 	}
+
+	function navigateWithState() {
+		const params = new URLSearchParams();
+		if (fromFilter) params.set("from", fromFilter);
+		if (toFilter) params.set("to", toFilter);
+		if (destinationMerchantFilter) params.set("destination_merchant", destinationMerchantFilter);
+		if (createdByFilter) params.set("created_by", createdByFilter);
+		if (tablePage > 1) params.set("page", String(tablePage));
+		if (tablePageSize !== 10) params.set("pageSize", String(tablePageSize));
+		const qs = params.toString();
+		goto(qs ? `/transfers?${qs}` : "/transfers", { replaceState: true, keepFocus: true });
+	}
+
+	$effect(() => {
+		const f = `${fromFilter}|${toFilter}|${destinationMerchantFilter}|${createdByFilter}`;
+		const urlFrom = $page.url.searchParams.get("from") ?? "";
+		const urlTo = $page.url.searchParams.get("to") ?? "";
+		const urlDm = $page.url.searchParams.get("destination_merchant") ?? "";
+		const urlCb = $page.url.searchParams.get("created_by") ?? "";
+		const urlFilters = `${urlFrom}|${urlTo}|${urlDm}|${urlCb}`;
+		if (f === urlFilters) return;
+
+		clearTimeout(filterDebounceTimer);
+		filterDebounceTimer = setTimeout(() => {
+			suppressPageNav = true;
+			tablePage = 1;
+			navigateWithState();
+			suppressPageNav = false;
+		}, 300);
+	});
+
+	$effect(() => {
+		if (suppressPageNav) return;
+		const pg = tablePage;
+		const ps = tablePageSize;
+		const urlPage = Number($page.url.searchParams.get("page")) || 1;
+		const urlPageSize = Number($page.url.searchParams.get("pageSize")) || 10;
+		if (pg === urlPage && ps === urlPageSize) return;
+		navigateWithState();
+	});
 
 	function clearFilters() {
 		fromFilter = "";
@@ -162,8 +174,8 @@
 		<span class={mc.filterLabel}>{$_('destinationMerchant')}</span>
 		<select class={mc.filterSelect} bind:value={destinationMerchantFilter}>
 			<option value="">{$_('all')}</option>
-			{#each destinationMerchantIds as id}
-				<option value={id}>{merchantName(id)}</option>
+			{#each merchants as m}
+				<option value={m.id}>{merchantName(m.id)}</option>
 			{/each}
 		</select>
 	</label>
@@ -171,8 +183,8 @@
 		<span class={mc.filterLabel}>{$_('createdBy')}</span>
 		<select class={mc.filterSelect} bind:value={createdByFilter}>
 			<option value="">{$_('all')}</option>
-			{#each senderMerchantIds as id}
-				<option value={id}>{merchantName(id)}</option>
+			{#each merchants as m}
+				<option value={m.id}>{merchantName(m.id)}</option>
 			{/each}
 		</select>
 	</label>
@@ -197,12 +209,12 @@
 				</tr>
 			</thead>
 			<tbody>
-				{#if filteredTransfers.length === 0}
+				{#if transfers.length === 0}
 					<tr>
 						<td colspan="8" class={mc.emptyCell}>{$_('noTransfersFound')}</td>
 					</tr>
 				{:else}
-					{#each pagedTransfers as t, i}
+					{#each transfers as t, i}
 						{@const linkId = stockLinkId(t)}
 						<tr
 							class={linkId ? mc.rowClickable : ""}
@@ -234,7 +246,6 @@
 	<TablePagination
 		bind:page={tablePage}
 		bind:pageSize={tablePageSize}
-		total={filteredTransfers.length}
-		resetKey={paginationResetKey}
+		total={totalCount}
 	/>
 </section>

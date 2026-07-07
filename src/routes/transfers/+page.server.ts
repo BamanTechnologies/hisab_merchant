@@ -26,7 +26,8 @@ function transferLinkStockId(
     const s = String(v).trim();
     return s.length > 0 ? s : null;
   };
-  const isSender = String(t.created_by ?? "").trim() === String(merchantId).trim();
+  const isSender =
+    String(t.created_by ?? "").trim() === String(merchantId).trim();
   if (isSender) return nonEmpty(t.stock);
   return nonEmpty(t.destination_stock) ?? nonEmpty(t.stock);
 }
@@ -79,15 +80,12 @@ type MerchantRow = {
 };
 
 const FETCH_TRANSFERS_FOR_MERCHANT_QUERY = `
-  query TransfersForMerchant($merchantId: uuid!) {
+  query TransfersForMerchant($filter: transfers_bool_exp, $order: [transfers_order_by!], $limit: Int, $offset: Int) {
     transfers(
-      where: {
-        _or: [
-          { created_by: { _eq: $merchantId } }
-          { destination_merchant: { _eq: $merchantId } }
-        ]
-      }
-      order_by: [{ created_at: desc }, { id: desc }]
+      where: $filter
+      order_by: $order
+      limit: $limit
+      offset: $offset
     ) {
       id
       stock
@@ -98,6 +96,11 @@ const FETCH_TRANSFERS_FOR_MERCHANT_QUERY = `
       destination_merchant
       quantity
       created_at
+    }
+    total_transfers: transfers_aggregate(where: $filter) {
+      aggregate {
+        count
+      }
     }
   }
 `;
@@ -140,7 +143,10 @@ const FETCH_STOCKS_BY_IDS_FOR_TRANSFERS_QUERY = `
   }
 `;
 
-async function gqlRequest<T>(query: string, variables?: Record<string, unknown>) {
+async function gqlRequest<T>(
+  query: string,
+  variables?: Record<string, unknown>,
+) {
   const response = await fetch(config.graphql.endpoint, {
     method: "POST",
     headers: getGraphQLHeaders(),
@@ -172,26 +178,60 @@ export const load: PageServerLoad = async ({ request, url, parent }) => {
   if (!merchantId) {
     return {
       transfers: [],
+      totalCount: 0,
       branches: [],
       merchants: [],
       merchantId: null,
     };
   }
 
+  const from = url.searchParams.get("from") ?? "";
+  const to = url.searchParams.get("to") ?? "";
+  const destinationMerchant = url.searchParams.get("destination_merchant") ?? "";
+  const createdBy = url.searchParams.get("created_by") ?? "";
+  const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+  const pageSize = Math.max(1, Number(url.searchParams.get("pageSize")) || 10);
+  const offset = (page - 1) * pageSize;
+
+  const conditions: Record<string, unknown>[] = [
+    {
+      _or: [
+        { created_by: { _eq: merchantId } },
+        { destination_merchant: { _eq: merchantId } },
+      ],
+    },
+  ];
+  if (from) conditions.push({ from: { _eq: from } });
+  if (to) conditions.push({ to: { _eq: to } });
+  if (destinationMerchant)
+    conditions.push({ destination_merchant: { _eq: destinationMerchant } });
+  if (createdBy) conditions.push({ created_by: { _eq: createdBy } });
+
+  const filter: Record<string, unknown> = { _and: conditions };
+  const order = [{ created_at: "desc" }, { id: "desc" }];
+
   try {
     const [transferData, merchantData] = await Promise.all([
-      gqlRequest<{ transfers: TransferRow[] }>(FETCH_TRANSFERS_FOR_MERCHANT_QUERY, {
-        merchantId,
+      gqlRequest<{
+        transfers: TransferRow[];
+        total_transfers: { aggregate: { count: number } };
+      }>(FETCH_TRANSFERS_FOR_MERCHANT_QUERY, {
+        filter,
+        order,
+        limit: pageSize,
+        offset,
       }),
       gqlRequest<{ merchant: MerchantRow[] }>(FETCH_MERCHANTS_QUERY),
     ]);
 
     const transfers = transferData.transfers ?? [];
+    const totalCount = transferData.total_transfers?.aggregate?.count ?? 0;
 
     const stockIdSet = new Set<string>();
     for (const t of transfers) {
       const a = t.stock != null ? String(t.stock).trim() : "";
-      const b = t.destination_stock != null ? String(t.destination_stock).trim() : "";
+      const b =
+        t.destination_stock != null ? String(t.destination_stock).trim() : "";
       if (a) stockIdSet.add(a);
       if (b) stockIdSet.add(b);
     }
@@ -199,10 +239,9 @@ export const load: PageServerLoad = async ({ request, url, parent }) => {
     const labelByStockId = new Map<string, string>();
     if (stockIds.length > 0) {
       try {
-        const stockPack = await gqlRequest<{ stock: Record<string, unknown>[] }>(
-          FETCH_STOCKS_BY_IDS_FOR_TRANSFERS_QUERY,
-          { ids: stockIds },
-        );
+        const stockPack = await gqlRequest<{
+          stock: Record<string, unknown>[];
+        }>(FETCH_STOCKS_BY_IDS_FOR_TRANSFERS_QUERY, { ids: stockIds });
         for (const row of stockPack.stock ?? []) {
           const id = String(row.id ?? "").trim();
           if (!id) continue;
@@ -217,7 +256,7 @@ export const load: PageServerLoad = async ({ request, url, parent }) => {
       const linkId = merchantId ? transferLinkStockId(t, merchantId) : null;
       const label =
         linkId != null
-          ? labelByStockId.get(linkId) ?? `${linkId.slice(0, 8)}…`
+          ? (labelByStockId.get(linkId) ?? `${linkId.slice(0, 8)}…`)
           : "—";
       return {
         ...t,
@@ -244,6 +283,7 @@ export const load: PageServerLoad = async ({ request, url, parent }) => {
 
     return {
       transfers: transfersEnriched,
+      totalCount,
       branches,
       merchants: merchantData.merchant ?? [],
       merchantId,
@@ -251,10 +291,10 @@ export const load: PageServerLoad = async ({ request, url, parent }) => {
   } catch (_error) {
     return {
       transfers: [],
+      totalCount: 0,
       branches: [],
       merchants: [],
       merchantId,
     };
   }
 };
-

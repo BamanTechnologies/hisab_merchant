@@ -1,6 +1,7 @@
 <script lang="ts">
   import { deserialize } from "$app/forms";
   import { goto } from "$app/navigation";
+  import { page } from "$app/stores";
   import { afterToast, showToast, TOAST_MS } from "$lib/toast";
   import { tick } from "svelte";
   import TablePagination from "$lib/components/TablePagination.svelte";
@@ -11,7 +12,6 @@
     SUBSCRIPTION_BLOCKED_MESSAGE,
     subscriptionBlocksMutations,
   } from "$lib/subscription/client";
-  import { paginateSlice } from "$lib/pagination.js";
   import {
     allocateFifo,
     defaultUnitPriceFromBatches,
@@ -125,6 +125,10 @@
   let orderToCancel = $state<OrderSummary | null>(null);
   let orders = $state(data.orders as OrderSummary[]);
   let payments = $state((data.payments ?? []) as PaymentRow[]);
+  let totalOrders = $state((data as { totalOrders: number }).totalOrders ?? 0);
+  let totalPayments = $state((data as { totalPayments: number }).totalPayments ?? 0);
+  let totalOrdersAmount = $state((data as { totalOrdersAmount: number }).totalOrdersAmount ?? 0);
+  let totalPaymentsAmount = $state((data as { totalPaymentsAmount: number }).totalPaymentsAmount ?? 0);
   let customers = $state(data.customers as CustomerRow[]);
   let products = $state(data.products as ProductRow[]);
   let errorMessage = $state("");
@@ -161,114 +165,33 @@
   let productPanelPos = $state<ProductPanelPos | null>(null);
   let productSearchInputEl = $state<HTMLInputElement | null>(null);
   let lastProductSearchFocusRowId: string | null = null;
-  let dateRangePreset = $state<"all" | "today" | "last7" | "last30" | "custom">(
-    "all",
+  let dateRangePreset = $state(
+    ($page.url.searchParams.get("dateRange") as "all" | "today" | "last7" | "last30" | "custom") ?? "all",
   );
-  let customerFilterName = $state("");
-  let customDateFrom = $state("");
-  let customDateTo = $state("");
+  let customerFilterName = $state($page.url.searchParams.get("customer") ?? "");
+  let customDateFrom = $state($page.url.searchParams.get("from") ?? "");
+  let customDateTo = $state($page.url.searchParams.get("to") ?? "");
   let customDateFromInputEl = $state<HTMLInputElement | null>(null);
   let customDateToInputEl = $state<HTMLInputElement | null>(null);
   let sortColumn = $state<
     "none" | "date" | "stock" | "customer" | "quantity" | "status" | "total"
-  >("none");
-  let sortDirection = $state<"asc" | "desc">("asc");
+  >(
+    ($page.url.searchParams.get("sort") as "none" | "date" | "stock" | "customer" | "quantity" | "status" | "total") ?? "none",
+  );
+  let sortDirection = $state<"asc" | "desc">(
+    ($page.url.searchParams.get("dir") as "asc" | "desc") ?? "desc",
+  );
+  let filterDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  let tablePage = $state(Number($page.url.searchParams.get("page")) || 1);
+  let tablePageSize = $state(Number($page.url.searchParams.get("pageSize")) || 10);
   const customerFilterOptions = $derived.by(() => {
     const names = new Set<string>();
-    for (const o of orders) {
-      const n = String(o.customer_name ?? "").trim();
+    for (const c of customers) {
+      const n = [c.first_name, c.last_name].filter(Boolean).join(" ").trim();
       if (n) names.add(n);
     }
     return [...names].sort((a, b) => a.localeCompare(b));
   });
-  const filteredOrders = $derived.by(() => {
-    const now = new Date();
-    const startOfDay = (d: Date) =>
-      new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-    const endOfDay = (d: Date) =>
-      new Date(
-        d.getFullYear(),
-        d.getMonth(),
-        d.getDate(),
-        23,
-        59,
-        59,
-        999,
-      ).getTime();
-    const todayStart = startOfDay(now);
-    const fromInputTs = customDateFrom
-      ? startOfDay(new Date(customDateFrom))
-      : null;
-    const toInputTs = customDateTo ? endOfDay(new Date(customDateTo)) : null;
-    return orders.filter((o) => {
-      if (
-        customerFilterName &&
-        String(o.customer_name ?? "").trim() !== customerFilterName
-      ) {
-        return false;
-      }
-      const created = new Date(o.created_at ?? "").getTime();
-      if (!Number.isFinite(created)) return false;
-      if (dateRangePreset === "all") return true;
-      if (dateRangePreset === "today") {
-        return created >= todayStart && created <= endOfDay(now);
-      }
-      if (dateRangePreset === "last7") {
-        const from = todayStart - 6 * 24 * 60 * 60 * 1000;
-        return created >= from && created <= endOfDay(now);
-      }
-      if (dateRangePreset === "last30") {
-        const from = todayStart - 29 * 24 * 60 * 60 * 1000;
-        return created >= from && created <= endOfDay(now);
-      }
-      if (fromInputTs != null && created < fromInputTs) return false;
-      if (toInputTs != null && created > toInputTs) return false;
-      return true;
-    });
-  });
-  const sortedOrders = $derived.by(() => {
-    if (sortColumn === "none") return filteredOrders;
-    return [...filteredOrders].sort((a, b) => {
-      const av =
-        sortColumn === "date"
-          ? new Date(a.created_at ?? 0).getTime()
-          : sortColumn === "stock"
-            ? orderStockName(a).toLowerCase()
-            : sortColumn === "customer"
-              ? String(a.customer_name ?? "").toLowerCase()
-              : sortColumn === "quantity"
-                ? Number(a.order_quantity ?? 0)
-                : sortColumn === "status"
-                  ? String(a.status ?? "").toLowerCase()
-                  : parseMoneyValue(a.total_amount);
-      const bv =
-        sortColumn === "date"
-          ? new Date(b.created_at ?? 0).getTime()
-          : sortColumn === "stock"
-            ? orderStockName(b).toLowerCase()
-            : sortColumn === "customer"
-              ? String(b.customer_name ?? "").toLowerCase()
-              : sortColumn === "quantity"
-                ? Number(b.order_quantity ?? 0)
-                : sortColumn === "status"
-                  ? String(b.status ?? "").toLowerCase()
-                  : parseMoneyValue(b.total_amount);
-      const cmp =
-        typeof av === "number" && typeof bv === "number"
-          ? av - bv
-          : String(av).localeCompare(String(bv));
-      return sortDirection === "asc" ? cmp : -cmp;
-    });
-  });
-
-  let tablePage = $state(1);
-  let tablePageSize = $state(10);
-  const ordersPaginationResetKey = $derived(
-    `${dateRangePreset}|${customerFilterName}|${customDateFrom}|${customDateTo}|${sortColumn}|${sortDirection}|${filteredOrders.length}`,
-  );
-  const pagedOrders = $derived(
-    paginateSlice(sortedOrders, tablePage, tablePageSize),
-  );
 
   function parseMoneyValue(v: unknown): number {
     if (v === null || v === undefined) return 0;
@@ -280,8 +203,72 @@
   $effect(() => {
     orders = data.orders as OrderSummary[];
     payments = (data.payments ?? []) as PaymentRow[];
+    totalOrders = (data as { totalOrders: number }).totalOrders ?? 0;
+    totalPayments = (data as { totalPayments: number }).totalPayments ?? 0;
+    totalOrdersAmount = (data as { totalOrdersAmount: number }).totalOrdersAmount ?? 0;
+    totalPaymentsAmount = (data as { totalPaymentsAmount: number }).totalPaymentsAmount ?? 0;
     customers = data.customers as CustomerRow[];
     products = data.products as ProductRow[];
+  });
+
+  function allParamsFromState(): URLSearchParams {
+    const p = new URLSearchParams();
+    if (dateRangePreset && dateRangePreset !== "all")
+      p.set("dateRange", dateRangePreset);
+    if (customerFilterName) p.set("customer", customerFilterName);
+    if (dateRangePreset === "custom") {
+      if (customDateFrom) p.set("from", customDateFrom);
+      if (customDateTo) p.set("to", customDateTo);
+    }
+    if (sortColumn && sortColumn !== "none") {
+      p.set("sort", sortColumn);
+      p.set("dir", sortDirection);
+    }
+    p.set("page", String(tablePage));
+    p.set("pageSize", String(tablePageSize));
+    return p;
+  }
+
+  function stateMatchesUrl(): boolean {
+    const sp = $page.url.searchParams;
+    return (
+      (sp.get("dateRange") ?? "all") === dateRangePreset &&
+      (sp.get("customer") ?? "") === customerFilterName &&
+      (sp.get("from") ?? "") === customDateFrom &&
+      (sp.get("to") ?? "") === customDateTo &&
+      (sp.get("sort") ?? "none") === sortColumn &&
+      (sp.get("dir") ?? "desc") === sortDirection &&
+      (Number(sp.get("page")) || 1) === tablePage &&
+      (Number(sp.get("pageSize")) || 10) === tablePageSize
+    );
+  }
+
+  $effect(() => {
+    void dateRangePreset;
+    void customerFilterName;
+    void customDateFrom;
+    void customDateTo;
+    if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
+    filterDebounceTimer = setTimeout(() => {
+      if (stateMatchesUrl()) return;
+      const params = allParamsFromState();
+      const qs = params.toString();
+      goto(qs ? `?${qs}` : "?", { replaceState: true, keepFocus: true });
+    }, 300);
+    return () => {
+      if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
+    };
+  });
+
+  $effect(() => {
+    void sortColumn;
+    void sortDirection;
+    void tablePage;
+    void tablePageSize;
+    if (stateMatchesUrl()) return;
+    const params = allParamsFromState();
+    const qs = params.toString();
+    goto(qs ? `?${qs}` : "?", { replaceState: true, keepFocus: true });
   });
 
   function customerOptionLabel(c: CustomerRow) {
@@ -854,38 +841,11 @@
     el.focus();
     el.click();
   }
-  const orderSummary = $derived.by(() => {
-    let totalCreatedCount = filteredOrders.length;
-    let totalCreatedAmount = 0;
-    let totalPaidAmount = 0;
-    const filteredOrderIds = new Set(
-      filteredOrders
-        .map((o) => String(o.id ?? ""))
-        .filter((id) => id.length > 0),
-    );
-    for (const o of filteredOrders) {
-      const status = String(o.status ?? "")
-        .trim()
-        .toLowerCase();
-      const total = parseMoneyValue(o.total_amount) ?? 0;
-      if (status !== "cancelled") {
-        totalCreatedAmount += total;
-      } else {
-        continue;
-      }
-    }
-    for (const p of payments) {
-      const orderId = String(p.order_id ?? "").trim();
-      if (!orderId || !filteredOrderIds.has(orderId)) continue;
-      totalPaidAmount += parseMoneyValue(p.amount) ?? 0;
-    }
-    const totalUnpaidAmount = totalCreatedAmount - totalPaidAmount;
-    return {
-      totalCreatedCount,
-      totalCreatedAmount,
-      totalPaidAmount,
-      totalUnpaidAmount,
-    };
+  const orderSummary = $derived({
+    totalCreatedCount: totalOrders,
+    totalCreatedAmount: totalOrdersAmount,
+    totalPaidAmount: totalPaymentsAmount,
+    totalUnpaidAmount: totalOrdersAmount - totalPaymentsAmount,
   });
 
   function openCancelModal(order: OrderSummary, event: Event) {
@@ -1619,14 +1579,14 @@
         </tr>
       </thead>
       <tbody>
-        {#each pagedOrders as o, i}
+        {#each orders as o, i}
           <tr
             class={mc.rowClickable}
             onclick={() => goto(`/orders/${o.id}`)}
             tabindex="0"
             role="button"
           >
-            <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
+            <td class={mc.colNum}>{i + 1}</td>
             <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500"
               >{formatOrderDate(o.created_at)}</td
             >
@@ -1662,12 +1622,12 @@
             </td>
           </tr>
         {/each}
-        {#if sortedOrders.length === 0}
+        {#if orders.length === 0}
           <tr>
             <td colspan="8" class={mc.emptyCell}>
-              {orders.length === 0
-                ? "No orders found. Create your first order to get started."
-                : "No orders match your current filters."}
+              No orders found. {data.orders.length > 0
+                ? "Try adjusting your filters."
+                : "Create your first order to get started."}
             </td>
           </tr>
         {/if}
@@ -1677,8 +1637,7 @@
   <TablePagination
     bind:page={tablePage}
     bind:pageSize={tablePageSize}
-    total={sortedOrders.length}
-    resetKey={ordersPaginationResetKey}
+    total={totalOrders}
   />
 </section>
 

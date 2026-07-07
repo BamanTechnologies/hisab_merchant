@@ -1,26 +1,28 @@
-import type { PageServerLoad, Actions } from './$types';
-import { getUserIdFromRequest } from '$lib/auth';
-import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
+import type { PageServerLoad, Actions } from "./$types";
+import { getUserIdFromRequest } from "$lib/auth";
+import { fetchMerchantBranchId } from "$lib/merchantBranch.server";
 import {
   fetchBranchCompanyId,
   fetchInvestorsForCompany,
-} from '$lib/companyInvestors.server';
-import { config, getGraphQLHeaders } from '$lib/config';
-import { soldUnitPriceForReportOrder } from '$lib/reportSoldPrice';
-import { buildStockLabel } from '$lib/stockLabel';
-import { subscriptionWriteActionBlockedForRequest } from '$lib/subscription/server';
+} from "$lib/companyInvestors.server";
+import { config, getGraphQLHeaders } from "$lib/config";
+import { soldUnitPriceForReportOrder } from "$lib/reportSoldPrice";
+import { buildStockLabel } from "$lib/stockLabel";
+import { subscriptionWriteActionBlockedForRequest } from "$lib/subscription/server";
 
 const FETCH_REPORTS_QUERY = `
-  query GetReports($merchantId: uuid!) {
-    reports(
-      where: { merchant_id: { _eq: $merchantId } }
-      order_by: { updated_at: desc }
-    ) {
+  query GetReports($filter: reports_bool_exp, $order: [reports_order_by!], $limit: Int, $offset: Int) {
+    reports(where: $filter, limit: $limit, offset: $offset, order_by: $order) {
       id
       investor_phone
       sms_status
       message
       updated_at
+    }
+    total_reports: reports_aggregate(where: $filter) {
+      aggregate {
+        count
+      }
     }
   }
 `;
@@ -128,14 +130,38 @@ const SEND_REPORT_MUTATION = `
   }
 `;
 
-async function fetchReports(merchantId: string) {
+async function fetchReports(
+  merchantId: string,
+  search: string,
+  page: number,
+  pageSize: number,
+) {
+  const offset = (page - 1) * pageSize;
+
+  const conditions: Record<string, unknown>[] = [
+    { merchant_id: { _eq: merchantId } },
+  ];
+
+  if (search) {
+    conditions.push({
+      _or: [
+        { investor_phone: { _ilike: `%${search}%` } },
+        { message: { _ilike: `%${search}%` } },
+        { sms_status: { _ilike: `%${search}%` } },
+      ],
+    });
+  }
+
+  const filter: Record<string, unknown> = { _and: conditions };
+  const order = [{ updated_at: "desc" }];
+
   try {
     const response = await fetch(config.graphql.endpoint, {
-      method: 'POST',
+      method: "POST",
       headers: getGraphQLHeaders(),
       body: JSON.stringify({
         query: FETCH_REPORTS_QUERY,
-        variables: { merchantId },
+        variables: { filter, order, limit: pageSize, offset },
       }),
     });
 
@@ -144,19 +170,27 @@ async function fetchReports(merchantId: string) {
     }
 
     const result = await response.json();
-    
+
     if (result.errors) {
       throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
     }
 
-    return result.data.reports || [];
-  } catch {
-    return [];
+    return {
+      reports: result.data.reports || [],
+      totalCount: result.data.total_reports?.aggregate?.count ?? 0,
+    };
+  } catch (e) {
+    console.log("Error fetching reports:", e);
+    return { reports: [], totalCount: 0 };
   }
 }
 
 // Function to generate investor report
-async function generateInvestorReport(investorId: string, investorPhone: string, merchantId: string) {
+async function generateInvestorReport(
+  investorId: string,
+  investorPhone: string,
+  merchantId: string,
+) {
   const variables = {
     merchant_id: merchantId, // Use the authenticated user ID
     investor_id: investorId,
@@ -164,7 +198,7 @@ async function generateInvestorReport(investorId: string, investorPhone: string,
   };
 
   const response = await fetch(config.graphql.endpoint, {
-    method: 'POST',
+    method: "POST",
     headers: getGraphQLHeaders(),
     body: JSON.stringify({
       query: GENERATE_INVESTOR_REPORT_QUERY,
@@ -174,7 +208,9 @@ async function generateInvestorReport(investorId: string, investorPhone: string,
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+    throw new Error(
+      `HTTP error! status: ${response.status}, body: ${errorText}`,
+    );
   }
 
   const result = await response.json();
@@ -185,12 +221,14 @@ async function generateInvestorReport(investorId: string, investorPhone: string,
 
   const reportData = result.data as Record<string, unknown>;
   const ordersRaw = Array.isArray(reportData.orders)
-    ? reportData.orders.filter((o): o is Record<string, unknown> => Boolean(o && typeof o === 'object'))
+    ? reportData.orders.filter((o): o is Record<string, unknown> =>
+        Boolean(o && typeof o === "object"),
+      )
     : [];
   const orderIds = [
     ...new Set(
       ordersRaw
-        .map((o) => (typeof o.id === 'string' ? o.id : ''))
+        .map((o) => (typeof o.id === "string" ? o.id : ""))
         .filter((id) => id.length > 0),
     ),
   ];
@@ -199,7 +237,7 @@ async function generateInvestorReport(investorId: string, investorPhone: string,
   let itemsByOrderId = new Map<string, Array<Record<string, unknown>>>();
   try {
     const linesResp = await fetch(config.graphql.endpoint, {
-      method: 'POST',
+      method: "POST",
       headers: getGraphQLHeaders(),
       body: JSON.stringify({
         query: FETCH_ORDER_ITEMS_BY_ORDER_IDS_QUERY,
@@ -213,7 +251,7 @@ async function generateInvestorReport(investorId: string, investorPhone: string,
           ? (linesResult.data.order_items as Array<Record<string, unknown>>)
           : [];
         for (const line of lines) {
-          const oid = typeof line.order_id === 'string' ? line.order_id : '';
+          const oid = typeof line.order_id === "string" ? line.order_id : "";
           if (!oid) continue;
           const list = itemsByOrderId.get(oid) ?? [];
           list.push(line);
@@ -227,18 +265,25 @@ async function generateInvestorReport(investorId: string, investorPhone: string,
 
   const investorStockIds = new Set(
     (Array.isArray(reportData.stocks) ? reportData.stocks : [])
-      .map((s) => (s && typeof s === 'object' && typeof (s as Record<string, unknown>).id === 'string'
-        ? ((s as Record<string, unknown>).id as string)
-        : ''))
+      .map((s) =>
+        s &&
+        typeof s === "object" &&
+        typeof (s as Record<string, unknown>).id === "string"
+          ? ((s as Record<string, unknown>).id as string)
+          : "",
+      )
       .filter((id) => id.length > 0),
   );
 
   const expandedOrders: Record<string, unknown>[] = [];
   for (const order of ordersRaw) {
-    const oid = typeof order.id === 'string' ? order.id : '';
+    const oid = typeof order.id === "string" ? order.id : "";
     const orderItems = (itemsByOrderId.get(oid) ?? []).filter((it) => {
-      const sid = typeof it.stock_id === 'string' ? it.stock_id : '';
-      return sid.length > 0 && (investorStockIds.size === 0 || investorStockIds.has(sid));
+      const sid = typeof it.stock_id === "string" ? it.stock_id : "";
+      return (
+        sid.length > 0 &&
+        (investorStockIds.size === 0 || investorStockIds.has(sid))
+      );
     });
     if (orderItems.length === 0) {
       expandedOrders.push(order);
@@ -258,23 +303,29 @@ async function generateInvestorReport(investorId: string, investorPhone: string,
   return { ...reportData, orders: expandedOrders };
 }
 
-function withComputedSoldPrice(reportData: Record<string, unknown>): Record<string, unknown> {
+function withComputedSoldPrice(
+  reportData: Record<string, unknown>,
+): Record<string, unknown> {
   const stocksRaw = Array.isArray(reportData.stocks) ? reportData.stocks : [];
-  const stocks = stocksRaw.filter((s): s is Record<string, unknown> => s != null && typeof s === 'object');
+  const stocks = stocksRaw.filter(
+    (s): s is Record<string, unknown> => s != null && typeof s === "object",
+  );
   const stockLabelById = new Map<string, string>();
   for (const s of stocks) {
-    const sid = typeof s.id === 'string' ? s.id : '';
+    const sid = typeof s.id === "string" ? s.id : "";
     if (!sid) continue;
     stockLabelById.set(sid, buildStockLabel(s));
   }
 
   const ordersRaw = Array.isArray(reportData.orders) ? reportData.orders : [];
   const orders = ordersRaw.map((row) => {
-    if (!row || typeof row !== 'object') return row;
+    if (!row || typeof row !== "object") return row;
     const rec = row as Record<string, unknown>;
-    const sid = typeof rec.stock_id === 'string' ? rec.stock_id : '';
+    const sid = typeof rec.stock_id === "string" ? rec.stock_id : "";
     const directUnitPrice =
-      rec.unit_price == null ? null : Number(String(rec.unit_price).replace(/[^0-9.-]/g, ''));
+      rec.unit_price == null
+        ? null
+        : Number(String(rec.unit_price).replace(/[^0-9.-]/g, ""));
     return {
       ...rec,
       // String for downstream SMS formatter that calls `.replace(...)`.
@@ -282,7 +333,8 @@ function withComputedSoldPrice(reportData: Record<string, unknown>): Record<stri
         directUnitPrice != null && Number.isFinite(directUnitPrice)
           ? directUnitPrice.toFixed(2)
           : soldUnitPriceForReportOrder(rec, stocks),
-      stock_name: stockLabelById.get(sid) ?? (sid ? sid.slice(0, 8) + '…' : '—'),
+      stock_name:
+        stockLabelById.get(sid) ?? (sid ? sid.slice(0, 8) + "…" : "—"),
     };
   });
   return { ...reportData, orders };
@@ -295,7 +347,7 @@ async function sendReport(reportData: any) {
   };
 
   const response = await fetch(config.graphql.endpoint, {
-    method: 'POST',
+    method: "POST",
     headers: getGraphQLHeaders(),
     body: JSON.stringify({
       query: SEND_REPORT_MUTATION,
@@ -305,7 +357,9 @@ async function sendReport(reportData: any) {
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+    throw new Error(
+      `HTTP error! status: ${response.status}, body: ${errorText}`,
+    );
   }
 
   const result = await response.json();
@@ -317,7 +371,7 @@ async function sendReport(reportData: any) {
   return result.data.send_sms;
 }
 
-export const load: PageServerLoad = async ({ request, parent }) => {
+export const load: PageServerLoad = async ({ request, parent, url }) => {
   const { merchantContext } = await parent();
   const merchantId =
     merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
@@ -328,13 +382,21 @@ export const load: PageServerLoad = async ({ request, parent }) => {
   if (!companyId && merchantBranchId) {
     companyId = await fetchBranchCompanyId(merchantBranchId);
   }
-  const [reports, investors] = await Promise.all([
-    merchantId ? fetchReports(merchantId) : Promise.resolve([]),
+
+  const search = url.searchParams.get("search") ?? "";
+  const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+  const pageSize = Math.max(1, Number(url.searchParams.get("pageSize")) || 10);
+
+  const [result, investors] = await Promise.all([
+    merchantId
+      ? fetchReports(merchantId, search, page, pageSize)
+      : Promise.resolve({ reports: [], totalCount: 0 }),
     fetchInvestorsForCompany(companyId),
   ]);
 
   return {
-    reports,
+    reports: result.reports,
+    totalCount: result.totalCount,
     investors,
   };
 };
@@ -351,13 +413,13 @@ export const actions: Actions = {
     if (!userId) {
       return {
         success: false,
-        message: 'Authentication required',
+        message: "Authentication required",
       };
     }
 
     // Extract form data
-    const investorId = formData.get('investor_id') as string;
-    const investorPhone = formData.get('investor_phone') as string;
+    const investorId = formData.get("investor_id") as string;
+    const investorPhone = formData.get("investor_phone") as string;
 
     try {
       const rawReportData = await generateInvestorReport(
@@ -369,13 +431,13 @@ export const actions: Actions = {
 
       return {
         success: true,
-        message: 'Report generated successfully',
+        message: "Report generated successfully",
         reportData,
       };
     } catch (error) {
       return {
         success: false,
-        message: `Failed to generate report: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Failed to generate report: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   },
@@ -384,9 +446,9 @@ export const actions: Actions = {
     if (blocked) return blocked;
 
     const formData = await request.formData();
-    
+
     // Extract form data
-    const reportDataString = formData.get('report_data') as string;
+    const reportDataString = formData.get("report_data") as string;
 
     try {
       const reportData = JSON.parse(reportDataString);
@@ -401,7 +463,7 @@ export const actions: Actions = {
     } catch (error) {
       return {
         success: false,
-        message: `Failed to send report: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Failed to send report: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   },
@@ -410,12 +472,12 @@ export const actions: Actions = {
     if (blocked) return blocked;
 
     const formData = await request.formData();
-    const reportId = formData.get('report_id') as string;
+    const reportId = formData.get("report_id") as string;
 
     if (!reportId) {
       return {
         success: false,
-        message: 'Report ID is required',
+        message: "Report ID is required",
       };
     }
 
@@ -423,7 +485,7 @@ export const actions: Actions = {
     if (!userId) {
       return {
         success: false,
-        message: 'Authentication required',
+        message: "Authentication required",
       };
     }
 
@@ -441,7 +503,7 @@ export const actions: Actions = {
     } catch (error) {
       return {
         success: false,
-        message: `Failed to resend report: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Failed to resend report: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   },

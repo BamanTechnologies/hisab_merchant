@@ -1,5 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import { goto } from "$app/navigation";
+  import { page } from "$app/stores";
   import type { PageData } from "./$types";
   import { soldUnitPriceForReportOrder } from "$lib/reportSoldPrice";
   import {
@@ -7,12 +9,12 @@
     formatCoffeeCapacityWithUnit,
   } from "$lib/stockLabel";
   import TablePagination from "$lib/components/TablePagination.svelte";
+  import TableSearchInput from "$lib/components/TableSearchInput.svelte";
   import { mc, smsStatusChipClass } from "$lib/merchant-styles.js";
   import {
     SUBSCRIPTION_BLOCKED_MESSAGE,
     subscriptionBlocksMutations,
   } from "$lib/subscription/client";
-  import { paginateSlice } from "$lib/pagination.js";
   import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
   import { _ } from "svelte-i18n";
   import { get } from "svelte/store";
@@ -92,7 +94,9 @@
   };
 
   let { data }: { data: PageData } = $props();
-  const reports = (data.reports ?? []) as Report[];
+
+  let reports = $state((data.reports ?? []) as Report[]);
+  let totalCount = $state((data as { totalCount: number }).totalCount ?? 0);
   const investors = data.investors;
 
   let selectedReport = $state<Report | null>(null);
@@ -107,10 +111,49 @@
   let sendReportPending = $state(false);
   let resendReportPending = $state(false);
   const subscriptionLocked = $derived($subscriptionBlocksMutations);
-  let tablePage = $state(1);
-  let tablePageSize = $state(10);
+  let searchQuery = $state($page.url.searchParams.get("search") ?? "");
+  let tablePage = $state(Number($page.url.searchParams.get("page")) || 1);
+  let tablePageSize = $state(Number($page.url.searchParams.get("pageSize")) || 10);
+  let searchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  let suppressPageNav = $state(false);
 
-  const pagedReports = $derived(paginateSlice(reports, tablePage, tablePageSize));
+  $effect(() => {
+    reports = (data.reports ?? []) as Report[];
+    totalCount = (data as { totalCount: number }).totalCount ?? 0;
+  });
+
+  function navigateWithState() {
+    const params = new URLSearchParams();
+    if (searchQuery) params.set("search", searchQuery);
+    if (tablePage > 1) params.set("page", String(tablePage));
+    if (tablePageSize !== 10) params.set("pageSize", String(tablePageSize));
+    const qs = params.toString();
+    goto(qs ? `/reports?${qs}` : "/reports", { replaceState: true, keepFocus: true });
+  }
+
+  $effect(() => {
+    const q = searchQuery;
+    const currentSearch = $page.url.searchParams.get("search") ?? "";
+    if (q === currentSearch) return;
+
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => {
+      suppressPageNav = true;
+      tablePage = 1;
+      navigateWithState();
+      suppressPageNav = false;
+    }, 300);
+  });
+
+  $effect(() => {
+    if (suppressPageNav) return;
+    const pg = tablePage;
+    const ps = tablePageSize;
+    const urlPage = Number($page.url.searchParams.get("page")) || 1;
+    const urlPageSize = Number($page.url.searchParams.get("pageSize")) || 10;
+    if (pg === urlPage && ps === urlPageSize) return;
+    navigateWithState();
+  });
 
   function formatDate(dateString: string) {
     try {
@@ -327,15 +370,18 @@
     <h1 class={mc.pageTitle}>{$_('pageReportsTitle')}</h1>
     <p class={mc.pageSubtitle}>{$_('pageReportsSubtitle')}</p>
   </div>
-  <button
-    type="button"
-    class={mc.primaryBtn}
-    onclick={openGenerateModal}
-    disabled={subscriptionLocked}
-    title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : undefined}
-  >
-    {$_('generateReport')}
-  </button>
+  <div class="flex flex-wrap items-center gap-3">
+    <TableSearchInput bind:value={searchQuery} placeholder={$_('searchDots')} />
+    <button
+      type="button"
+      class={mc.primaryBtn}
+      onclick={openGenerateModal}
+      disabled={subscriptionLocked}
+      title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : undefined}
+    >
+      {$_('generateReport')}
+    </button>
+  </div>
 </section>
 
 {#if errorMessage}
@@ -350,54 +396,60 @@
   </div>
 {/if}
 
-{#if reports.length === 0}
-  <p class="rounded-xl bg-white px-6 py-10 text-center text-sm text-gray-500">
-    {$_('noReportsFound')}
-  </p>
-{:else}
-  <section class={mc.tableSection}>
-    <div class="overflow-x-auto">
-      <table class={mc.table}>
-        <thead>
-          <tr>
-            <th class={mc.colNumHead}>#</th>
-            <th class={mc.th}>{$_('date')}</th>
-            <th class={mc.th}>{$_('investorPhone')}</th>
-            <th class={mc.th}>{$_('smsStatus')}</th>
-            <th class={mc.th}>{$_('actions')}</th>
+<section class={mc.tableSection}>
+  <div class="overflow-x-auto">
+    <table class={mc.table}>
+      <thead>
+        <tr>
+          <th class={mc.colNumHead}>#</th>
+          <th class={mc.th}>{$_('date')}</th>
+          <th class={mc.th}>{$_('investorPhone')}</th>
+          <th class={mc.th}>{$_('smsStatus')}</th>
+          <th class={mc.th}>{$_('actions')}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each reports as report, i (report.id)}
+          <tr class={mc.rowClickable} onclick={() => openModal(report)}>
+            <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
+            <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{formatDate(report.updated_at)}</td>
+            <td class={mc.td}>{report.investor_phone}</td>
+            <td class={mc.td}>
+              <span class={smsStatusChipClass(report.sms_status)}>
+                {$_(smsStatusI18nKey(report.sms_status))}
+              </span>
+            </td>
+            <td class={mc.td} onclick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                class={mc.tableBtn}
+                onclick={(e) => {
+                  e.stopPropagation();
+                  openModal(report);
+                }}
+              >
+                {$_('viewMessage')}
+              </button>
+            </td>
           </tr>
-        </thead>
-        <tbody>
-          {#each pagedReports as report, i (report.id)}
-            <tr class={mc.rowClickable} onclick={() => openModal(report)}>
-              <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
-              <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{formatDate(report.updated_at)}</td>
-              <td class={mc.td}>{report.investor_phone}</td>
-              <td class={mc.td}>
-                <span class={smsStatusChipClass(report.sms_status)}>
-                  {$_(smsStatusI18nKey(report.sms_status))}
-                </span>
-              </td>
-              <td class={mc.td} onclick={(e) => e.stopPropagation()}>
-                <button
-                  type="button"
-                  class={mc.tableBtn}
-                  onclick={(e) => {
-                    e.stopPropagation();
-                    openModal(report);
-                  }}
-                >
-                  {$_('viewMessage')}
-                </button>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
-    <TablePagination bind:page={tablePage} bind:pageSize={tablePageSize} total={reports.length} />
-  </section>
-{/if}
+        {/each}
+        {#if reports.length === 0}
+          <tr>
+            <td colspan="5" class={mc.emptyCell}>
+              {searchQuery ? $_('noReportsFound') : $_('noReportsFound')}
+            </td>
+          </tr>
+        {/if}
+      </tbody>
+    </table>
+  </div>
+  <TablePagination
+    bind:page={tablePage}
+    bind:pageSize={tablePageSize}
+    total={totalCount}
+    resetKey={totalCount}
+  />
+</section>
 
 {#if showModal && selectedReport}
   <div

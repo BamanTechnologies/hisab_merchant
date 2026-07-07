@@ -1,12 +1,13 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import { goto } from "$app/navigation";
+  import { page } from "$app/stores";
   import { Pencil } from "@lucide/svelte";
   import { tick } from "svelte";
   import TablePagination from "$lib/components/TablePagination.svelte";
   import TableSearchInput from "$lib/components/TableSearchInput.svelte";
   import { mc } from "$lib/merchant-styles.js";
-  import { paginateSlice } from "$lib/pagination.js";
+
   import {
     SUBSCRIPTION_BLOCKED_MESSAGE,
     subscriptionBlocksMutations,
@@ -47,6 +48,7 @@
   let { data }: { data: PageData } = $props();
 
   let products = $state(data.products as Product[]);
+  let totalCount = $state((data as { totalCount: number }).totalCount ?? 0);
   let showModal = $state(false);
   let editingProductId = $state<string | null>(null);
   let formPending = $state(false);
@@ -60,9 +62,11 @@
     string[]
   >;
 
-  let searchQuery = $state("");
-  let tablePage = $state(1);
-  let tablePageSize = $state(10);
+  let searchQuery = $state($page.url.searchParams.get("search") ?? "");
+  let tablePage = $state(Number($page.url.searchParams.get("page")) || 1);
+  let tablePageSize = $state(Number($page.url.searchParams.get("pageSize")) || 10);
+  let searchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  let suppressPageNav = $state(false);
 
   let productName = $state("");
   let selectedProductTypeId = $state("");
@@ -81,6 +85,7 @@
 
   $effect(() => {
     products = data.products as Product[];
+    totalCount = (data as { totalCount: number }).totalCount ?? 0;
   });
 
   function typeFromProduct(p: Product): string {
@@ -130,29 +135,38 @@
     });
   });
 
-  function productSearchText(p: Product): string {
-    const parts = [
-      p.displayName,
-      p.name,
-      typeDisplay(typeFromProduct(p)),
-      p.default_unit,
-      p.is_active ? "active" : "inactive",
-      p.barcode ?? "",
-      p.qr_code ?? "",
-    ];
-    return parts.join(" ").toLowerCase();
+  function navigateWithState() {
+    const params = new URLSearchParams();
+    if (searchQuery) params.set("search", searchQuery);
+    if (tablePage > 1) params.set("page", String(tablePage));
+    if (tablePageSize !== 10) params.set("pageSize", String(tablePageSize));
+    const qs = params.toString();
+    goto(qs ? `/products?${qs}` : "/products", { replaceState: true, keepFocus: true });
   }
 
-  const filteredProducts = $derived.by(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return products;
-    return products.filter((p) => productSearchText(p).includes(q));
+  $effect(() => {
+    const q = searchQuery;
+    const currentSearch = $page.url.searchParams.get("search") ?? "";
+    if (q === currentSearch) return;
+
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => {
+      suppressPageNav = true;
+      tablePage = 1;
+      navigateWithState();
+      suppressPageNav = false;
+    }, 300);
   });
 
-  const productsPaginationResetKey = $derived(searchQuery);
-  const pagedProducts = $derived(
-    paginateSlice<Product>(filteredProducts, tablePage, tablePageSize),
-  );
+  $effect(() => {
+    if (suppressPageNav) return;
+    const pg = tablePage;
+    const ps = tablePageSize;
+    const urlPage = Number($page.url.searchParams.get("page")) || 1;
+    const urlPageSize = Number($page.url.searchParams.get("pageSize")) || 10;
+    if (pg === urlPage && ps === urlPageSize) return;
+    navigateWithState();
+  });
 
   function activeLabel(active: boolean | null | undefined): string {
     return active === false ? "Inactive" : "Active";
@@ -617,7 +631,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each pagedProducts as p, i}
+        {#each products as p, i}
           <tr
             class={mc.rowClickable}
             onclick={() => goto(`/products/${p.id}`)}
@@ -652,13 +666,13 @@
             </td>
           </tr>
         {/each}
-        {#if filteredProducts.length === 0}
+        {#if products.length === 0}
           <tr>
             <td colspan="6" class={mc.emptyCell}>
-              {#if products.length === 0}
-                No products found. Create your first product to get started.
-              {:else}
+              {#if searchQuery.trim()}
                 No products match your search.
+              {:else}
+                No products found. Create your first product to get started.
               {/if}
             </td>
           </tr>
@@ -669,8 +683,7 @@
   <TablePagination
     bind:page={tablePage}
     bind:pageSize={tablePageSize}
-    total={filteredProducts.length}
-    resetKey={productsPaginationResetKey}
+    total={totalCount}
   />
 </section>
 
