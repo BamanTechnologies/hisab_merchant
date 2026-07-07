@@ -1291,13 +1291,13 @@
         <div class="form-alert error" role="alert">{editError}</div>
       {/if}
 
-      <input type="hidden" name="id" value={editingBatch.id} />
+      <input type="hidden" name="id"  value={editingBatch.id}  />
 
       <fieldset class="form-fields" disabled={editPending}>
         <div class="edit-grid">
-          <label>
+          <label >
             <span>Batch number</span>
-            <input type="text" name="batch_number" bind:value={editBatchNumber} autocomplete="off" />
+            <input type="text" name="batch_number" bind:value={editBatchNumber} autocomplete="off" disabled  />
           </label>
           <label>
             <span>Quantity</span>
@@ -1755,6 +1755,19 @@
     font-size: 0.875rem;
     line-height: 1.25;
     color: inherit;
+  }
+
+  input:disabled {
+    background: #e2e8f0;
+    color: #94a3b8;
+    cursor: not-allowed;
+    opacity: 0.85;
+  }
+
+  :global(.dark) input:disabled {
+    background: #1e293b;
+    color: #64748b;
+    opacity: 0.6;
   }
 
   select {
