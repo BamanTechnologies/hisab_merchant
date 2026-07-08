@@ -431,7 +431,7 @@
       <button
         type="button"
         class={mc.primaryBtn}
-        onclick={openTransferModal}
+       onclick={openFifoTransferModal}
         disabled={!canTransferStock || subscriptionLocked}
         title={subscriptionLocked
           ? SUBSCRIPTION_BLOCKED_MESSAGE
@@ -447,7 +447,7 @@
       >
         Transfer stock
       </button>
-      <button
+      <!-- <button
         type="button"
         class={mc.tableBtn}
         onclick={openFifoTransferModal}
@@ -455,7 +455,7 @@
         title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : "Transfer product stock via FIFO across all batches"}
       >
         Transfer (FIFO)
-      </button>
+      </button> -->
     </div>
   {/if}
 </section>
@@ -689,7 +689,7 @@
       oncancel={(e) => fifoFormPending && e.preventDefault()}
     >
       <header>
-        <h2>Transfer stock (FIFO)</h2>
+        <h2>Transfer stock</h2>
         <button
           class="icon"
           aria-label="Close"
@@ -732,7 +732,7 @@
         }}
       >
         <fieldset class="transfer-form-fields" disabled={fifoFormPending}>
-          <div class="fifo-form-grid">
+          <div class="flex flex-col gap-2">
             <label>
               <span>Product</span>
               <select
@@ -764,6 +764,11 @@
                 step="any"
                 required
               />
+              {#if fifoQuantity > fifoAvailableQty}
+                <p class="text-sm text-red-600 dark:text-red-400">
+                  Quantity exceeds available stock ({fifoAvailableQty} {fifoProductUnit}).
+                </p>
+              {/if}
             </label>
             <label>
               <span>Move to</span>
@@ -833,7 +838,7 @@
           </div>
         {/if}
 
-        <p class="transfer-note">
+        <p class="transfer-note mt-2">
           Stock is taken from batches in <strong>FIFO</strong> order (earliest first).
           Each batch contributes its quantity, and a corresponding destination batch is
           created at the target branch. A <strong>stock_transfer</strong> record groups

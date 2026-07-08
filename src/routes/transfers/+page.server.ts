@@ -199,6 +199,7 @@ async function fetchStockTransfers(
   branchId: string | null,
   page: number,
   pageSize: number,
+  filters?: { from?: string; to?: string; destination_merchant?: string; created_by?: string },
 ): Promise<{ transfers: StockTransferRow[]; totalCount: number }> {
   const conditions: Record<string, unknown>[] = [
     {
@@ -224,6 +225,11 @@ async function fetchStockTransfers(
       ],
     });
   }
+
+  if (filters?.from) conditions.push({ from: { _eq: filters.from } });
+  if (filters?.to) conditions.push({ to: { _eq: filters.to } });
+  if (filters?.destination_merchant) conditions.push({ destination_merchant: { _eq: filters.destination_merchant } });
+  if (filters?.created_by) conditions.push({ created_by: { _eq: filters.created_by } });
 
   const filter = { _and: conditions };
   const order = [{ created_at: "desc" as const }, { id: "desc" as const }];
@@ -338,6 +344,8 @@ export const load: PageServerLoad = async ({ request, url, parent }) => {
   const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
   const pageSize = Math.max(1, Number(url.searchParams.get("pageSize")) || 10);
   const offset = (page - 1) * pageSize;
+  const stPage = Math.max(1, Number(url.searchParams.get("st_page")) || 1);
+  const stPageSize = Math.max(1, Number(url.searchParams.get("st_pageSize")) || 10);
 
   const conditions: Record<string, unknown>[] = [
     {
@@ -427,8 +435,9 @@ export const load: PageServerLoad = async ({ request, url, parent }) => {
       branches = Array.from(involvedBranchIds).map((id) => ({ id, name: id }));
     }
 
+    const stFilters = { from, to, destination_merchant: destinationMerchant, created_by: createdBy };
     const [stockTransfersResult, productsForTransfer] = await Promise.all([
-      fetchStockTransfers(merchantId, companyId, merchantBranchId, 1, 10),
+      fetchStockTransfers(merchantId, companyId, merchantBranchId, stPage, stPageSize, stFilters),
       fetchProductsForTransfer(companyId, merchantBranchId),
     ]);
 
@@ -444,9 +453,10 @@ export const load: PageServerLoad = async ({ request, url, parent }) => {
       productsForTransfer,
     };
   } catch (_error) {
+    const stFilters = { from, to, destination_merchant: destinationMerchant, created_by: createdBy };
     const [stockTransfersFallback, productsFallback] = await Promise.all([
       merchantId
-        ? fetchStockTransfers(merchantId, companyId, merchantBranchId, 1, 10).catch(() => ({
+        ? fetchStockTransfers(merchantId, companyId, merchantBranchId, stPage, stPageSize, stFilters).catch(() => ({
             transfers: [],
             totalCount: 0,
           }))

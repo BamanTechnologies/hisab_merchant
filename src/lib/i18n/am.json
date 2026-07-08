@@ -156,6 +156,8 @@
   "registered": "የተመዘገበበት",
   "noCustomersDisplay": "የሚታዩ ደንበኞች የሉም።",
   "pageTransfersTitle": "ዝውውሮች",
+  "pageTransfersTitleOld": "የቀድሞ ዝውውሮች",
+  "pageTransfersSubtitleOld": "የቀድሞ ዝውውሮች የሚያመጣሉትን ነጋዴዎች።",
   "pageTransfersSubtitle": "ላኪ ወይም ተቀባይ ነጋዴ የሆኑባቸው ዝውውሮች።",
   "destinationMerchant": "ተቀባይ ነጋዴ",
   "fromMerchant": "ከነጋዴ",
