@@ -8,6 +8,11 @@ import {
 } from '$lib/companyInvestors.server';
 import { config, getGraphQLHeaders } from '$lib/config';
 import { subscriptionWriteActionBlockedForRequest } from '$lib/subscription/server';
+import {
+  executeTransfer,
+  FETCH_PRODUCTS_FOR_TRANSFER_QUERY,
+  planTransfer,
+} from '$lib/inventory/stockTransfers.server';
 
 const FETCH_STOCK_BY_PK_QUERY = `
   query GetStockByPk($id: uuid!) {
@@ -242,6 +247,31 @@ async function fetchMerchantByPkForTransfer(id: string) {
   }
 }
 
+async function gql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+  const response = await fetch(config.graphql.endpoint, {
+    method: 'POST',
+    headers: getGraphQLHeaders(),
+    body: JSON.stringify({ query, variables }),
+  });
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  const result = await response.json();
+  if (result.errors) throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
+  return result.data as T;
+}
+
+async function fetchProductsForTransfer(companyId: string | null, branchId: string | null) {
+  if (!companyId || !branchId) return [];
+  try {
+    const data = await gql<{ products: unknown[] }>(
+      FETCH_PRODUCTS_FOR_TRANSFER_QUERY,
+      { companyId, branchId },
+    );
+    return data.products ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export const load: PageServerLoad = async ({ params, request, parent }) => {
   const { merchantContext } = await parent();
   const merchantId =
@@ -328,6 +358,8 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
   const transferBranchIds = transferTargetBranches.map((b) => b.id);
   const merchantsInTransferBranches = await fetchMerchantsInBranches(transferBranchIds);
 
+  const productsForTransfer = stockBranch ? await fetchProductsForTransfer(companyId, stockBranch) : [];
+
   return {
     stock,
     investors,
@@ -335,6 +367,7 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
     originBranchName,
     transferTargetBranches,
     merchantsInTransferBranches,
+    productsForTransfer,
     stockHeldAtBranch: null,
   };
 };
@@ -794,6 +827,93 @@ export const actions: Actions = {
     return {
       success: true,
       message: `Transferred ${quantity} to the destination branch. Quantities were updated.`,
+    };
+  },
+
+  transferStockFifo: async ({ request, params }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
+    const formData = await request.formData();
+    const userId = getUserIdFromRequest(request);
+    if (!userId) {
+      return { success: false, message: 'Authentication required' };
+    }
+
+    const productId = formData.get('product_id') as string;
+    const quantityRaw = formData.get('quantity');
+    const toBranch = formData.get('to_branch') as string;
+    const destinationMerchant = formData.get('destination_merchant') as string;
+
+    if (!productId) {
+      return { success: false, message: 'Select a product' };
+    }
+    if (!toBranch) {
+      return { success: false, message: 'Select a destination branch' };
+    }
+    if (!destinationMerchant) {
+      return { success: false, message: 'Select a merchant for the destination branch' };
+    }
+
+    const quantity = Number(quantityRaw);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      return { success: false, message: 'Invalid quantity' };
+    }
+
+    const merchantBranchId = await fetchMerchantBranchId(userId);
+    if (!merchantBranchId) {
+      return { success: false, message: 'No branch assigned to your account' };
+    }
+
+    if (toBranch === merchantBranchId) {
+      return { success: false, message: 'Choose a different branch than the current one' };
+    }
+
+    const fromRow = await fetchBranchByPk(merchantBranchId);
+    const toRow = await fetchBranchByPk(toBranch);
+    if (!fromRow || !toRow) {
+      return { success: false, message: 'Branch not found' };
+    }
+    if (!fromRow.company || fromRow.company !== toRow.company) {
+      return {
+        success: false,
+        message: 'Destination branch must belong to the same company',
+      };
+    }
+
+    const assignee = await fetchMerchantByPkForTransfer(destinationMerchant);
+    if (!assignee || assignee.branch !== toBranch) {
+      return {
+        success: false,
+        message: 'Selected merchant must belong to the destination branch',
+      };
+    }
+
+    try {
+      const plan = await planTransfer({
+        productId,
+        branchId: merchantBranchId,
+        quantity,
+      });
+
+      await executeTransfer({
+        plan,
+        fromBranch: merchantBranchId,
+        toBranch,
+        actorId: userId,
+        destinationMerchant,
+        companyId: fromRow.company,
+      });
+    } catch (err) {
+      return {
+        success: false,
+        message: `Failed to transfer: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      };
+    }
+
+    return {
+      success: true,
+      message: `Transferred ${quantity} units via FIFO across available batches.`,
     };
   },
 };
