@@ -186,6 +186,8 @@
 	let createdByFilter = $state($page.url.searchParams.get("created_by") ?? "");
 	let tablePage = $state(Number($page.url.searchParams.get("page")) || 1);
 	let tablePageSize = $state(Number($page.url.searchParams.get("pageSize")) || 10);
+	let stPage = $state(Number($page.url.searchParams.get("st_page")) || 1);
+	let stPageSize = $state(Number($page.url.searchParams.get("st_pageSize")) || 10);
 	let filterDebounceTimer: ReturnType<typeof setTimeout> | undefined;
 	let suppressPageNav = $state(false);
 
@@ -237,6 +239,8 @@
 		if (createdByFilter) params.set("created_by", createdByFilter);
 		if (tablePage > 1) params.set("page", String(tablePage));
 		if (tablePageSize !== 10) params.set("pageSize", String(tablePageSize));
+		if (stPage > 1) params.set("st_page", String(stPage));
+		if (stPageSize !== 10) params.set("st_pageSize", String(stPageSize));
 		const qs = params.toString();
 		goto(qs ? `/transfers?${qs}` : "/transfers", { replaceState: true, keepFocus: true });
 	}
@@ -254,6 +258,7 @@
 		filterDebounceTimer = setTimeout(() => {
 			suppressPageNav = true;
 			tablePage = 1;
+			stPage = 1;
 			navigateWithState();
 			suppressPageNav = false;
 		}, 300);
@@ -265,6 +270,16 @@
 		const ps = tablePageSize;
 		const urlPage = Number($page.url.searchParams.get("page")) || 1;
 		const urlPageSize = Number($page.url.searchParams.get("pageSize")) || 10;
+		if (pg === urlPage && ps === urlPageSize) return;
+		navigateWithState();
+	});
+
+	$effect(() => {
+		if (suppressPageNav) return;
+		const pg = stPage;
+		const ps = stPageSize;
+		const urlPage = Number($page.url.searchParams.get("st_page")) || 1;
+		const urlPageSize = Number($page.url.searchParams.get("st_pageSize")) || 10;
 		if (pg === urlPage && ps === urlPageSize) return;
 		navigateWithState();
 	});
@@ -297,10 +312,24 @@
 	}
 </script>
 
+
 <section class={mc.pageHeader}>
-	<div>
-		<h1 class={mc.pageTitle}>{$_('pageTransfersTitle')}</h1>
-		<p class={mc.pageSubtitle}>{$_('pageTransfersSubtitle')}</p>
+	<div class=" w-full flex items-center justify-between">
+    <div>
+      <h1 class={mc.pageTitle}>{$_('pageTransfersTitle')}</h1>
+      <p class={mc.pageSubtitle}>{$_('pageTransfersSubtitle')}</p>
+    </div>
+  {#if merchantBranchId}
+      <button
+        type="button"
+        class={mc.primaryBtn}
+        onclick={openFifoModal}
+        disabled={subscriptionLocked}
+        title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : "Transfer product stock via FIFO"}
+      >
+        New transfer
+      </button>
+    {/if}
 	</div>
 </section>
 
@@ -343,6 +372,111 @@
 	</label>
 	<div class="flex items-end">
 		<button class={mc.ghostBtn} type="button" onclick={clearFilters}>{$_('clear')}</button>
+	</div>
+</section>
+<section class="mt-8">
+  <div class={mc.tableSection}>
+    <div class="overflow-x-auto">
+      <table class={mc.table}>
+        <thead>
+          <tr>
+            <th class={mc.colNumHead}>#</th>
+            <th class={mc.th}>From</th>
+            <th class={mc.th}>To</th>
+            <th class={mc.th}>Created by</th>
+            <th class={mc.th}>Destination merchant</th>
+            <th class={mc.thRight}>Total qty</th>
+            <th class={mc.th}>Batches</th>
+            <th class={mc.th}>Date</th>
+            <th class={mc.th}></th>
+          </tr>
+        </thead>
+        <tbody>
+          {#if stockTransfers.length === 0}
+            <tr>
+              <td colspan="9" class={mc.emptyCell}>No product-level transfers yet.</td>
+            </tr>
+          {:else}
+            {#each stockTransfers as st, i}
+              {@const totalQty = (st.stock_transfer_batches ?? []).reduce(
+                (sum, b) => sum + Number(b.quantity ?? 0), 0
+              )}
+              {@const batchCount = (st.stock_transfer_batches ?? []).length}
+              <tr
+                class={mc.rowClickable}
+                onclick={() => toggleExpand(st.id)}
+                onkeydown={(e) => (e.key === "Enter" || e.key === " ") && toggleExpand(st.id)}
+                tabindex="0"
+                role="button"
+              >
+                <td class={mc.colNum}>{(stPage - 1) * stPageSize + i + 1}</td>
+                <td class="capitalize {mc.td}">{branchName(st.from)}</td>
+                <td class="capitalize {mc.td}">{branchName(st.to)}</td>
+                <td class={mc.td}>{merchantName(st.created_by)}</td>
+                <td class={mc.td}>{merchantName(st.destination_merchant)}</td>
+                <td class={mc.tdRight}>{quantityLabel(totalQty)}</td>
+                <td class={mc.td}>{batchCount}</td>
+                <td class={mc.td}>{formatDate(st.created_at)}</td>
+                <td class={mc.td}>
+                  <button
+                    type="button"
+                    class="text-xs font-semibold text-[#4DA0E6] hover:underline"
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      goto(`/stock-transfers/${st.id}`);
+                    }}
+                  >
+                    Details
+                  </button>
+                </td>
+              </tr>
+              {#if expandedTransferId === st.id}
+                <tr>
+                  <td colspan="9" class="p-0">
+                    <div class="bg-gray-50 px-6 py-3 dark:bg-[#111827]">
+                      <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                        Batch slices
+                      </p>
+                      <table class="w-full text-sm">
+                        <thead>
+                          <tr class="border-b border-gray-200 text-left text-xs font-medium text-gray-500 dark:border-white/10 dark:text-gray-400">
+                            <th class="px-2 py-1">Source stock</th>
+                            <th class="px-2 py-1">Destination stock</th>
+                            <th class="px-2 py-1 text-right">Qty</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {#each (st.stock_transfer_batches ?? []) as batch}
+                            <tr class="border-b border-gray-100 text-sm text-gray-700 dark:border-white/5 dark:text-gray-300">
+                              <td class="px-2 py-1 font-mono text-xs">{batch.stock_id?.slice(0, 8) ?? "\u2014"}</td>
+                              <td class="px-2 py-1 font-mono text-xs">{batch.destination_stock?.slice(0, 8) ?? "\u2014"}</td>
+                              <td class="px-2 py-1 text-right">{quantityLabel(batch.quantity)}</td>
+                            </tr>
+                          {/each}
+                        </tbody>
+                      </table>
+                    </div>
+                  </td>
+                </tr>
+              {/if}
+            {/each}
+          {/if}
+        </tbody>
+      </table>
+    </div>
+    <TablePagination
+      bind:page={stPage}
+      bind:pageSize={stPageSize}
+      total={stockTransfersTotal}
+    />
+  </div>
+</section>
+
+
+<section class={mc.pageHeader}>
+	<div class="mt-5">
+		<h1 class={mc.pageTitle}>{$_('pageTransfersTitleOld')}</h1>
+		<p class={mc.pageSubtitle}>{$_('pageTransfersSubtitle')}</p>
 	</div>
 </section>
 
@@ -403,119 +537,6 @@
   />
 </section>
 
-<section class="mt-8">
-  <div class="mb-4 flex flex-wrap items-start justify-between gap-4">
-    <h2 class="text-xl font-bold tracking-tight text-gray-900 dark:text-gray-50">
-      Product-level transfers (FIFO)
-    </h2>
-    {#if merchantBranchId}
-      <button
-        type="button"
-        class={mc.primaryBtn}
-        onclick={openFifoModal}
-        disabled={subscriptionLocked}
-        title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : "Transfer product stock via FIFO"}
-      >
-        New transfer
-      </button>
-    {/if}
-  </div>
-  <div class={mc.tableSection}>
-    <div class="overflow-x-auto">
-      <table class={mc.table}>
-        <thead>
-          <tr>
-            <th class={mc.colNumHead}>#</th>
-            <th class={mc.th}>From</th>
-            <th class={mc.th}>To</th>
-            <th class={mc.th}>Created by</th>
-            <th class={mc.th}>Destination merchant</th>
-            <th class={mc.thRight}>Total qty</th>
-            <th class={mc.th}>Batches</th>
-            <th class={mc.th}>Date</th>
-            <th class={mc.th}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {#if stockTransfers.length === 0}
-            <tr>
-              <td colspan="9" class={mc.emptyCell}>No product-level transfers yet.</td>
-            </tr>
-          {:else}
-            {#each stockTransfers as st, i}
-              {@const totalQty = (st.stock_transfer_batches ?? []).reduce(
-                (sum, b) => sum + Number(b.quantity ?? 0), 0
-              )}
-              {@const batchCount = (st.stock_transfer_batches ?? []).length}
-              <tr
-                class={mc.rowClickable}
-                onclick={() => toggleExpand(st.id)}
-                onkeydown={(e) => (e.key === "Enter" || e.key === " ") && toggleExpand(st.id)}
-                tabindex="0"
-                role="button"
-              >
-                <td class={mc.colNum}>{i + 1}</td>
-                <td class="capitalize {mc.td}">{branchName(st.from)}</td>
-                <td class="capitalize {mc.td}">{branchName(st.to)}</td>
-                <td class={mc.td}>{merchantName(st.created_by)}</td>
-                <td class={mc.td}>{merchantName(st.destination_merchant)}</td>
-                <td class={mc.tdRight}>{quantityLabel(totalQty)}</td>
-                <td class={mc.td}>{batchCount}</td>
-                <td class={mc.td}>{formatDate(st.created_at)}</td>
-                <td class={mc.td}>
-                  <button
-                    type="button"
-                    class="text-xs font-semibold text-[#4DA0E6] hover:underline"
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      goto(`/stock-transfers/${st.id}`);
-                    }}
-                  >
-                    Details
-                  </button>
-                </td>
-              </tr>
-              {#if expandedTransferId === st.id}
-                <tr>
-                  <td colspan="9" class="p-0">
-                    <div class="bg-gray-50 px-6 py-3 dark:bg-[#111827]">
-                      <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                        Batch slices
-                      </p>
-                      <table class="w-full text-sm">
-                        <thead>
-                          <tr class="border-b border-gray-200 text-left text-xs font-medium text-gray-500 dark:border-white/10 dark:text-gray-400">
-                            <th class="px-2 py-1">Source stock</th>
-                            <th class="px-2 py-1">Destination stock</th>
-                            <th class="px-2 py-1 text-right">Qty</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {#each (st.stock_transfer_batches ?? []) as batch}
-                            <tr class="border-b border-gray-100 text-sm text-gray-700 dark:border-white/5 dark:text-gray-300">
-                              <td class="px-2 py-1 font-mono text-xs">{batch.stock_id?.slice(0, 8) ?? "\u2014"}</td>
-                              <td class="px-2 py-1 font-mono text-xs">{batch.destination_stock?.slice(0, 8) ?? "\u2014"}</td>
-                              <td class="px-2 py-1 text-right">{quantityLabel(batch.quantity)}</td>
-                            </tr>
-                          {/each}
-                        </tbody>
-                      </table>
-                    </div>
-                  </td>
-                </tr>
-              {/if}
-            {/each}
-          {/if}
-        </tbody>
-      </table>
-    </div>
-    {#if stockTransfersTotal > 10}
-      <p class="px-4 py-3 text-center text-sm text-gray-500 dark:text-gray-400">
-        Showing 10 of {stockTransfersTotal} transfers.
-      </p>
-    {/if}
-  </div>
-</section>
 
 {#if showFifoModal}
   <div
@@ -535,7 +556,7 @@
     oncancel={(e) => fifoFormPending && e.preventDefault()}
   >
     <header>
-      <h2>New product transfer (FIFO)</h2>
+      <h2>New transfer</h2>
       <button
         class="icon"
         aria-label="Close"
@@ -606,6 +627,11 @@
               step="any"
               required
             />
+            {#if fifoQuantity > fifoAvailableQty}
+              <p class="text-sm text-red-600 dark:text-red-400">
+                Quantity exceeds available stock ({fifoAvailableQty} {fifoProductUnit}).
+              </p>
+            {/if}
           </label>
           <label>
             <span>Move to</span>
@@ -704,3 +730,55 @@
     </form>
   </dialog>
 {/if}
+
+<style>
+
+  .fifo-preview {
+    padding: 0.65rem;
+    border-radius: 0.5rem;
+    border: 1px solid #e6eaed;
+    background: #f9fafb;
+    margin: 0.75rem 0;
+  }
+
+  .fifo-preview-title {
+    margin: 0 0 0.4rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #6b7280;
+  }
+
+  .fifo-preview-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+  }
+
+  .fifo-preview-table th,
+  .fifo-preview-table td {
+    padding: 0.3rem 0.45rem;
+    text-align: left;
+    border-bottom: 1px solid #eef1f4;
+  }
+
+  .fifo-preview-table th {
+    font-weight: 600;
+    color: #6b7280;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .fifo-preview-table td {
+    color: #111827;
+  }
+
+  .fifo-preview-warn {
+    margin: 0.45rem 0 0;
+    font-size: 0.8rem;
+    color: #dc2626;
+    font-weight: 600;
+  }
+</style>
