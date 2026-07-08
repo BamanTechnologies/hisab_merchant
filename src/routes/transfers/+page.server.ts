@@ -1,8 +1,16 @@
-import type { PageServerLoad } from "./$types";
+import type { PageServerLoad, Actions } from "./$types";
 import { getUserIdFromRequest } from "$lib/auth";
 import { config, getGraphQLHeaders } from "$lib/config";
 import { fetchBranchCompanyId } from "$lib/companyInvestors.server";
+import { fetchMerchantBranchId } from "$lib/merchantBranch.server";
 import { buildStockLabel, type StockLabelInput } from "$lib/stockLabel";
+import {
+  executeTransfer,
+  FETCH_PRODUCTS_FOR_TRANSFER_QUERY,
+  FETCH_STOCK_TRANSFERS_QUERY,
+  planTransfer,
+} from "$lib/inventory/stockTransfers.server";
+import { subscriptionWriteActionBlockedForRequest } from "$lib/subscription/server";
 
 type TransferRow = {
   id: string;
@@ -77,6 +85,7 @@ type MerchantRow = {
   id: string;
   first_name?: string | null;
   last_name?: string | null;
+  branch?: string | null;
 };
 
 const FETCH_TRANSFERS_FOR_MERCHANT_QUERY = `
@@ -123,6 +132,7 @@ const FETCH_MERCHANTS_QUERY = `
       id
       first_name
       last_name
+      branch
     }
   }
 `;
@@ -165,6 +175,138 @@ async function gqlRequest<T>(
   return result.data as T;
 }
 
+type StockTransferRow = {
+  id: string;
+  from?: string | null;
+  to?: string | null;
+  destination_merchant?: string | null;
+  request_hash?: string | null;
+  created_by?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  stock_transfer_batches?: Array<{
+    id: string;
+    stock_id?: string | null;
+    destination_stock?: string | null;
+    quantity?: number | string | null;
+    created_at?: string | null;
+  }> | null;
+};
+
+async function fetchStockTransfers(
+  merchantId: string,
+  companyId: string | null,
+  branchId: string | null,
+  page: number,
+  pageSize: number,
+): Promise<{ transfers: StockTransferRow[]; totalCount: number }> {
+  const conditions: Record<string, unknown>[] = [
+    {
+      _or: [
+        { created_by: { _eq: merchantId } },
+        { destination_merchant: { _eq: merchantId } },
+      ],
+    },
+  ];
+
+  if (branchId) {
+    conditions.push({
+      _or: [
+        { from: { _eq: branchId } },
+        { to: { _eq: branchId } },
+      ],
+    });
+  } else if (companyId) {
+    conditions.push({
+      _or: [
+        { from_branch: { company: { _eq: companyId } } },
+        { to_branch: { company: { _eq: companyId } } },
+      ],
+    });
+  }
+
+  const filter = { _and: conditions };
+  const order = [{ created_at: "desc" as const }, { id: "desc" as const }];
+  const offset = (page - 1) * pageSize;
+
+  try {
+    const data = await gqlRequest<{
+      stock_transfers: StockTransferRow[];
+      total_stock_transfers: { aggregate: { count: number } };
+    }>(FETCH_STOCK_TRANSFERS_QUERY, { filter, order, limit: pageSize, offset });
+    return {
+      transfers: data.stock_transfers ?? [],
+      totalCount: data.total_stock_transfers?.aggregate?.count ?? 0,
+    };
+  } catch {
+    return { transfers: [], totalCount: 0 };
+  }
+}
+
+const FETCH_BRANCH_BY_PK_QUERY = `
+  query BranchByPkForTransferAction($id: uuid!) {
+    branches_by_pk(id: $id) {
+      id
+      company
+      name
+    }
+  }
+`;
+
+const MERCHANT_BY_PK_QUERY = `
+  query MerchantByPkForTransferAction($id: uuid!) {
+    merchant_by_pk(id: $id) {
+      id
+      branch
+    }
+  }
+`;
+
+async function fetchBranchByPk(id: string) {
+  try {
+    const response = await fetch(config.graphql.endpoint, {
+      method: 'POST',
+      headers: getGraphQLHeaders(),
+      body: JSON.stringify({ query: FETCH_BRANCH_BY_PK_QUERY, variables: { id } }),
+    });
+    if (!response.ok) return null;
+    const result = await response.json();
+    if (result.errors) return null;
+    return result.data.branches_by_pk ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchMerchantByPkForTransfer(id: string) {
+  try {
+    const response = await fetch(config.graphql.endpoint, {
+      method: 'POST',
+      headers: getGraphQLHeaders(),
+      body: JSON.stringify({ query: MERCHANT_BY_PK_QUERY, variables: { id } }),
+    });
+    if (!response.ok) return null;
+    const result = await response.json();
+    if (result.errors) return null;
+    return result.data.merchant_by_pk ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchProductsForTransfer(companyId: string | null, branchId: string | null) {
+  if (!companyId || !branchId) return [];
+  try {
+    const data = await gqlRequest<{ products: unknown[] }>(
+      FETCH_PRODUCTS_FOR_TRANSFER_QUERY,
+      { companyId, branchId },
+    );
+    return data.products ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export const load: PageServerLoad = async ({ request, url, parent }) => {
   const { merchantContext } = await parent();
   const merchantId =
@@ -182,6 +324,10 @@ export const load: PageServerLoad = async ({ request, url, parent }) => {
       branches: [],
       merchants: [],
       merchantId: null,
+      merchantBranchId: null,
+      stockTransfers: [],
+      stockTransfersTotal: 0,
+      productsForTransfer: [],
     };
   }
 
@@ -281,20 +427,114 @@ export const load: PageServerLoad = async ({ request, url, parent }) => {
       branches = Array.from(involvedBranchIds).map((id) => ({ id, name: id }));
     }
 
+    const [stockTransfersResult, productsForTransfer] = await Promise.all([
+      fetchStockTransfers(merchantId, companyId, merchantBranchId, 1, 10),
+      fetchProductsForTransfer(companyId, merchantBranchId),
+    ]);
+
     return {
       transfers: transfersEnriched,
       totalCount,
       branches,
       merchants: merchantData.merchant ?? [],
       merchantId,
+      merchantBranchId,
+      stockTransfers: stockTransfersResult.transfers,
+      stockTransfersTotal: stockTransfersResult.totalCount,
+      productsForTransfer,
     };
   } catch (_error) {
+    const [stockTransfersFallback, productsFallback] = await Promise.all([
+      merchantId
+        ? fetchStockTransfers(merchantId, companyId, merchantBranchId, 1, 10).catch(() => ({
+            transfers: [],
+            totalCount: 0,
+          }))
+        : Promise.resolve({ transfers: [], totalCount: 0 }),
+      fetchProductsForTransfer(companyId, merchantBranchId),
+    ]);
     return {
       transfers: [],
       totalCount: 0,
       branches: [],
       merchants: [],
       merchantId,
+      merchantBranchId,
+      stockTransfers: stockTransfersFallback.transfers,
+      stockTransfersTotal: stockTransfersFallback.totalCount,
+      productsForTransfer: productsFallback,
     };
   }
+};
+
+export const actions: Actions = {
+  transferStockFifo: async ({ request }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
+    const formData = await request.formData();
+    const userId = getUserIdFromRequest(request);
+    if (!userId) {
+      return { success: false, message: 'Authentication required' };
+    }
+
+    const productId = formData.get('product_id') as string;
+    const quantityRaw = formData.get('quantity');
+    const toBranch = formData.get('to_branch') as string;
+    const destinationMerchant = formData.get('destination_merchant') as string;
+
+    if (!productId) return { success: false, message: 'Select a product' };
+    if (!toBranch) return { success: false, message: 'Select a destination branch' };
+    if (!destinationMerchant) return { success: false, message: 'Select a merchant' };
+
+    const quantity = Number(quantityRaw);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      return { success: false, message: 'Invalid quantity' };
+    }
+
+    const merchantBranchId = await fetchMerchantBranchId(userId);
+    if (!merchantBranchId) {
+      return { success: false, message: 'No branch assigned to your account' };
+    }
+
+    if (toBranch === merchantBranchId) {
+      return { success: false, message: 'Choose a different branch' };
+    }
+
+    const fromRow = await fetchBranchByPk(merchantBranchId);
+    const toRow = await fetchBranchByPk(toBranch);
+    if (!fromRow || !toRow) {
+      return { success: false, message: 'Branch not found' };
+    }
+    if (!fromRow.company || fromRow.company !== toRow.company) {
+      return { success: false, message: 'Branches must belong to the same company' };
+    }
+
+    const assignee = await fetchMerchantByPkForTransfer(destinationMerchant);
+    if (!assignee || assignee.branch !== toBranch) {
+      return { success: false, message: 'Selected merchant must belong to the destination branch' };
+    }
+
+    try {
+      const plan = await planTransfer({ productId, branchId: merchantBranchId, quantity });
+      await executeTransfer({
+        plan,
+        fromBranch: merchantBranchId,
+        toBranch,
+        actorId: userId,
+        destinationMerchant,
+        companyId: fromRow.company,
+      });
+    } catch (err) {
+      return {
+        success: false,
+        message: `Failed to transfer: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      };
+    }
+
+    return {
+      success: true,
+      message: `Transferred ${quantity} units via FIFO.`,
+    };
+  },
 };

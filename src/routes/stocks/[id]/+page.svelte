@@ -8,6 +8,9 @@
   } from "$lib/subscription/client";
   import { formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
   import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
+  import { allocateFifo } from "$lib/inventory/fifo";
+  import { buildProductLabel } from "$lib/inventory/productLabel";
+  import type { FifoSlice, ProductRecord } from "$lib/inventory/types";
   import type { PageData } from "./$types";
 
   type Investor = {
@@ -57,6 +60,24 @@
     branch: string;
   };
 
+  type ProductBatchRow = {
+    id: string;
+    quantity: number | string;
+    selling_price: unknown;
+    created_at?: string | null;
+    batch_number?: string | null;
+  };
+
+  type ProductForTransfer = {
+    id: string;
+    name: string;
+    default_unit?: string | null;
+    factor?: unknown;
+    attributes?: Record<string, unknown> | null;
+    product_type?: { id?: string; name?: string | null } | null;
+    stocks: ProductBatchRow[];
+  };
+
   let { data }: { data: PageData } = $props();
   const stock = data.stock as Stock | null;
   const stockHeldAtBranch = data.stockHeldAtBranch as
@@ -69,6 +90,14 @@
     []) as TransferBranch[];
   const merchantsInTransferBranches = (data.merchantsInTransferBranches ??
     []) as TransferMerchant[];
+  const productsForTransfer = (data.productsForTransfer ?? []) as ProductForTransfer[];
+
+  const currentProductId = $derived(stock?.product?.id ?? null);
+  const currentProduct = $derived(
+    currentProductId
+      ? productsForTransfer.find((p) => p.id === currentProductId) ?? null
+      : null,
+  );
 
   let errorMessage = $state("");
   let successMessage = $state("");
@@ -99,6 +128,13 @@
   let transferToBranchId = $state("");
   let transferNewMerchantId = $state("");
 
+  let showFifoTransferModal = $state(false);
+  let fifoFormPending = $state(false);
+  let fifoProductId = $state("");
+  let fifoQuantity = $state(0);
+  let fifoToBranchId = $state("");
+  let fifoDestinationMerchantId = $state("");
+
   const merchantsForDestinationBranch = $derived(
     transferToBranchId
       ? merchantsInTransferBranches.filter(
@@ -107,9 +143,113 @@
       : []
   );
 
+  const fifoMerchantsForDest = $derived(
+    fifoToBranchId
+      ? merchantsInTransferBranches.filter(
+          (m) => m.branch === fifoToBranchId
+        )
+      : []
+  );
+
   const maxTransferQty = $derived(
     stock ? Math.max(0, Number(stock.quantity)) : 0,
   );
+
+  function positiveBatchesForProduct(product: ProductForTransfer): ProductBatchRow[] {
+    return (product.stocks ?? []).filter(
+      (s) => Number(s.quantity) > 0,
+    );
+  }
+
+  function toFifoBatches(batches: ProductBatchRow[]) {
+    return batches.map((b) => ({
+      id: b.id,
+      quantity: Number(b.quantity),
+      selling_price: Number(b.selling_price),
+      created_at: b.created_at ?? '',
+      batch_number: b.batch_number ?? null,
+    }));
+  }
+
+  function getSelectedProduct(): ProductForTransfer | null {
+    if (!fifoProductId) return null;
+    return productsForTransfer.find((p) => p.id === fifoProductId) ?? null;
+  }
+
+  function productAvailableQty(product: ProductForTransfer): number {
+    return positiveBatchesForProduct(product).reduce(
+      (sum, b) => sum + Number(b.quantity),
+      0,
+    );
+  }
+
+  const fifoPreview = $derived.by(() => {
+    if (!fifoProductId) return null;
+    const product = getSelectedProduct();
+    if (!product) return null;
+    const q = Number(fifoQuantity);
+    if (!Number.isFinite(q) || q < 1) return null;
+    const batches = toFifoBatches(positiveBatchesForProduct(product));
+    return allocateFifo(batches, q);
+  });
+
+  const fifoAvailableQty = $derived(
+    fifoProductId
+      ? productAvailableQty(getSelectedProduct()!)
+      : 0,
+  );
+
+  const fifoProductUnit = $derived(
+    fifoProductId
+      ? getSelectedProduct()?.default_unit?.trim() ?? 'units'
+      : 'units',
+  );
+
+  const canSubmitFifoTransfer = $derived(
+    !!fifoProductId &&
+      !!fifoToBranchId &&
+      fifoMerchantsForDest.length > 0 &&
+      !!fifoDestinationMerchantId &&
+      fifoQuantity > 0 &&
+      fifoQuantity <= fifoAvailableQty
+  );
+
+  function openFifoTransferModal() {
+    if (subscriptionLocked) return;
+    errorMessage = "";
+    successMessage = "";
+    fifoProductId = currentProductId ?? "";
+    fifoQuantity = 0;
+    fifoToBranchId = "";
+    fifoDestinationMerchantId = "";
+    showFifoTransferModal = true;
+  }
+
+  function closeFifoTransferModal() {
+    if (fifoFormPending) return;
+    showFifoTransferModal = false;
+  }
+
+  function onFifoBranchChange() {
+    fifoDestinationMerchantId = "";
+  }
+
+  function submitFifoTransfer(e: Event) {
+    errorMessage = "";
+    successMessage = "";
+    if (!canSubmitFifoTransfer) {
+      e.preventDefault();
+      if (!fifoProductId) {
+        errorMessage = "Select a product.";
+      } else if (fifoQuantity <= 0 || fifoQuantity > fifoAvailableQty) {
+        errorMessage = `Enter a quantity greater than 0 and at most ${fifoAvailableQty}.`;
+      } else if (fifoToBranchId && fifoMerchantsForDest.length === 0) {
+        errorMessage = "No merchants in the selected branch.";
+      } else if (!fifoDestinationMerchantId) {
+        errorMessage = "Select a merchant for the destination branch.";
+      }
+    }
+  }
   const PRODUCT_TYPE_FIELDS: Record<string, string[]> = {
     glass: ["thickness", "color", "figure", "factor"],
     brake_lining: ["model_number", "country"],
@@ -287,25 +427,36 @@
     {/if}
   </div>
   {#if stock}
-    <button
-      type="button"
-      class={mc.primaryBtn}
-      onclick={openTransferModal}
-      disabled={!canTransferStock || subscriptionLocked}
-      title={subscriptionLocked
-        ? SUBSCRIPTION_BLOCKED_MESSAGE
-        : !canTransferStock
-        ? !stock?.branch
-          ? "Stock has no branch"
-          : transferTargetBranches.length === 0
-            ? "No other branches in the same company"
-            : Number(stock?.quantity) <= 0
-              ? "No quantity to transfer"
-              : "Cannot transfer"
-        : "Move this stock to another branch in the same company"}
-    >
-      Transfer stock
-    </button>
+    <div class="flex flex-wrap gap-2">
+      <button
+        type="button"
+        class={mc.primaryBtn}
+        onclick={openTransferModal}
+        disabled={!canTransferStock || subscriptionLocked}
+        title={subscriptionLocked
+          ? SUBSCRIPTION_BLOCKED_MESSAGE
+          : !canTransferStock
+          ? !stock?.branch
+            ? "Stock has no branch"
+            : transferTargetBranches.length === 0
+              ? "No other branches in the same company"
+              : Number(stock?.quantity) <= 0
+                ? "No quantity to transfer"
+                : "Cannot transfer"
+          : "Move this stock to another branch in the same company"}
+      >
+        Transfer stock
+      </button>
+      <button
+        type="button"
+        class={mc.tableBtn}
+        onclick={openFifoTransferModal}
+        disabled={!stock.branch || transferTargetBranches.length === 0 || subscriptionLocked}
+        title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : "Transfer product stock via FIFO across all batches"}
+      >
+        Transfer (FIFO)
+      </button>
+    </div>
   {/if}
 </section>
 
@@ -494,9 +645,9 @@
         </fieldset>
         <p class="transfer-note">
           A <strong>new stock line</strong> is created at the destination branch with
-          the quantity you enter (same product details). This line’s
+          the quantity you enter (same product details). This line's
           <strong>created_by</strong> and <strong>updated_by</strong> are the
-          selected merchant. The current line’s quantity is reduced and
+          selected merchant. The current line's quantity is reduced and
           <strong>updated_by</strong> is set to you. A <strong>transfers</strong> row
           records from branch, to branch, <strong>quantity moved</strong>, and
           initiator.
@@ -520,6 +671,193 @@
     </dialog>
   {/if}
 
+  {#if showFifoTransferModal && stock}
+    <div
+      class="modal-overlay"
+      role="button"
+      tabindex="0"
+      onclick={() => !fifoFormPending && closeFifoTransferModal()}
+      onkeydown={(e) =>
+        !fifoFormPending &&
+        (e.key === "Enter" || e.key === " ") &&
+        closeFifoTransferModal()}
+    ></div>
+    <dialog
+      open
+      class="modal modal-compact modal-wide"
+      onclick={(e) => e.stopPropagation()}
+      oncancel={(e) => fifoFormPending && e.preventDefault()}
+    >
+      <header>
+        <h2>Transfer stock (FIFO)</h2>
+        <button
+          class="icon"
+          aria-label="Close"
+          disabled={fifoFormPending}
+          onclick={closeFifoTransferModal}>✕</button
+        >
+      </header>
+      <form
+        class="form transfer-form"
+        method="POST"
+        action="?/transferStockFifo"
+        onsubmit={submitFifoTransfer}
+        use:enhance={() => {
+          fifoFormPending = true;
+          return async ({ update, result }) => {
+            try {
+              await update();
+            } finally {
+              fifoFormPending = false;
+            }
+            const t = toastFromActionResult(result);
+            if (t) showToast(t.message, t.variant);
+            const ok =
+              result.type === "success" &&
+              result.data &&
+              typeof result.data === "object" &&
+              "success" in result.data &&
+              (result.data as { success?: boolean }).success === true;
+            if (ok) {
+              successMessage = "";
+              errorMessage = "";
+              showFifoTransferModal = false;
+              fifoToBranchId = "";
+              fifoDestinationMerchantId = "";
+              afterToast(TOAST_MS, () => void invalidateAll());
+            } else if (t?.variant === "error") {
+              errorMessage = "";
+            }
+          };
+        }}
+      >
+        <fieldset class="transfer-form-fields" disabled={fifoFormPending}>
+          <div class="fifo-form-grid">
+            <label>
+              <span>Product</span>
+              <select
+                name="product_id"
+                bind:value={fifoProductId}
+                required
+                class="native-select"
+              >
+                <option value="" disabled>Select product</option>
+                {#each productsForTransfer as p}
+                  <option value={p.id}>
+                    {buildProductLabel(p as any)}
+                    {(() => {
+                      const q = productAvailableQty(p);
+                      return q > 0 ? `(${q} ${p.default_unit?.trim() ?? 'units'})` : '(out of stock)';
+                    })()}
+                  </option>
+                {/each}
+              </select>
+            </label>
+            <label>
+              <span>Quantity to transfer (max {fifoAvailableQty} {fifoProductUnit})</span>
+              <input
+                type="number"
+                name="quantity"
+                bind:value={fifoQuantity}
+                min="0.0001"
+                max={fifoAvailableQty || undefined}
+                step="any"
+                required
+              />
+            </label>
+            <label>
+              <span>Move to</span>
+              <select
+                name="to_branch"
+                bind:value={fifoToBranchId}
+                required
+                class="native-select"
+                onchange={onFifoBranchChange}
+              >
+                <option value="" disabled>Select branch</option>
+                {#each transferTargetBranches as br}
+                  <option value={br.id}>{br.name ?? br.id}</option>
+                {/each}
+              </select>
+            </label>
+            <label>
+              <span>Merchant</span>
+              <select
+                name="destination_merchant"
+                bind:value={fifoDestinationMerchantId}
+                class="native-select"
+                required={fifoMerchantsForDest.length > 0}
+                disabled={!fifoToBranchId || fifoMerchantsForDest.length === 0}
+              >
+                <option value="" disabled>
+                  {!fifoToBranchId
+                    ? "Select a branch first"
+                    : fifoMerchantsForDest.length === 0
+                      ? "No merchants in this branch"
+                      : "Select merchant"}
+                </option>
+                {#each fifoMerchantsForDest as m}
+                  <option value={m.id}>{merchantOptionLabel(m)}</option>
+                {/each}
+              </select>
+            </label>
+          </div>
+        </fieldset>
+
+        {#if fifoPreview && fifoPreview.slices.length > 0}
+          <div class="fifo-preview">
+            <p class="fifo-preview-title">FIFO batch allocation</p>
+            <table class="fifo-preview-table">
+              <thead>
+                <tr>
+                  <th>Batch #</th>
+                  <th>Qty taken</th>
+                  <th>Sell price</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each fifoPreview.slices as slice (slice.stock_id)}
+                  <tr>
+                    <td>{slice.batch_number?.trim() || "\u2014"}</td>
+                    <td>{slice.quantity}</td>
+                    <td>{formatMoney(slice.selling_price)}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+            {#if fifoPreview.remaining > 0}
+              <p class="fifo-preview-warn">
+                Short by {fifoPreview.remaining} {fifoProductUnit} &mdash; reduce quantity.
+              </p>
+            {/if}
+          </div>
+        {/if}
+
+        <p class="transfer-note">
+          Stock is taken from batches in <strong>FIFO</strong> order (earliest first).
+          Each batch contributes its quantity, and a corresponding destination batch is
+          created at the target branch. A <strong>stock_transfer</strong> record groups
+          all batch movements.
+        </p>
+        <footer>
+          <button
+            type="button"
+            class="ghost"
+            onclick={closeFifoTransferModal}
+            disabled={fifoFormPending}>
+            Cancel
+          </button>
+          <button
+            type="submit"
+            class="primary"
+            disabled={!canSubmitFifoTransfer || fifoFormPending}
+            >{fifoFormPending ? "Transferring…" : "Transfer"}</button
+          >
+        </footer>
+      </form>
+    </dialog>
+  {/if}
+
 <style>
   fieldset.transfer-form-fields {
     border: none;
@@ -534,10 +872,85 @@
     gap: 0.9rem;
   }
 
+  .transfer-form .fifo-form-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.9rem;
+  }
+
+  @media (min-width: 600px) {
+    .transfer-form .fifo-form-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+
   .transfer-note {
     margin: 0 0 0.5rem;
     font-size: 0.8125rem;
     color: #6b7280;
     line-height: 1.45;
+  }
+
+  .fifo-preview {
+    padding: 0.65rem;
+    border-radius: 0.5rem;
+    border: 1px solid #e6eaed;
+    background: #f9fafb;
+    margin: 0.75rem 0;
+  }
+
+  .fifo-preview-title {
+    margin: 0 0 0.4rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #6b7280;
+  }
+
+  .fifo-preview-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+  }
+
+  .fifo-preview-table th,
+  .fifo-preview-table td {
+    padding: 0.3rem 0.45rem;
+    text-align: left;
+    border-bottom: 1px solid #eef1f4;
+  }
+
+  .fifo-preview-table th {
+    font-weight: 600;
+    color: #6b7280;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .fifo-preview-table td {
+    color: #111827;
+  }
+
+  .fifo-preview-warn {
+    margin: 0.45rem 0 0;
+    font-size: 0.8rem;
+    color: #dc2626;
+    font-weight: 600;
+  }
+
+  :global(html.dark) .fifo-preview {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  :global(html.dark) .fifo-preview-table th {
+    color: #94a3b8;
+  }
+
+  :global(html.dark) .fifo-preview-table td {
+    color: #e5e7eb;
+    border-bottom-color: rgba(255, 255, 255, 0.08);
   }
 </style>

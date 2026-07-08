@@ -1,34 +1,184 @@
 <script lang="ts">
-	import { goto } from "$app/navigation";
-	import { page } from "$app/stores";
-	import TablePagination from "$lib/components/TablePagination.svelte";
-	import { mc } from "$lib/merchant-styles.js";
-	import type { PageData } from "./$types";
-	import { _ } from "svelte-i18n";
+  import { goto } from "$app/navigation";
+  import { page } from "$app/stores";
+  import { enhance } from "$app/forms";
+  import { invalidateAll } from "$app/navigation";
+  import TablePagination from "$lib/components/TablePagination.svelte";
+  import { mc } from "$lib/merchant-styles.js";
+  import {
+    SUBSCRIPTION_BLOCKED_MESSAGE,
+    subscriptionBlocksMutations,
+  } from "$lib/subscription/client";
+  import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
+  import { allocateFifo } from "$lib/inventory/fifo";
+  import { buildProductLabel } from "$lib/inventory/productLabel";
+  import type { ProductRecord } from "$lib/inventory/types";
+  import type { PageData } from "./$types";
+  import { _ } from "svelte-i18n";
 
-	type Transfer = {
-		id: string;
-		stock?: string | null;
-		destination_stock?: string | null;
-		from?: string | null;
-		to?: string | null;
-		created_by?: string | null;
-		destination_merchant?: string | null;
-		quantity?: number | string | null;
-		created_at?: string | null;
-		stock_link_id?: string | null;
-		stock_display_name?: string;
-	};
+  type Transfer = {
+    id: string;
+    stock?: string | null;
+    destination_stock?: string | null;
+    from?: string | null;
+    to?: string | null;
+    created_by?: string | null;
+    destination_merchant?: string | null;
+    quantity?: number | string | null;
+    created_at?: string | null;
+    stock_link_id?: string | null;
+    stock_display_name?: string;
+  };
 
-	type Branch = { id: string; name?: string | null };
-	type Merchant = { id: string; first_name?: string | null; last_name?: string | null };
+  type StockTransferBatch = {
+    id: string;
+    stock_id?: string | null;
+    destination_stock?: string | null;
+    quantity?: number | string | null;
+    created_at?: string | null;
+  };
 
-	let { data }: { data: PageData } = $props();
+  type StockTransfer = {
+    id: string;
+    from?: string | null;
+    to?: string | null;
+    destination_merchant?: string | null;
+    request_hash?: string | null;
+    created_by?: string | null;
+    created_at?: string | null;
+    stock_transfer_batches?: StockTransferBatch[] | null;
+  };
 
-	let transfers = $state((data.transfers ?? []) as Transfer[]);
-	let totalCount = $state((data as { totalCount: number }).totalCount ?? 0);
-	const branches = (data.branches ?? []) as Branch[];
-	const merchants = (data.merchants ?? []) as Merchant[];
+  type ProductBatchRow = {
+    id: string;
+    quantity: number | string;
+    selling_price: unknown;
+    created_at?: string | null;
+    batch_number?: string | null;
+  };
+
+  type ProductForTransfer = {
+    id: string;
+    name: string;
+    default_unit?: string | null;
+    factor?: unknown;
+    attributes?: Record<string, unknown> | null;
+    product_type?: { id?: string; name?: string | null } | null;
+    stocks: ProductBatchRow[];
+  };
+
+  type Branch = { id: string; name?: string | null };
+  type Merchant = { id: string; first_name?: string | null; last_name?: string | null };
+
+  let { data }: { data: PageData } = $props();
+
+  let transfers = $state((data.transfers ?? []) as Transfer[]);
+  let totalCount = $state((data as { totalCount: number }).totalCount ?? 0);
+  const branches = (data.branches ?? []) as Branch[];
+  const merchants = (data.merchants ?? []) as Merchant[];
+  let stockTransfers = $state((data as any).stockTransfers ?? []) as StockTransfer[];
+  let stockTransfersTotal = $state((data as any).stockTransfersTotal ?? 0);
+  const productsForTransfer: ProductForTransfer[] = (data as any).productsForTransfer ?? [];
+  const merchantBranchId = (data as any).merchantBranchId as string | null;
+
+  let expandedTransferId = $state<string | null>(null);
+
+  function toggleExpand(id: string) {
+    expandedTransferId = expandedTransferId === id ? null : id;
+  }
+
+  let showFifoModal = $state(false);
+  let fifoFormPending = $state(false);
+  let fifoProductId = $state("");
+  let fifoQuantity = $state(0);
+  let fifoToBranchId = $state("");
+  let fifoDestinationMerchantId = $state("");
+
+  const fifoMerchantsForDest = $derived(
+    fifoToBranchId
+      ? merchants.filter((m) => {
+          const mBranch = (m as any).branch;
+          return mBranch === fifoToBranchId;
+        })
+      : []
+  );
+  (merchants as any).forEach((m: any) => {
+    if (m.branch == null) m.branch = (data as any).merchantBranchId;
+  });
+
+  function positiveBatchesForProduct(product: ProductForTransfer): ProductBatchRow[] {
+    return (product.stocks ?? []).filter((s) => Number(s.quantity) > 0);
+  }
+
+  function toFifoBatches(batches: ProductBatchRow[]) {
+    return batches.map((b) => ({
+      id: b.id,
+      quantity: Number(b.quantity),
+      selling_price: Number(b.selling_price),
+      created_at: b.created_at ?? '',
+      batch_number: b.batch_number ?? null,
+    }));
+  }
+
+  function getSelectedProduct(): ProductForTransfer | null {
+    if (!fifoProductId) return null;
+    return productsForTransfer.find((p) => p.id === fifoProductId) ?? null;
+  }
+
+  function productAvailableQty(product: ProductForTransfer): number {
+    return positiveBatchesForProduct(product).reduce(
+      (sum, b) => sum + Number(b.quantity), 0,
+    );
+  }
+
+  const fifoPreview = $derived.by(() => {
+    if (!fifoProductId) return null;
+    const product = getSelectedProduct();
+    if (!product) return null;
+    const q = Number(fifoQuantity);
+    if (!Number.isFinite(q) || q < 1) return null;
+    const batches = toFifoBatches(positiveBatchesForProduct(product));
+    return allocateFifo(batches, q);
+  });
+
+  const fifoAvailableQty = $derived(
+    fifoProductId ? productAvailableQty(getSelectedProduct()!) : 0,
+  );
+
+  const fifoProductUnit = $derived(
+    fifoProductId ? getSelectedProduct()?.default_unit?.trim() ?? 'units' : 'units',
+  );
+
+  const canSubmitFifoTransfer = $derived(
+    !!fifoProductId && !!fifoToBranchId && fifoMerchantsForDest.length > 0 &&
+      !!fifoDestinationMerchantId && fifoQuantity > 0 && fifoQuantity <= fifoAvailableQty
+  );
+
+  const subscriptionLocked = $derived($subscriptionBlocksMutations);
+
+  function openFifoModal() {
+    if (subscriptionLocked) return;
+    fifoProductId = "";
+    fifoQuantity = 0;
+    fifoToBranchId = "";
+    fifoDestinationMerchantId = "";
+    showFifoModal = true;
+  }
+
+  function closeFifoModal() {
+    if (fifoFormPending) return;
+    showFifoModal = false;
+  }
+
+  function onFifoBranchChange() {
+    fifoDestinationMerchantId = "";
+  }
+
+  function submitFifoTransfer(e: Event) {
+    if (!canSubmitFifoTransfer) {
+      e.preventDefault();
+    }
+  }
 
 	let fromFilter = $state($page.url.searchParams.get("from") ?? "");
 	let toFilter = $state($page.url.searchParams.get("to") ?? "");
@@ -42,12 +192,15 @@
 	$effect(() => {
 		transfers = (data.transfers ?? []) as Transfer[];
 		totalCount = (data as { totalCount: number }).totalCount ?? 0;
+		stockTransfers = (data as any).stockTransfers ?? [];
+		stockTransfersTotal = (data as any).stockTransfersTotal ?? 0;
 	});
 
 	function branchName(id: string | null | undefined) {
 		if (!id) return "—";
 		const b = branches.find((x) => x.id === id);
-		return b?.name?.trim() ? b.name : `${id.slice(0, 8)}…`;
+		const raw = b?.name?.trim() ? b.name : `${id.slice(0, 8)}…`;
+		return raw.replace(/_/g, " ");
 	}
 
 	function merchantName(id: string | null | undefined) {
@@ -224,8 +377,8 @@
 							role={linkId ? "button" : undefined}
 						>
 							<td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
-							<td class={mc.td}>{branchName(t.from)}</td>
-							<td class={mc.td}>{branchName(t.to)}</td>
+							<td class="capitalize {mc.td}">{branchName(t.from)}</td>
+							<td class="capitalize {mc.td}">{branchName(t.to)}</td>
 							<td class={mc.td}>{merchantName(t.created_by)}</td>
 							<td class={mc.td}>{merchantName(t.destination_merchant)}</td>
 							<td class={mc.td}>
@@ -243,9 +396,311 @@
 			</tbody>
 		</table>
 	</div>
-	<TablePagination
-		bind:page={tablePage}
-		bind:pageSize={tablePageSize}
-		total={totalCount}
-	/>
+  <TablePagination
+    bind:page={tablePage}
+    bind:pageSize={tablePageSize}
+    total={totalCount}
+  />
 </section>
+
+<section class="mt-8">
+  <div class="mb-4 flex flex-wrap items-start justify-between gap-4">
+    <h2 class="text-xl font-bold tracking-tight text-gray-900 dark:text-gray-50">
+      Product-level transfers (FIFO)
+    </h2>
+    {#if merchantBranchId}
+      <button
+        type="button"
+        class={mc.primaryBtn}
+        onclick={openFifoModal}
+        disabled={subscriptionLocked}
+        title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : "Transfer product stock via FIFO"}
+      >
+        New transfer
+      </button>
+    {/if}
+  </div>
+  <div class={mc.tableSection}>
+    <div class="overflow-x-auto">
+      <table class={mc.table}>
+        <thead>
+          <tr>
+            <th class={mc.colNumHead}>#</th>
+            <th class={mc.th}>From</th>
+            <th class={mc.th}>To</th>
+            <th class={mc.th}>Created by</th>
+            <th class={mc.th}>Destination merchant</th>
+            <th class={mc.thRight}>Total qty</th>
+            <th class={mc.th}>Batches</th>
+            <th class={mc.th}>Date</th>
+            <th class={mc.th}></th>
+          </tr>
+        </thead>
+        <tbody>
+          {#if stockTransfers.length === 0}
+            <tr>
+              <td colspan="9" class={mc.emptyCell}>No product-level transfers yet.</td>
+            </tr>
+          {:else}
+            {#each stockTransfers as st, i}
+              {@const totalQty = (st.stock_transfer_batches ?? []).reduce(
+                (sum, b) => sum + Number(b.quantity ?? 0), 0
+              )}
+              {@const batchCount = (st.stock_transfer_batches ?? []).length}
+              <tr
+                class={mc.rowClickable}
+                onclick={() => toggleExpand(st.id)}
+                onkeydown={(e) => (e.key === "Enter" || e.key === " ") && toggleExpand(st.id)}
+                tabindex="0"
+                role="button"
+              >
+                <td class={mc.colNum}>{i + 1}</td>
+                <td class="capitalize {mc.td}">{branchName(st.from)}</td>
+                <td class="capitalize {mc.td}">{branchName(st.to)}</td>
+                <td class={mc.td}>{merchantName(st.created_by)}</td>
+                <td class={mc.td}>{merchantName(st.destination_merchant)}</td>
+                <td class={mc.tdRight}>{quantityLabel(totalQty)}</td>
+                <td class={mc.td}>{batchCount}</td>
+                <td class={mc.td}>{formatDate(st.created_at)}</td>
+                <td class={mc.td}>
+                  <button
+                    type="button"
+                    class="text-xs font-semibold text-[#4DA0E6] hover:underline"
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      goto(`/stock-transfers/${st.id}`);
+                    }}
+                  >
+                    Details
+                  </button>
+                </td>
+              </tr>
+              {#if expandedTransferId === st.id}
+                <tr>
+                  <td colspan="9" class="p-0">
+                    <div class="bg-gray-50 px-6 py-3 dark:bg-[#111827]">
+                      <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                        Batch slices
+                      </p>
+                      <table class="w-full text-sm">
+                        <thead>
+                          <tr class="border-b border-gray-200 text-left text-xs font-medium text-gray-500 dark:border-white/10 dark:text-gray-400">
+                            <th class="px-2 py-1">Source stock</th>
+                            <th class="px-2 py-1">Destination stock</th>
+                            <th class="px-2 py-1 text-right">Qty</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {#each (st.stock_transfer_batches ?? []) as batch}
+                            <tr class="border-b border-gray-100 text-sm text-gray-700 dark:border-white/5 dark:text-gray-300">
+                              <td class="px-2 py-1 font-mono text-xs">{batch.stock_id?.slice(0, 8) ?? "\u2014"}</td>
+                              <td class="px-2 py-1 font-mono text-xs">{batch.destination_stock?.slice(0, 8) ?? "\u2014"}</td>
+                              <td class="px-2 py-1 text-right">{quantityLabel(batch.quantity)}</td>
+                            </tr>
+                          {/each}
+                        </tbody>
+                      </table>
+                    </div>
+                  </td>
+                </tr>
+              {/if}
+            {/each}
+          {/if}
+        </tbody>
+      </table>
+    </div>
+    {#if stockTransfersTotal > 10}
+      <p class="px-4 py-3 text-center text-sm text-gray-500 dark:text-gray-400">
+        Showing 10 of {stockTransfersTotal} transfers.
+      </p>
+    {/if}
+  </div>
+</section>
+
+{#if showFifoModal}
+  <div
+    class="modal-overlay"
+    role="button"
+    tabindex="0"
+    onclick={() => !fifoFormPending && closeFifoModal()}
+    onkeydown={(e) =>
+      !fifoFormPending &&
+      (e.key === "Enter" || e.key === " ") &&
+      closeFifoModal()}
+  ></div>
+  <dialog
+    open
+    class="modal modal-compact modal-wide"
+    onclick={(e) => e.stopPropagation()}
+    oncancel={(e) => fifoFormPending && e.preventDefault()}
+  >
+    <header>
+      <h2>New product transfer (FIFO)</h2>
+      <button
+        class="icon"
+        aria-label="Close"
+        disabled={fifoFormPending}
+        onclick={closeFifoModal}>✕</button
+      >
+    </header>
+    <form
+      class="form transfer-form"
+      method="POST"
+      action="?/transferStockFifo"
+      onsubmit={submitFifoTransfer}
+      use:enhance={() => {
+        fifoFormPending = true;
+        return async ({ update, result }) => {
+          try {
+            await update();
+          } finally {
+            fifoFormPending = false;
+          }
+          const t = toastFromActionResult(result);
+          if (t) showToast(t.message, t.variant);
+          const ok =
+            result.type === "success" &&
+            result.data &&
+            typeof result.data === "object" &&
+            "success" in result.data &&
+            (result.data as { success?: boolean }).success === true;
+          if (ok) {
+            showFifoModal = false;
+            fifoToBranchId = "";
+            fifoDestinationMerchantId = "";
+            afterToast(TOAST_MS, () => void invalidateAll());
+          }
+        };
+      }}
+    >
+      <fieldset disabled={fifoFormPending}>
+        <div class="fifo-form-grid">
+          <label>
+            <span>Product</span>
+            <select
+              name="product_id"
+              bind:value={fifoProductId}
+              required
+              class="native-select"
+            >
+              <option value="" disabled>Select product</option>
+              {#each productsForTransfer as p}
+                <option value={p.id}>
+                  {buildProductLabel(p as any)}
+                  {(() => {
+                    const q = productAvailableQty(p);
+                    return q > 0 ? `(${q} ${p.default_unit?.trim() ?? 'units'})` : '(out of stock)';
+                  })()}
+                </option>
+              {/each}
+            </select>
+          </label>
+          <label>
+            <span>Quantity (max {fifoAvailableQty} {fifoProductUnit})</span>
+            <input
+              type="number"
+              name="quantity"
+              bind:value={fifoQuantity}
+              min="0.0001"
+              max={fifoAvailableQty || undefined}
+              step="any"
+              required
+            />
+          </label>
+          <label>
+            <span>Move to</span>
+            <select
+              name="to_branch"
+              bind:value={fifoToBranchId}
+              required
+              class="native-select"
+              onchange={onFifoBranchChange}
+            >
+              <option value="" disabled>Select branch</option>
+              {#each branches as br}
+                <option value={br.id}>{br.name ?? br.id}</option>
+              {/each}
+            </select>
+          </label>
+          <label>
+            <span>Merchant</span>
+            <select
+              name="destination_merchant"
+              bind:value={fifoDestinationMerchantId}
+              class="native-select"
+              required={fifoMerchantsForDest.length > 0}
+              disabled={!fifoToBranchId || fifoMerchantsForDest.length === 0}
+            >
+              <option value="" disabled>
+                {!fifoToBranchId
+                  ? "Select a branch first"
+                  : fifoMerchantsForDest.length === 0
+                    ? "No merchants in this branch"
+                    : "Select merchant"}
+              </option>
+              {#each fifoMerchantsForDest as m}
+                <option value={m.id}>{merchantName(m.id)}</option>
+              {/each}
+            </select>
+          </label>
+        </div>
+      </fieldset>
+
+      {#if fifoPreview && fifoPreview.slices.length > 0}
+        <div class="fifo-preview">
+          <p class="fifo-preview-title">FIFO batch allocation</p>
+          <table class="fifo-preview-table">
+              <thead>
+                <tr>
+                  <th>Batch #</th>
+                  <th>Available</th>
+                  <th>Qty taken</th>
+                  <th>Remaining</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each fifoPreview.slices as slice (slice.stock_id)}
+                  {@const avail = positiveBatchesForProduct(getSelectedProduct()!).find(
+                    (b) => b.id === slice.stock_id
+                  )}
+                  {@const availQty = avail ? Number(avail.quantity) : 0}
+                  <tr>
+                    <td>{slice.batch_number?.trim() || "\u2014"}</td>
+                    <td>{availQty}</td>
+                    <td>{slice.quantity}</td>
+                    <td>{availQty - slice.quantity}</td>
+                  </tr>
+                {/each}
+              </tbody>
+          </table>
+          {#if fifoPreview.remaining > 0}
+            <p class="fifo-preview-warn">
+              Short by {fifoPreview.remaining} {fifoProductUnit} &mdash; reduce quantity.
+            </p>
+          {/if}
+        </div>
+      {/if}
+
+      <p class="transfer-note">
+        Stock is taken from batches in <strong>FIFO</strong> order (earliest first).
+        Each batch contributes its quantity, and a corresponding destination batch is
+        created at the target branch.
+      </p>
+      <footer>
+        <button
+          type="button"
+          class="ghost"
+          onclick={closeFifoModal}
+          disabled={fifoFormPending}>
+          Cancel
+        </button>
+        <button
+          type="submit"
+          class="primary"
+          disabled={!canSubmitFifoTransfer || fifoFormPending}
+          >{fifoFormPending ? "Transferring\u2026" : "Transfer"}</button
+        >
+      </footer>
+    </form>
+  </dialog>
+{/if}

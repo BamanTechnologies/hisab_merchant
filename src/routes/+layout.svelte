@@ -52,6 +52,7 @@
 	const APP_PREFIXES = [
 		"/products",
 		"/stocks",
+		"/stock-transfers",
 		"/transfers",
 		"/orders",
 		"/customers",
