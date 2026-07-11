@@ -114,7 +114,7 @@
 			</thead>
 			<tbody>
 				{#if navigating.to}
-					<TableLoading rows={2} cols={5} />
+					<TableLoading rows={1} cols={5} />
 				{:else}
 					{#each customers as c, i}
 						<tr

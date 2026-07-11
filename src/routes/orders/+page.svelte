@@ -1582,7 +1582,7 @@
       </thead>
       <tbody>
        {#if navigating.to}
-          <TableLoading rows={2} cols={8} />
+          <TableLoading rows={1} cols={8} />
         {:else}
         {#each orders as o, i}
           <tr

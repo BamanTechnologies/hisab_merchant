@@ -634,7 +634,7 @@
       </thead>
       <tbody>
         {#if navigating.to}
-          <TableLoading rows={5} cols={6} />
+          <TableLoading rows={1} cols={6} />
         {:else}
           {#each products as p, i}
             <tr
