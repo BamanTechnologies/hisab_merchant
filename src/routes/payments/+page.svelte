@@ -1,6 +1,8 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
+  import { navigating } from "$app/state";
   import { page } from "$app/stores";
+  import TableLoading from "$lib/components/TableLoading.svelte";
   import TablePagination from "$lib/components/TablePagination.svelte";
   import TableSearchInput from "$lib/components/TableSearchInput.svelte";
   import TableSortHeader from "$lib/components/TableSortHeader.svelte";
@@ -90,20 +92,26 @@
       tablePage = 1;
       navigateWithState();
       suppressPageNav = false;
-    }, 300);
+    }, 600);
   });
 
   $effect(() => {
-    void dateRangePreset;
-    void customerFilterName;
-    void customDateFrom;
-    void customDateTo;
+    const dr = dateRangePreset;
+    const cf = customerFilterName;
+    const fd = customDateFrom;
+    const td = customDateTo;
+    const urlDr = $page.url.searchParams.get("dateRange") ?? "all";
+    const urlCf = $page.url.searchParams.get("customer") ?? "";
+    const urlFd = $page.url.searchParams.get("from") ?? "";
+    const urlTd = $page.url.searchParams.get("to") ?? "";
+    if (dr === urlDr && cf === urlCf && fd === urlFd && td === urlTd) return;
+
     if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
     filterDebounceTimer = setTimeout(() => {
       if (suppressPageNav) return;
       tablePage = 1;
       navigateWithState();
-    }, 300);
+    }, 600);
     return () => {
       if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
     };
@@ -111,10 +119,15 @@
 
   $effect(() => {
     if (suppressPageNav) return;
-    void sortColumn;
-    void sortDirection;
-    void tablePage;
-    void tablePageSize;
+    const sc = sortColumn;
+    const sd = sortDirection;
+    const pg = tablePage;
+    const ps = tablePageSize;
+    const urlSort = $page.url.searchParams.get("sort") ?? "none";
+    const urlDir = $page.url.searchParams.get("dir") ?? "desc";
+    const urlPage = Number($page.url.searchParams.get("page")) || 1;
+    const urlPageSize = Number($page.url.searchParams.get("pageSize")) || 10;
+    if (sc === urlSort && sd === urlDir && pg === urlPage && ps === urlPageSize) return;
     navigateWithState();
   });
 
@@ -239,25 +252,29 @@
       </tr>
     </thead>
     <tbody>
-      {#each payments as p, i}
-        <tr class="hover:bg-gray-50 dark:hover:bg-white/5">
-          <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
-          <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{p.created_at ? formatDate(p.created_at) : "—"}</td>
-          <td class="{mc.td} font-semibold">{formatMoney(p.amount)}</td>
-          <td class={mc.td}>{p.order?.customer_name?.trim() || "—"}</td>
-          <td class={mc.td}>{p.payment_method}</td>
-          <td class="{mc.td} text-gray-500">{p.created_by_name || "—"}</td>
-          <td class={mc.td}>
-            <a class={mc.link} href={`/orders/${p.order_id}`}>{$_('viewOrder')}</a>
-          </td>
-        </tr>
-      {/each}
-      {#if totalCount === 0}
-        <tr>
-          <td colspan="7" class={mc.emptyCell}>
-            {searchQuery || dateRangePreset !== "all" || customerFilterName ? $_('noPaymentsFiltered') : $_('noPaymentsEmpty')}
-          </td>
-        </tr>
+      {#if navigating.to}
+        <TableLoading rows={2} cols={7} />
+      {:else}
+        {#each payments as p, i}
+          <tr class="hover:bg-gray-50 dark:hover:bg-white/5">
+            <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
+            <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{p.created_at ? formatDate(p.created_at) : "—"}</td>
+            <td class="{mc.td} font-semibold">{formatMoney(p.amount)}</td>
+            <td class={mc.td}>{p.order?.customer_name?.trim() || "—"}</td>
+            <td class={mc.td}>{p.payment_method}</td>
+            <td class="{mc.td} text-gray-500">{p.created_by_name || "—"}</td>
+            <td class={mc.td}>
+              <a class={mc.link} href={`/orders/${p.order_id}`}>{$_('viewOrder')}</a>
+            </td>
+          </tr>
+        {/each}
+        {#if totalCount === 0}
+          <tr>
+            <td colspan="7" class={mc.emptyCell}>
+              {searchQuery || dateRangePreset !== "all" || customerFilterName ? $_('noPaymentsFiltered') : $_('noPaymentsEmpty')}
+            </td>
+          </tr>
+        {/if}
       {/if}
     </tbody>
   </table>

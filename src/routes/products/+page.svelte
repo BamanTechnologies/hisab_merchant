@@ -1,9 +1,11 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import { goto } from "$app/navigation";
+  import { navigating } from "$app/state";
   import { page } from "$app/stores";
   import { Pencil } from "@lucide/svelte";
   import { tick } from "svelte";
+  import TableLoading from "$lib/components/TableLoading.svelte";
   import TablePagination from "$lib/components/TablePagination.svelte";
   import TableSearchInput from "$lib/components/TableSearchInput.svelte";
   import { mc } from "$lib/merchant-styles.js";
@@ -155,7 +157,7 @@
       tablePage = 1;
       navigateWithState();
       suppressPageNav = false;
-    }, 300);
+    }, 600);
   });
 
   $effect(() => {
@@ -631,51 +633,55 @@
         </tr>
       </thead>
       <tbody>
-        {#each products as p, i}
-          <tr
-            class={mc.rowClickable}
-            onclick={() => goto(`/products/${p.id}`)}
-            tabindex="0"
-            role="button"
-          >
-            <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
-            <td class={mc.td}>{p.displayName || p.name || "—"}</td>
-            <td class={mc.td}>{typeDisplay(typeFromProduct(p))}</td>
-            <td class={mc.td}>{p.default_unit || "—"}</td>
-            <td class={mc.td}>
-              <span
-                class="status-pill"
-                class:status-inactive={p.is_active === false}
-              >
-                {activeLabel(p.is_active)}
-              </span>
-            </td>
-            <td class={mc.tdCenter}>
-              <button
-                type="button"
-                class={mc.actionBtn}
-                onclick={(e) => openEditModal(p, e)}
-                disabled={subscriptionLocked}
-                aria-label="Edit product"
-                title={subscriptionLocked
-                  ? SUBSCRIPTION_BLOCKED_MESSAGE
-                  : "Edit product"}
-              >
-                <Pencil size={14} strokeWidth={2} />
-              </button>
-            </td>
-          </tr>
-        {/each}
-        {#if products.length === 0}
-          <tr>
-            <td colspan="6" class={mc.emptyCell}>
-              {#if searchQuery.trim()}
-                No products match your search.
-              {:else}
-                No products found. Create your first product to get started.
-              {/if}
-            </td>
-          </tr>
+        {#if navigating.to}
+          <TableLoading rows={5} cols={6} />
+        {:else}
+          {#each products as p, i}
+            <tr
+              class={mc.rowClickable}
+              onclick={() => goto(`/products/${p.id}`)}
+              tabindex="0"
+              role="button"
+            >
+              <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
+              <td class={mc.td}>{p.displayName || p.name || "—"}</td>
+              <td class={mc.td}>{typeDisplay(typeFromProduct(p))}</td>
+              <td class={mc.td}>{p.default_unit || "—"}</td>
+              <td class={mc.td}>
+                <span
+                  class="status-pill"
+                  class:status-inactive={p.is_active === false}
+                >
+                  {activeLabel(p.is_active)}
+                </span>
+              </td>
+              <td class={mc.tdCenter}>
+                <button
+                  type="button"
+                  class={mc.actionBtn}
+                  onclick={(e) => openEditModal(p, e)}
+                  disabled={subscriptionLocked}
+                  aria-label="Edit product"
+                  title={subscriptionLocked
+                    ? SUBSCRIPTION_BLOCKED_MESSAGE
+                    : "Edit product"}
+                >
+                  <Pencil size={14} strokeWidth={2} />
+                </button>
+              </td>
+            </tr>
+          {/each}
+          {#if products.length === 0}
+            <tr>
+              <td colspan="6" class={mc.emptyCell}>
+                {#if searchQuery.trim()}
+                  No products match your search.
+                {:else}
+                  No products found. Create your first product to get started.
+                {/if}
+              </td>
+            </tr>
+          {/if}
         {/if}
       </tbody>
     </table>

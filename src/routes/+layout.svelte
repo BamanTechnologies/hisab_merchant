@@ -346,21 +346,17 @@
 			</div>
 
 			<main class="relative min-w-0 flex-1 p-4 pb-16 sm:p-6">
-				{@render children?.()}
 				{#if navigating.to}
 					<div
-						class="fixed inset-0 z-60 flex items-center justify-center bg-[#F8F9FA]/80 backdrop-blur-sm dark:bg-[#0b1220]/80"
+						class="loading-bar"
 						aria-busy="true"
 						aria-live="polite"
 						role="status"
 					>
-						<div
-							class="size-10 animate-spin rounded-full border-[3px] border-[#4DA0E6]/25 border-t-[#4DA0E6]"
-							aria-hidden="true"
-						></div>
 						<span class="sr-only">{$_('loadingPage')}</span>
 					</div>
 				{/if}
+				{@render children?.()}
 			</main>
 		</div>
 	</div>
@@ -404,5 +400,22 @@
 		clip: rect(0, 0, 0, 0);
 		white-space: nowrap;
 		border: 0;
+	}
+
+	.loading-bar {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		z-index: 60;
+		height: 3px;
+		background: linear-gradient(90deg, transparent 0%, #4DA0E6 30%, #4DA0E6 70%, transparent 100%);
+		background-size: 200% 100%;
+		animation: loading-bar 1.2s ease-in-out infinite;
+	}
+
+	@keyframes loading-bar {
+		0% { background-position: 200% 0; }
+		100% { background-position: -200% 0; }
 	}
 </style>

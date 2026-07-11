@@ -1,11 +1,13 @@
 <script lang="ts">
   import { deserialize, enhance } from "$app/forms";
   import { goto } from "$app/navigation";
+  import { navigating } from "$app/state";
   import { page } from "$app/stores";
   import { invalidateAll } from "$app/navigation";
   import { onMount, tick } from "svelte";
   import { Eye, Pencil, Plus, RefreshCw, Trash2, X } from "@lucide/svelte";
   import InvestorMultiSelect from "$lib/components/InvestorMultiSelect.svelte";
+  import TableLoading from "$lib/components/TableLoading.svelte";
   import TablePagination from "$lib/components/TablePagination.svelte";
   import TableSearchInput from "$lib/components/TableSearchInput.svelte";
   import TableSortHeader from "$lib/components/TableSortHeader.svelte";
@@ -215,7 +217,7 @@
       tablePage = 1;
       navigateWithState();
       suppressPageNav = false;
-    }, 300);
+    }, 600);
   });
 
   $effect(() => {
@@ -751,100 +753,104 @@
         </tr>
       </thead>
       <tbody>
-        {#each stocks as batch, i (batch.id)}
-          {@const product = resolveBatchProduct(batch)}
-          <tr>
-            <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
-            <td class={mc.td}>{batchTypeLabel(batch)}</td>
-            <td class={mc.td}>
-              <span class="font-medium text-gray-900 dark:text-gray-100">
-                {batch.batch_number?.trim() || "—"}
-              </span>
-              {#if batch.product_id}
-                <span class="ml-1 text-xs text-emerald-600 dark:text-emerald-400">linked</span>
-              {/if}
-            </td>
-            <td class={mc.td}>{branchLabel(batch.branch)}</td>
-            <td class={mc.td}>{batch.origin ? branchLabel(batch.origin) : "—"}</td>
-            {#if isSingleTypeFilter}
-              {#each activeFields as field}
-                <td class={mc.td}>{attrCellValue(batch, field)}</td>
-              {/each}
-            {:else}
+        {#if navigating.to}
+          <TableLoading rows={2} cols={tableColCount} />
+        {:else}
+          {#each stocks as batch, i (batch.id)}
+            {@const product = resolveBatchProduct(batch)}
+            <tr>
+              <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
+              <td class={mc.td}>{batchTypeLabel(batch)}</td>
               <td class={mc.td}>
-                {#if batchAttributeEntries(batch).length > 0}
-                  <div class="flex flex-col gap-0.5 text-sm">
-                    {#each batchAttributeEntries(batch) as [k, v]}
-                      <div class="attr-row">
-                        <span class="attr-key">{attributeLabel(k)}</span>
-                        <span class="attr-sep">:</span>
-                        <span class="attr-val">{v}</span>
-                      </div>
-                    {/each}
-                  </div>
-                {:else}
-                  —
+                <span class="font-medium text-gray-900 dark:text-gray-100">
+                  {batch.batch_number?.trim() || "—"}
+                </span>
+                {#if batch.product_id}
+                  <span class="ml-1 text-xs text-emerald-600 dark:text-emerald-400">linked</span>
                 {/if}
               </td>
-            {/if}
-            <td class={mc.tdRight}>{qtyLabel(batch, product)}</td>
-            <td class={mc.td}>{formatDate(batch.created_at)}</td>
-            <td class={mc.tdCenter}>
-              <div class="flex items-center justify-center gap-1.5">
-                <a
-                  href="/stocks/{batch.id}"
-                  class={mc.actionBtn}
-                  aria-label="View stock"
-                  title="View stock details"
-                >
-                  <Eye size={14} strokeWidth={2} />
-                </a>
-                <button
-                  type="button"
-                  class={mc.actionBtn}
-                  onclick={(e) => openEditModal(batch, e)}
-                  disabled={subscriptionLocked}
-                  aria-label="Edit batch"
-                  title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : "Edit batch"}
-                >
-                  <Pencil size={14} strokeWidth={2} />
-                </button>
-                <button
-                  type="button"
-                  class={mc.actionBtnDanger}
-                  onclick={(e) => openDeleteModal(batch, e)}
-                  disabled={subscriptionLocked || !canDelete(batch)}
-                  aria-label="Delete batch"
-                  title={!canDelete(batch)
-                    ? "Only zero-quantity batches can be deleted"
-                    : subscriptionLocked
-                      ? SUBSCRIPTION_BLOCKED_MESSAGE
-                      : "Delete batch"}
-                >
-                  <Trash2 size={14} strokeWidth={2} />
-                </button>
-              </div>
-            </td>
-          </tr>
-        {/each}
-        {#if stocks.length === 0}
-          <tr>
-            <td colspan={tableColCount} class={mc.emptyCell}>
-              {#if totalCount === 0}
-                {#if stocksLoadError}
-                  Stock could not be loaded — see the error above.
+              <td class={mc.td}>{branchLabel(batch.branch)}</td>
+              <td class={mc.td}>{batch.origin ? branchLabel(batch.origin) : "—"}</td>
+              {#if isSingleTypeFilter}
+                {#each activeFields as field}
+                  <td class={mc.td}>{attrCellValue(batch, field)}</td>
+                {/each}
+              {:else}
+                <td class={mc.td}>
+                  {#if batchAttributeEntries(batch).length > 0}
+                    <div class="flex flex-col gap-0.5 text-sm">
+                      {#each batchAttributeEntries(batch) as [k, v]}
+                        <div class="attr-row">
+                          <span class="attr-key">{attributeLabel(k)}</span>
+                          <span class="attr-sep">:</span>
+                          <span class="attr-val">{v}</span>
+                        </div>
+                      {/each}
+                    </div>
+                  {:else}
+                    —
+                  {/if}
+                </td>
+              {/if}
+              <td class={mc.tdRight}>{qtyLabel(batch, product)}</td>
+              <td class={mc.td}>{formatDate(batch.created_at)}</td>
+              <td class={mc.tdCenter}>
+                <div class="flex items-center justify-center gap-1.5">
+                  <a
+                    href="/stocks/{batch.id}"
+                    class={mc.actionBtn}
+                    aria-label="View stock"
+                    title="View stock details"
+                  >
+                    <Eye size={14} strokeWidth={2} />
+                  </a>
+                  <button
+                    type="button"
+                    class={mc.actionBtn}
+                    onclick={(e) => openEditModal(batch, e)}
+                    disabled={subscriptionLocked}
+                    aria-label="Edit batch"
+                    title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : "Edit batch"}
+                  >
+                    <Pencil size={14} strokeWidth={2} />
+                  </button>
+                  <button
+                    type="button"
+                    class={mc.actionBtnDanger}
+                    onclick={(e) => openDeleteModal(batch, e)}
+                    disabled={subscriptionLocked || !canDelete(batch)}
+                    aria-label="Delete batch"
+                    title={!canDelete(batch)
+                      ? "Only zero-quantity batches can be deleted"
+                      : subscriptionLocked
+                        ? SUBSCRIPTION_BLOCKED_MESSAGE
+                        : "Delete batch"}
+                  >
+                    <Trash2 size={14} strokeWidth={2} />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          {/each}
+          {#if stocks.length === 0}
+            <tr>
+              <td colspan={tableColCount} class={mc.emptyCell}>
+                {#if totalCount === 0}
+                  {#if stocksLoadError}
+                    Stock could not be loaded — see the error above.
+                  {:else if typeFilter !== "all"}
+                    No batches match this type filter.
+                  {:else}
+                    No stock batches yet. Use Receive stock to add inventory.
+                  {/if}
                 {:else if typeFilter !== "all"}
                   No batches match this type filter.
                 {:else}
-                  No stock batches yet. Use Receive stock to add inventory.
+                  No batches match your search.
                 {/if}
-              {:else if typeFilter !== "all"}
-                No batches match this type filter.
-              {:else}
-                No batches match your search.
-              {/if}
-            </td>
-          </tr>
+              </td>
+            </tr>
+          {/if}
         {/if}
       </tbody>
     </table>
