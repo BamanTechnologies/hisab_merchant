@@ -754,7 +754,7 @@
       </thead>
       <tbody>
         {#if navigating.to}
-          <TableLoading rows={2} cols={tableColCount} />
+          <TableLoading rows={1} cols={tableColCount} />
         {:else}
           {#each stocks as batch, i (batch.id)}
             {@const product = resolveBatchProduct(batch)}

@@ -462,7 +462,7 @@
     </thead>
     <tbody>
       {#if navigating.to}
-        <TableLoading rows={2} cols={expenseTableCols} />
+        <TableLoading rows={1} cols={expenseTableCols} />
       {:else}
         {#each expenses as ex, i}
           {#if isMajorOnly}

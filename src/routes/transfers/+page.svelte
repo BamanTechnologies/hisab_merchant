@@ -395,7 +395,7 @@
         </thead>
         <tbody>
         {#if navigating.to}
-          <TableLoading rows={2} cols={9} />
+          <TableLoading rows={1} cols={9} />
         {:else}
           {#if stockTransfers.length === 0}
             <tr>
@@ -503,7 +503,7 @@
 			</thead>
 			<tbody>
         {#if navigating.to}
-          <TableLoading rows={2} cols={8} />
+          <TableLoading rows={1} cols={8} />
         {:else}
 				{#if transfers.length === 0}
 					<tr>

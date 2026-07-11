@@ -253,7 +253,7 @@
     </thead>
     <tbody>
       {#if navigating.to}
-        <TableLoading rows={2} cols={7} />
+        <TableLoading rows={1} cols={7} />
       {:else}
         {#each payments as p, i}
           <tr class="hover:bg-gray-50 dark:hover:bg-white/5">
