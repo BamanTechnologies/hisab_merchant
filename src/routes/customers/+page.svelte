@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { goto } from "$app/navigation";
+	import { navigating } from "$app/state";
 	import { page } from "$app/stores";
+	import TableLoading from "$lib/components/TableLoading.svelte";
 	import TablePagination from "$lib/components/TablePagination.svelte";
 	import TableSearchInput from "$lib/components/TableSearchInput.svelte";
 	import { mc } from "$lib/merchant-styles.js";
@@ -44,7 +46,7 @@
 			tablePage = 1;
 			navigateWithState();
 			suppressPageNav = false;
-		}, 300);
+		}, 600);
 	});
 
 	$effect(() => {
@@ -111,24 +113,28 @@
 				</tr>
 			</thead>
 			<tbody>
-				{#each customers as c, i}
-					<tr
-						class={mc.rowClickable}
-						onclick={() => goto(`/customers/${c.id}`)}
-						tabindex="0"
-						role="button"
-					>
-						<td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
-						<td class={mc.td}>{fullName(c)}</td>
-						<td class={mc.td}>{dash(c.address)}</td>
-						<td class="{mc.td} whitespace-nowrap tabular-nums">{formatRegistered(c.created_at)}</td>
-						<td class={mc.td}>{dash(c.phone_number)}</td>
-					</tr>
-				{/each}
-				{#if customers.length === 0 && totalCount === 0 && data.companyId}
-					<tr>
-						<td colspan="5" class={mc.emptyCell}>{$_('noCustomersDisplay')}</td>
-					</tr>
+				{#if navigating.to}
+					<TableLoading rows={2} cols={5} />
+				{:else}
+					{#each customers as c, i}
+						<tr
+							class={mc.rowClickable}
+							onclick={() => goto(`/customers/${c.id}`)}
+							tabindex="0"
+							role="button"
+						>
+							<td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
+							<td class={mc.td}>{fullName(c)}</td>
+							<td class={mc.td}>{dash(c.address)}</td>
+							<td class="{mc.td} whitespace-nowrap tabular-nums">{formatRegistered(c.created_at)}</td>
+							<td class={mc.td}>{dash(c.phone_number)}</td>
+						</tr>
+					{/each}
+					{#if customers.length === 0 && totalCount === 0 && data.companyId}
+						<tr>
+							<td colspan="5" class={mc.emptyCell}>{$_('noCustomersDisplay')}</td>
+						</tr>
+					{/if}
 				{/if}
 			</tbody>
 		</table>

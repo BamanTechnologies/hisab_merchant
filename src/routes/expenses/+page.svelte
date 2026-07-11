@@ -1,7 +1,9 @@
 <script lang="ts">
   import { deserialize } from "$app/forms";
   import { goto } from "$app/navigation";
+  import { navigating } from "$app/state";
   import { page } from "$app/stores";
+  import TableLoading from "$lib/components/TableLoading.svelte";
   import TablePagination from "$lib/components/TablePagination.svelte";
   import TableSearchInput from "$lib/components/TableSearchInput.svelte";
   import TableSortHeader from "$lib/components/TableSortHeader.svelte";
@@ -74,6 +76,7 @@
   const hasFilters = $derived(
     searchQuery || typeFilter !== "all" || dateRangePreset !== "all" || categoryFilter !== "all",
   );
+  const expenseTableCols = $derived(typeFilter === "all" ? 5 : typeFilter === "major" ? 7 : 9);
 
   $effect(() => {
     expenses = data.expenses as ExpenseRow[];
@@ -120,21 +123,28 @@
       tablePage = 1;
       navigateWithState();
       suppressPageNav = false;
-    }, 300);
+    }, 600);
   });
 
   $effect(() => {
-    void typeFilter;
-    void dateRangePreset;
-    void categoryFilter;
-    void customDateFrom;
-    void customDateTo;
+    const tf = typeFilter;
+    const dr = dateRangePreset;
+    const cf = categoryFilter;
+    const fd = customDateFrom;
+    const td = customDateTo;
+    const urlType = $page.url.searchParams.get("type") ?? "all";
+    const urlDr = $page.url.searchParams.get("dateRange") ?? "all";
+    const urlCf = $page.url.searchParams.get("category") ?? "all";
+    const urlFd = $page.url.searchParams.get("from") ?? "";
+    const urlTd = $page.url.searchParams.get("to") ?? "";
+    if (tf === urlType && dr === urlDr && cf === urlCf && fd === urlFd && td === urlTd) return;
+
     if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
     filterDebounceTimer = setTimeout(() => {
       if (suppressPageNav) return;
       tablePage = 1;
       navigateWithState();
-    }, 300);
+    }, 600);
     return () => {
       if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
     };
@@ -142,10 +152,15 @@
 
   $effect(() => {
     if (suppressPageNav) return;
-    void sortColumn;
-    void sortDirection;
-    void tablePage;
-    void tablePageSize;
+    const sc = sortColumn;
+    const sd = sortDirection;
+    const pg = tablePage;
+    const ps = tablePageSize;
+    const urlSort = $page.url.searchParams.get("sort") ?? "none";
+    const urlDir = $page.url.searchParams.get("dir") ?? "desc";
+    const urlPage = Number($page.url.searchParams.get("page")) || 1;
+    const urlPageSize = Number($page.url.searchParams.get("pageSize")) || 10;
+    if (sc === urlSort && sd === urlDir && pg === urlPage && ps === urlPageSize) return;
     navigateWithState();
   });
 
@@ -446,68 +461,66 @@
       {/if}
     </thead>
     <tbody>
-      {#each expenses as ex, i}
-        {#if isMajorOnly}
-          <tr class="hover:bg-gray-50 dark:hover:bg-white/5">
-            <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
-            <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{formatDate(ex.created_at)}</td>
-            <td class="{mc.td} font-semibold">{formatMoney(ex.amount)}</td>
-            <td class={mc.td}>{ex.from_person || "—"}</td>
-            <td class={mc.td}>{ex.from_account || "—"}</td>
-            <td class={mc.td}>{ex.sent_to || "—"}</td>
-            <td class={mc.td}>{ex.to_account || "—"}</td>
-          </tr>
-        {:else if isOperationOnly}
-          <tr class="hover:bg-gray-50 dark:hover:bg-white/5">
-            <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
-            <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{formatDate(ex.created_at)}</td>
-            <td class="{mc.td} font-semibold">{formatMoney(ex.amount)}</td>
-            <td class={mc.td}>{ex.from_person || "—"}</td>
-            <td class={mc.td}>{ex.sent_to}</td>
-            <td class={mc.td}>{categoryLabel(ex.category)}</td>
-            <td class={mc.td}>{paymentLabel(ex.payment_type)}</td>
-            <td class={mc.td}>{ex.note?.trim() ? ex.note : "—"}</td>
-            <td class={mc.td} title={ex.receipt ?? ""}>{receiptPreview(ex.receipt)}</td>
-          </tr>
-        {:else}
-          <tr class="hover:bg-gray-50 dark:hover:bg-white/5">
-            <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
-            <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{formatDate(ex.created_at)}</td>
-            <td class={mc.td}>{expenseTypeLabel(ex.expense_type ?? "operation")}</td>
-            <td class="{mc.td} font-semibold">{formatMoney(ex.amount)}</td>
-            <td class={mc.td}>
-              <div class="attr-stack">
-                {#each detailsEntries(ex) as [k, v]}
-                  <div class="attr-row">
-                    <span class="attr-key">{k}</span>
-                    <span class="attr-sep">:</span>
-                    <span class="attr-val">{v}</span>
-                  </div>
-                {/each}
-              </div>
+      {#if navigating.to}
+        <TableLoading rows={2} cols={expenseTableCols} />
+      {:else}
+        {#each expenses as ex, i}
+          {#if isMajorOnly}
+            <tr class="hover:bg-gray-50 dark:hover:bg-white/5">
+              <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
+              <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{formatDate(ex.created_at)}</td>
+              <td class="{mc.td} font-semibold">{formatMoney(ex.amount)}</td>
+              <td class={mc.td}>{ex.from_person || "—"}</td>
+              <td class={mc.td}>{ex.from_account || "—"}</td>
+              <td class={mc.td}>{ex.sent_to || "—"}</td>
+              <td class={mc.td}>{ex.to_account || "—"}</td>
+            </tr>
+          {:else if isOperationOnly}
+            <tr class="hover:bg-gray-50 dark:hover:bg-white/5">
+              <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
+              <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{formatDate(ex.created_at)}</td>
+              <td class="{mc.td} font-semibold">{formatMoney(ex.amount)}</td>
+              <td class={mc.td}>{ex.from_person || "—"}</td>
+              <td class={mc.td}>{ex.sent_to}</td>
+              <td class={mc.td}>{categoryLabel(ex.category)}</td>
+              <td class={mc.td}>{paymentLabel(ex.payment_type)}</td>
+              <td class={mc.td}>{ex.note?.trim() ? ex.note : "—"}</td>
+              <td class={mc.td} title={ex.receipt ?? ""}>{receiptPreview(ex.receipt)}</td>
+            </tr>
+          {:else}
+            <tr class="hover:bg-gray-50 dark:hover:bg-white/5">
+              <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
+              <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{formatDate(ex.created_at)}</td>
+              <td class={mc.td}>{expenseTypeLabel(ex.expense_type ?? "operation")}</td>
+              <td class="{mc.td} font-semibold">{formatMoney(ex.amount)}</td>
+              <td class={mc.td}>
+                <div class="attr-stack">
+                  {#each detailsEntries(ex) as [k, v]}
+                    <div class="attr-row">
+                      <span class="attr-key">{k}</span>
+                      <span class="attr-sep">:</span>
+                      <span class="attr-val">{v}</span>
+                    </div>
+                  {/each}
+                </div>
+              </td>
+            </tr>
+          {/if}
+        {/each}
+        {#if expenses.length === 0 && data.merchantBranchId}
+          <tr>
+            <td colspan={expenseTableCols} class={mc.emptyCell}>
+              {hasFilters ? $_('noExpensesFiltered') : $_('noExpensesEmpty')}
             </td>
           </tr>
         {/if}
-      {/each}
-      {#if expenses.length === 0 && data.merchantBranchId}
-        <tr>
-          <td
-            colspan={typeFilter === "all" ? 5 : typeFilter === "major" ? 7 : 9}
-            class={mc.emptyCell}
-          >
-            {hasFilters ? $_('noExpensesFiltered') : $_('noExpensesEmpty')}
-          </td>
-        </tr>
-      {/if}
-      {#if !data.merchantBranchId}
-        <tr>
-          <td
-            colspan={typeFilter === "all" ? 5 : typeFilter === "major" ? 7 : 9}
-            class={mc.emptyCell}
-          >
-            {$_('noBranchExpensesSee')}
-          </td>
-        </tr>
+        {#if !data.merchantBranchId}
+          <tr>
+            <td colspan={expenseTableCols} class={mc.emptyCell}>
+              {$_('noBranchExpensesSee')}
+            </td>
+          </tr>
+        {/if}
       {/if}
     </tbody>
   </table>

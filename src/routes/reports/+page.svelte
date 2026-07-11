@@ -1,6 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import { goto } from "$app/navigation";
+  import { navigating } from "$app/state";
   import { page } from "$app/stores";
   import type { PageData } from "./$types";
   import { soldUnitPriceForReportOrder } from "$lib/reportSoldPrice";
@@ -8,6 +9,7 @@
     buildStockLabel,
     formatCoffeeCapacityWithUnit,
   } from "$lib/stockLabel";
+  import TableLoading from "$lib/components/TableLoading.svelte";
   import TablePagination from "$lib/components/TablePagination.svelte";
   import TableSearchInput from "$lib/components/TableSearchInput.svelte";
   import { mc, smsStatusChipClass } from "$lib/merchant-styles.js";
@@ -142,7 +144,7 @@
       tablePage = 1;
       navigateWithState();
       suppressPageNav = false;
-    }, 300);
+    }, 600);
   });
 
   $effect(() => {
@@ -409,36 +411,40 @@
         </tr>
       </thead>
       <tbody>
-        {#each reports as report, i (report.id)}
-          <tr class={mc.rowClickable} onclick={() => openModal(report)}>
-            <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
-            <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{formatDate(report.updated_at)}</td>
-            <td class={mc.td}>{report.investor_phone}</td>
-            <td class={mc.td}>
-              <span class={smsStatusChipClass(report.sms_status)}>
-                {$_(smsStatusI18nKey(report.sms_status))}
-              </span>
-            </td>
-            <td class={mc.td} onclick={(e) => e.stopPropagation()}>
-              <button
-                type="button"
-                class={mc.tableBtn}
-                onclick={(e) => {
-                  e.stopPropagation();
-                  openModal(report);
-                }}
-              >
-                {$_('viewMessage')}
-              </button>
-            </td>
-          </tr>
-        {/each}
-        {#if reports.length === 0}
-          <tr>
-            <td colspan="5" class={mc.emptyCell}>
-              {searchQuery ? $_('noReportsFound') : $_('noReportsFound')}
-            </td>
-          </tr>
+        {#if navigating.to}
+          <TableLoading rows={2} cols={5} />
+        {:else}
+          {#each reports as report, i (report.id)}
+            <tr class={mc.rowClickable} onclick={() => openModal(report)}>
+              <td class={mc.colNum}>{(tablePage - 1) * tablePageSize + i + 1}</td>
+              <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500">{formatDate(report.updated_at)}</td>
+              <td class={mc.td}>{report.investor_phone}</td>
+              <td class={mc.td}>
+                <span class={smsStatusChipClass(report.sms_status)}>
+                  {$_(smsStatusI18nKey(report.sms_status))}
+                </span>
+              </td>
+              <td class={mc.td} onclick={(e) => e.stopPropagation()}>
+                <button
+                  type="button"
+                  class={mc.tableBtn}
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    openModal(report);
+                  }}
+                >
+                  {$_('viewMessage')}
+                </button>
+              </td>
+            </tr>
+          {/each}
+          {#if reports.length === 0}
+            <tr>
+              <td colspan="5" class={mc.emptyCell}>
+                {searchQuery ? $_('noReportsFound') : $_('noReportsFound')}
+              </td>
+            </tr>
+          {/if}
         {/if}
       </tbody>
     </table>

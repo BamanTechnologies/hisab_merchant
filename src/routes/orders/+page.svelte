@@ -8,6 +8,8 @@
   import TableSortHeader from "$lib/components/TableSortHeader.svelte";
   import SummaryMetricCard from "$lib/components/SummaryMetricCard.svelte";
   import { mc, statusChipClass } from "$lib/merchant-styles.js";
+  import TableLoading from "$lib/components/TableLoading.svelte";
+  import { navigating } from "$app/state";
   import {
     SUBSCRIPTION_BLOCKED_MESSAGE,
     subscriptionBlocksMutations,
@@ -1579,6 +1581,9 @@
         </tr>
       </thead>
       <tbody>
+       {#if navigating.to}
+          <TableLoading rows={2} cols={8} />
+        {:else}
         {#each orders as o, i}
           <tr
             class={mc.rowClickable}
@@ -1630,6 +1635,7 @@
                 : "Create your first order to get started."}
             </td>
           </tr>
+        {/if}
         {/if}
       </tbody>
     </table>

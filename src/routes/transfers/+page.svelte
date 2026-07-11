@@ -4,7 +4,9 @@
   import { enhance } from "$app/forms";
   import { invalidateAll } from "$app/navigation";
   import TablePagination from "$lib/components/TablePagination.svelte";
+    import TableLoading from "$lib/components/TableLoading.svelte";
   import { mc } from "$lib/merchant-styles.js";
+    import { navigating } from "$app/state";
   import {
     SUBSCRIPTION_BLOCKED_MESSAGE,
     subscriptionBlocksMutations,
@@ -392,6 +394,9 @@
           </tr>
         </thead>
         <tbody>
+        {#if navigating.to}
+          <TableLoading rows={2} cols={9} />
+        {:else}
           {#if stockTransfers.length === 0}
             <tr>
               <td colspan="9" class={mc.emptyCell}>No product-level transfers yet.</td>
@@ -461,6 +466,7 @@
               {/if}
             {/each}
           {/if}
+        {/if}
         </tbody>
       </table>
     </div>
@@ -496,6 +502,9 @@
 				</tr>
 			</thead>
 			<tbody>
+        {#if navigating.to}
+          <TableLoading rows={2} cols={8} />
+        {:else}
 				{#if transfers.length === 0}
 					<tr>
 						<td colspan="8" class={mc.emptyCell}>{$_('noTransfersFound')}</td>
@@ -527,6 +536,7 @@
 						</tr>
 					{/each}
 				{/if}
+        {/if}
 			</tbody>
 		</table>
 	</div>
