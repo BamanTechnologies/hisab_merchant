@@ -13,6 +13,7 @@
 		ArrowLeftRight,
 		BarChart3,
 		Globe,
+		LayoutDashboard,
 		LogOut,
 		Menu,
 		Moon,
@@ -50,6 +51,7 @@
 	];
 
 	const APP_PREFIXES = [
+		"/dashboard",
 		"/products",
 		"/stocks",
 		"/stock-transfers",
@@ -67,6 +69,7 @@
 
 	const navItems = $derived.by(() => {
 		const items = [
+			{ href: "/dashboard", label: $_('navDashboard'), icon: LayoutDashboard, match: "/dashboard" },
 			{ href: "/products", label: $_('navProducts'), icon: ShoppingBag, match: "/products" },
 			{ href: "/stocks", label: $_('navStocks'), icon: Package, match: "/stocks" },
 			{ href: "/transfers", label: $_('navTransfers'), icon: ArrowLeftRight, match: "/transfers" },

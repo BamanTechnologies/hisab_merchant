@@ -11,6 +11,9 @@ importers:
       '@lucide/svelte':
         specifier: ^0.561.0
         version: 0.561.0(svelte@5.39.9)
+      apexcharts:
+        specifier: ^5.16.0
+        version: 5.16.0
       svelte-i18n:
         specifier: ^4.0.1
         version: 4.0.1(svelte@5.39.9)
@@ -36,6 +39,9 @@ importers:
       svelte:
         specifier: ^5.39.5
         version: 5.39.9
+      svelte-apexcharts:
+        specifier: ^1.0.2
+        version: 1.0.2(apexcharts@5.16.0)
       svelte-check:
         specifier: ^4.3.2
         version: 4.3.2(picomatch@4.0.3)(svelte@5.39.9)(typescript@5.9.3)
@@ -675,6 +681,9 @@ packages:
     engines: {node: '>=0.4.0'}
     hasBin: true
 
+  apexcharts@5.16.0:
+    resolution: {integrity: sha512-ULO3Gqrm0/26uwBcYz49u181uIp8Fy6BQQgg9QUDajs+JAs/EbXxiAmdc6BLy1JY29/JXroM7P0j0t2JPDApdg==}
+
   aria-query@5.3.2:
     resolution: {integrity: sha512-COROpnaoap1E2F000S62r6A60uHZnmlvomhfyT2DlTcrY1OrBKn2UhH7qn5wTC9zMvD0AY7csdPSNwKP+7WiQw==}
     engines: {node: '>= 0.4'}
@@ -986,6 +995,11 @@ packages:
 
   style-to-object@1.0.14:
     resolution: {integrity: sha512-LIN7rULI0jBscWQYaSswptyderlarFkjQ+t79nzty8tcIAceVomEVlLzH5VP4Cmsv6MtKhs7qaAiwlcp+Mgaxw==}
+
+  svelte-apexcharts@1.0.2:
+    resolution: {integrity: sha512-6qlx4rE+XsonZ0FZudfwqOQ34Pq+3wpxgAD75zgEmGoYhYBJcwmikTuTf3o8ZBsZue9U/pAwhNy3ed1Bkq1gmA==}
+    peerDependencies:
+      apexcharts: ^3.19.2
 
   svelte-check@4.3.2:
     resolution: {integrity: sha512-71udP5w2kaSTcX8iV0hn3o2FWlabQHhJTJLIQrCqMsrcOeDUO2VhCQKKCA8AMVHSPwdxLEWkUWh9OKxns5PD9w==}
@@ -1524,6 +1538,8 @@ snapshots:
 
   acorn@8.15.0: {}
 
+  apexcharts@5.16.0: {}
+
   aria-query@5.3.2: {}
 
   axobject-query@4.1.0: {}
@@ -1869,6 +1885,10 @@ snapshots:
   style-to-object@1.0.14:
     dependencies:
       inline-style-parser: 0.2.7
+
+  svelte-apexcharts@1.0.2(apexcharts@5.16.0):
+    dependencies:
+      apexcharts: 5.16.0
 
   svelte-check@4.3.2(picomatch@4.0.3)(svelte@5.39.9)(typescript@5.9.3):
     dependencies:
