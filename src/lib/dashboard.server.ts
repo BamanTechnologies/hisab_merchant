@@ -101,6 +101,47 @@ const RECENT_STOCKS_QUERY = `
   }
 `;
 
+const WEEKLY_SALES_TREND_QUERY = `
+  query WeeklySalesTrend($startDate: date!, $endDate: date!, $merchantId: uuid!) {
+    sales_trend_for_merchant(
+      args: { start_date: $startDate, end_date: $endDate, merchant_id: $merchantId }
+      where: { total_sales: { _neq: 0 } }
+    ) {
+      sales_date
+      total_sales
+    }
+  }
+`;
+
+export type SalesTrend = {
+  sales_date: string;
+  total_sales: number;
+};
+
+export async function fetchWeeklySalesTrend(
+  merchantId: string,
+  startDate: string,
+  endDate: string,
+): Promise<SalesTrend[]> {
+  const now = new Date();
+  const yearStart = new Date(now.getFullYear(), 0, 1);
+  const sd = startDate || yearStart.toISOString().slice(0, 10);
+  const ed = endDate || now.toISOString().slice(0, 10);
+  try {
+    const data = await gql<{
+      sales_trend_for_merchant: SalesTrend[];
+    }>(WEEKLY_SALES_TREND_QUERY, { startDate: sd, endDate: ed, merchantId });
+
+    return (data.sales_trend_for_merchant ?? []).map((s) => ({
+      sales_date: s.sales_date,
+      total_sales: parseMoney(s.total_sales),
+    }));
+  } catch (error) {
+    console.error("Error fetching weekly sales trend:", error);
+    return [];
+  }
+}
+
 const FETCH_BRANCH_IDS_QUERY = `
   query MerchantBranchIds($merchantId: uuid!) {
     merchant_by_pk(id: $merchantId) {

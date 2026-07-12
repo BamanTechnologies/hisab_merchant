@@ -7,6 +7,7 @@ import {
   fetchRecentPayments,
   fetchTopSellingProducts,
   fetchRecentStocks,
+  fetchWeeklySalesTrend,
   fetchCompanyBranchIds,
 } from "$lib/dashboard.server";
 
@@ -28,6 +29,7 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
       recentPaymentsCount: 0,
       topProducts: [],
       recentStocks: [],
+      salesTrend: [],
     };
   }
 
@@ -43,13 +45,14 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
     branchIds = [merchantBranchId];
   }
 
-  const [stats, outstandingCredit, paymentsResult, topProducts, recentStocks] =
+  const [stats, outstandingCredit, paymentsResult, topProducts, recentStocks, salesTrend] =
     await Promise.all([
       fetchStats(merchantId, from, to),
       fetchOutstandingCredit(merchantId, from, to),
       fetchRecentPayments(merchantId, from, to),
       fetchTopSellingProducts(merchantId, from, to),
       fetchRecentStocks(branchIds),
+      fetchWeeklySalesTrend(merchantId, from, to),
     ]);
 
   return {
@@ -61,5 +64,6 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
     recentPaymentsCount: paymentsResult.totalCount,
     topProducts,
     recentStocks,
+    salesTrend,
   };
 };
