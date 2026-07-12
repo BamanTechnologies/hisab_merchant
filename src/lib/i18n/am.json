@@ -4,6 +4,7 @@
   "dashboardSubtitle": "እዚህ የሚመጣው ነው በመጀመሪያዎ ተመሳሳይ ምርቶች።",
   "dashboardWeeklySalesTitle": "የሳምንቱ የሽያጭ እይታ",
   "dashboardWeeklySalesTotal": "ETB {amount} የሳምንቱ ጠቅላላ ሽያጭ",
+  "dashboardCustomPeriod": "ብጁ ጊዜ",
   "dashboardThisWeek": "በዚህ ሳምንት",
   "dashboardLastWeek": "ያለፈ ሳምንት",
   "dashboardLast2Weeks": "ያለፈ 2 ሳምንቶች",

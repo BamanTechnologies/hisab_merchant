@@ -4,6 +4,7 @@
   "dashboardSubtitle": "Here's what's happening with your store today.",
   "dashboardWeeklySalesTitle": "Weekly Sales Trend",
   "dashboardWeeklySalesTotal": "ETB {amount} total sales this week",
+  "dashboardCustomPeriod": "Custom period",
   "dashboardThisWeek": "This week",
   "dashboardLastWeek": "Last week",
   "dashboardLast2Weeks": "Last 2 weeks",
