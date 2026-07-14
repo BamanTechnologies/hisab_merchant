@@ -4,12 +4,13 @@ import { fetchMerchantBranchId as fetchBranchId } from "$lib/merchantBranch.serv
 import {
   fetchStats,
   fetchOutstandingCredit,
-  fetchRecentPayments,
   fetchTopSellingProducts,
   fetchRecentStocks,
   fetchWeeklySalesTrend,
   fetchCompanyBranchIds,
   fetchLowStockProducts,
+  fetchTopCustomers,
+  fetchUnpaidOrders,
 } from "$lib/dashboard.server";
 
 export const load: PageServerLoad = async ({ request, parent, url }) => {
@@ -26,8 +27,8 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
       totalOrders: 0,
       pendingPayments: 0,
       outstandingCredit: 0,
-      recentPayments: [],
-      recentPaymentsCount: 0,
+      topCustomers: [],
+      unpaidOrders: [],
       topProducts: [],
       recentStocks: [],
       salesTrend: [],
@@ -47,11 +48,12 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
     branchIds = [merchantBranchId];
   }
 
-  const [stats, outstandingCredit, paymentsResult, topProducts, recentStocks, salesTrend, lowStockProducts] =
+  const [stats, outstandingCredit, topCustomers, unpaidOrders, topProducts, recentStocks, salesTrend, lowStockProducts] =
     await Promise.all([
       fetchStats(merchantId, from, to),
       fetchOutstandingCredit(merchantId, from, to),
-      fetchRecentPayments(merchantId, from, to),
+      fetchTopCustomers(merchantId, from, to),
+      fetchUnpaidOrders(merchantId, from, to),
       fetchTopSellingProducts(merchantId, from, to),
       fetchRecentStocks(branchIds),
       fetchWeeklySalesTrend(merchantId, from, to),
@@ -63,8 +65,8 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
     totalOrders: stats.totalOrders,
     pendingPayments: stats.pendingPayments,
     outstandingCredit,
-    recentPayments: paymentsResult.payments,
-    recentPaymentsCount: paymentsResult.totalCount,
+    topCustomers,
+    unpaidOrders,
     topProducts,
     recentStocks,
     salesTrend,

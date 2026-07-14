@@ -1,6 +1,9 @@
 import { config, getGraphQLHeaders } from "$lib/config";
 
-async function gql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+async function gql<T>(
+  query: string,
+  variables?: Record<string, unknown>,
+): Promise<T> {
   const response = await fetch(config.graphql.endpoint, {
     method: "POST",
     headers: getGraphQLHeaders(),
@@ -8,7 +11,8 @@ async function gql<T>(query: string, variables?: Record<string, unknown>): Promi
   });
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   const result = await response.json();
-  if (result.errors) throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
+  if (result.errors)
+    throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
   return result.data as T;
 }
 
@@ -19,7 +23,10 @@ function parseMoney(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function buildDateConditions(from: string, to: string): Record<string, unknown>[] {
+function buildDateConditions(
+  from: string,
+  to: string,
+): Record<string, unknown>[] {
   const conds: Record<string, unknown>[] = [];
   if (from) conds.push({ created_at: { _gte: from } });
   if (to) {
@@ -30,7 +37,11 @@ function buildDateConditions(from: string, to: string): Record<string, unknown>[
   return conds;
 }
 
-function buildSalesFilter(merchantId: string, from: string, to: string): Record<string, unknown> {
+function buildSalesFilter(
+  merchantId: string,
+  from: string,
+  to: string,
+): Record<string, unknown> {
   const conds: Record<string, unknown>[] = [
     { created_by: { _eq: merchantId } },
     { status: { _neq: "cancelled" } },
@@ -39,7 +50,11 @@ function buildSalesFilter(merchantId: string, from: string, to: string): Record<
   return { _and: conds };
 }
 
-function buildOrdersFilter(merchantId: string, from: string, to: string): Record<string, unknown> {
+function buildOrdersFilter(
+  merchantId: string,
+  from: string,
+  to: string,
+): Record<string, unknown> {
   const conds: Record<string, unknown>[] = [
     { created_by: { _eq: merchantId } },
     ...buildDateConditions(from, to),
@@ -195,7 +210,9 @@ export async function fetchStats(
     return {
       totalSales: parseMoney(data.total_sales?.aggregate?.sum?.total_amount),
       totalOrders: data.total_orders?.aggregate?.count ?? 0,
-      pendingPayments: parseMoney(data.pending_payments?.aggregate?.sum?.outstanding_amount),
+      pendingPayments: parseMoney(
+        data.pending_payments?.aggregate?.sum?.outstanding_amount,
+      ),
     };
   } catch (error) {
     console.error("Error fetching stats:", error);
@@ -219,9 +236,13 @@ export async function fetchOutstandingCredit(
 
   try {
     const data = await gql<{
-      outstanding_credit: { aggregate: { sum: { outstanding_amount: unknown } } };
+      outstanding_credit: {
+        aggregate: { sum: { outstanding_amount: unknown } };
+      };
     }>(OUTSTANDING_CREDIT_QUERY, { filter });
-    return parseMoney(data.outstanding_credit?.aggregate?.sum?.outstanding_amount);
+    return parseMoney(
+      data.outstanding_credit?.aggregate?.sum?.outstanding_amount,
+    );
   } catch (error) {
     console.error("Error fetching outstanding credit:", error);
     return 0;
@@ -244,7 +265,10 @@ export async function fetchRecentPayments(
   to: string,
 ): Promise<{ payments: PaymentRecord[]; totalCount: number }> {
   const filter = {
-    _and: [{ created_by: { _eq: merchantId } }, ...buildDateConditions(from, to)],
+    _and: [
+      { created_by: { _eq: merchantId } },
+      ...buildDateConditions(from, to),
+    ],
   };
 
   try {
@@ -297,7 +321,11 @@ export async function fetchTopSellingProducts(
           quantity: unknown;
           line_total: unknown;
           unit: string | null;
-          product: { id: string; name: string; default_unit: string | null } | null;
+          product: {
+            id: string;
+            name: string;
+            default_unit: string | null;
+          } | null;
         }>;
       }>;
     }>(TOP_PRODUCTS_QUERY, { filter });
@@ -319,7 +347,13 @@ export async function fetchTopSellingProducts(
           existing.quantity += qty;
           existing.revenue += rev;
         } else {
-          productMap.set(pid, { product_id: pid, name, quantity: qty, unit, revenue: rev });
+          productMap.set(pid, {
+            product_id: pid,
+            name,
+            quantity: qty,
+            unit,
+            revenue: rev,
+          });
         }
       }
     }
@@ -341,7 +375,9 @@ export type StockRecord = {
   date: string;
 };
 
-export async function fetchRecentStocks(branchIds: string[]): Promise<StockRecord[]> {
+export async function fetchRecentStocks(
+  branchIds: string[],
+): Promise<StockRecord[]> {
   if (branchIds.length === 0) return [];
 
   const filter = { branch: { _in: branchIds } };
@@ -353,7 +389,11 @@ export async function fetchRecentStocks(branchIds: string[]): Promise<StockRecor
         quantity: unknown;
         unit: string | null;
         created_at: string;
-        product: { id: string; name: string; default_unit: string | null } | null;
+        product: {
+          id: string;
+          name: string;
+          default_unit: string | null;
+        } | null;
       }>;
     }>(RECENT_STOCKS_QUERY, { filter });
 
@@ -369,7 +409,9 @@ export async function fetchRecentStocks(branchIds: string[]): Promise<StockRecor
   }
 }
 
-export async function fetchMerchantBranchId(merchantId: string): Promise<string | null> {
+export async function fetchMerchantBranchId(
+  merchantId: string,
+): Promise<string | null> {
   try {
     const data = await gql<{
       merchant_by_pk: { branch: string | null } | null;
@@ -413,7 +455,9 @@ export type LowStockProduct = {
   unit: string;
 };
 
-export async function fetchLowStockProducts(companyId: string): Promise<LowStockProduct[]> {
+export async function fetchLowStockProducts(
+  companyId: string,
+): Promise<LowStockProduct[]> {
   try {
     const data = await gql<{
       products: Array<{
@@ -427,7 +471,9 @@ export async function fetchLowStockProducts(companyId: string): Promise<LowStock
 
     return (data.products ?? [])
       .map((p) => {
-        const totalStock = parseMoney(p.stocks_aggregate?.aggregate?.sum?.quantity);
+        const totalStock = parseMoney(
+          p.stocks_aggregate?.aggregate?.sum?.quantity,
+        );
         const threshold = parseMoney(p.treshold_quantity);
         return {
           product_id: p.id,
@@ -445,6 +491,152 @@ export async function fetchLowStockProducts(companyId: string): Promise<LowStock
   }
 }
 
+const TOP_CUSTOMERS_QUERY = `
+  query TopCustomers($filter: orders_bool_exp!) {
+    orders(
+      where: $filter
+      order_by: [{ created_at: desc }]
+    ) {
+      customer_id
+      customer_name
+      total_amount
+    }
+  }
+`;
+
+export type TopCustomerRecord = {
+  id: string;
+  customer_name: string;
+  order_count: number;
+  total_spent: number;
+};
+
+export async function fetchTopCustomers(
+  merchantId: string,
+  from: string,
+  to: string,
+): Promise<TopCustomerRecord[]> {
+  const filter = {
+    _and: [
+      { created_by: { _eq: merchantId } },
+      { status: { _neq: "cancelled" } },
+      { customer_name: { _neq: "" } },
+      { customer_name: { _is_null: false } },
+      ...buildDateConditions(from, to),
+    ],
+  };
+
+  try {
+    const data = await gql<{
+      orders: Array<{
+        customer_id: string;
+        customer_name: string | null;
+        total_amount: unknown;
+      }>;
+    }>(TOP_CUSTOMERS_QUERY, { filter });
+
+    const customerMap = new Map<string, { name: string; count: number; total: number }>();
+
+    for (const order of data.orders ?? []) {
+      const customerId = order.customer_id;
+      if (!customerId) continue;
+      const name = (order.customer_name ?? "").trim();
+      if (!name) continue;
+      const existing = customerMap.get(customerId);
+      const amount = parseMoney(order.total_amount);
+      if (existing) {
+        existing.count += 1;
+        existing.total += amount;
+      } else {
+        customerMap.set(customerId, { name, count: 1, total: amount });
+      }
+    }
+
+    return [...customerMap.entries()]
+      .map(([id, agg]) => ({
+        id,
+        customer_name: agg.name,
+        order_count: agg.count,
+        total_spent: agg.total,
+      }))
+      .sort((a, b) => {
+        if (b.total_spent !== a.total_spent) {
+          return b.total_spent - a.total_spent;
+        }
+        return b.order_count - a.order_count;
+      })
+      .slice(0, 10);
+  } catch (error) {
+    console.error("Error fetching top customers:", error);
+    return [];
+  }
+}
+
+const UNPAID_ORDERS_QUERY = `
+  query UnpaidOrders($filter: orders_bool_exp!) {
+    orders(
+      where: $filter
+      order_by: [{ created_at: asc }]
+      limit: 10
+    ) {
+      id
+      customer_name
+      total_amount
+      outstanding_amount
+      created_at
+      status
+    }
+  }
+`;
+
+export type UnpaidOrderRecord = {
+  id: string;
+  customer_name: string;
+  total_amount: number;
+  outstanding_amount: number;
+  created_at: string;
+  status: string;
+};
+
+export async function fetchUnpaidOrders(
+  merchantId: string,
+  from: string,
+  to: string,
+): Promise<UnpaidOrderRecord[]> {
+  const filter = {
+    _and: [
+      { created_by: { _eq: merchantId } },
+      { status: { _in: ["unpaid", "partially_paid"] } },
+      ...buildDateConditions(from, to),
+    ],
+  };
+
+  try {
+    const data = await gql<{
+      orders: Array<{
+        id: string;
+        customer_name: string | null;
+        total_amount: unknown;
+        outstanding_amount: unknown;
+        created_at: string;
+        status: string;
+      }>;
+    }>(UNPAID_ORDERS_QUERY, { filter });
+
+    return (data.orders ?? []).map((o) => ({
+      id: o.id,
+      customer_name: o.customer_name?.trim() || "Unknown",
+      total_amount: parseMoney(o.total_amount),
+      outstanding_amount: parseMoney(o.outstanding_amount),
+      created_at: o.created_at,
+      status: o.status,
+    }));
+  } catch (error) {
+    console.error("Error fetching unpaid orders:", error);
+    return [];
+  }
+}
+
 const FETCH_BRANCH_IDS_FOR_COMPANY_QUERY = `
   query BranchIdsForCompany($companyId: uuid!) {
     branches(where: { company: { _eq: $companyId } }) {
@@ -453,7 +645,9 @@ const FETCH_BRANCH_IDS_FOR_COMPANY_QUERY = `
   }
 `;
 
-export async function fetchCompanyBranchIds(companyId: string): Promise<string[]> {
+export async function fetchCompanyBranchIds(
+  companyId: string,
+): Promise<string[]> {
   try {
     const data = await gql<{
       branches: Array<{ id: string }>;
