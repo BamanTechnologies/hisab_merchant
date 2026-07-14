@@ -341,6 +341,13 @@
   "attrCapacityUnit": "Capacity unit",
   "dashboardLowStock": "Low stock products",
   "dashboardNoLowStock": "All products are well-stocked.",
+  "dashboardTopCustomers": "Top Customers",
+  "dashboardUnpaidOrders": "Unpaid Orders",
+  "dashboardNoTopCustomers": "No top customers yet.",
+  "dashboardNoUnpaidOrders": "No unpaid orders.",
+  "dashboardOrders": "Orders",
+  "dashboardTotalSpent": "Total Spent",
+  "dashboardOutstanding": "Outstanding",
   "typeBrakeLining": "Brake lining",
   "typeGlass": "Glass",
   "typeCoffeeTools": "Coffee tools"

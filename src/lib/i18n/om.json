@@ -341,6 +341,13 @@
   "attrCapacityUnit": "Isa Dandeettii",
   "dashboardLowStock": "Meeshaalee kuusaa gadi bu'aa",
   "dashboardNoLowStock": "Meeshaaleen hundi sirritti kuusamaniiru.",
+  "dashboardTopCustomers": "Maamiltoota Olaanoo",
+  "dashboardUnpaidOrders": "Ajajaalee Hin Kaffalamne",
+  "dashboardNoTopCustomers": "Ammatti maamiltoota olaanoo hin jiran.",
+  "dashboardNoUnpaidOrders": "Ajajaalee hin kaffalamne hin jiran.",
+  "dashboardOrders": "Ajajaalee",
+  "dashboardTotalSpent": "Waliigala Baasii",
+  "dashboardOutstanding": "Hafe",
   "typeBrakeLining": "Brake Lining",
   "typeGlass": "Biloo",
   "typeCoffeeTools": "Meeshaa Bunaa"

@@ -5,7 +5,8 @@
   import { DollarSign, ShoppingCart, Wallet, CreditCard } from "@lucide/svelte";
   import StatCard from "$lib/components/dashboard/StatCard.svelte";
   import WeeklySalesChart from "$lib/components/dashboard/WeeklySalesChart.svelte";
-  import RecentPaymentsTable from "$lib/components/dashboard/RecentPaymentsTable.svelte";
+  import TopCustomersTable from "$lib/components/dashboard/TopCustomersTable.svelte";
+  import UnpaidOrdersTable from "$lib/components/dashboard/UnpaidOrdersTable.svelte";
   import TopSellingProducts from "$lib/components/dashboard/TopSellingProducts.svelte";
   import RecentStocks from "$lib/components/dashboard/RecentStocks.svelte";
   import LowStockProducts from "$lib/components/dashboard/LowStockProducts.svelte";
@@ -228,15 +229,25 @@
         <WeeklySalesChart data={salesTrend} {loading} />
       </div>
 
-      <!-- Recent Payments header (separate from table card) -->
+      <!-- Top Customers header -->
       <div class="flex items-center justify-between">
-        <h3 class="font-bold capitalize text-lg  text-gray-900 dark:text-gray-100">{$_('dashboardRecentPayments')}</h3>
-        <a href="/payments" class="text-sm font-semibold text-[#4DA0E6] hover:underline">
+        <h3 class="font-bold capitalize text-lg text-gray-900 dark:text-gray-100">{$_('dashboardTopCustomers')}</h3>
+        <a href="/customers" class="text-sm font-semibold text-[#4DA0E6] hover:underline">
           {$_('dashboardViewAll')} &rarr;
         </a>
       </div>
 
-      <RecentPaymentsTable payments={data.recentPayments} {loading} />
+      <TopCustomersTable customers={data.topCustomers} {loading} />
+
+      <!-- Unpaid Orders header -->
+      <div class="flex items-center justify-between">
+        <h3 class="font-bold capitalize text-lg text-gray-900 dark:text-gray-100">{$_('dashboardUnpaidOrders')}</h3>
+        <a href="/orders" class="text-sm font-semibold text-[#4DA0E6] hover:underline">
+          {$_('dashboardViewAll')} &rarr;
+        </a>
+      </div>
+
+      <UnpaidOrdersTable orders={data.unpaidOrders} {loading} />
     </div>
 
     <!-- Right Column (35%) -->

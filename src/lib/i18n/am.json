@@ -341,6 +341,13 @@
   "attrCapacityUnit": "የአቅም ክፍል",
   "dashboardLowStock": "ዝቅተኛ ክምችት ያላቸው ምርቶች",
   "dashboardNoLowStock": "ሁሉም ምርቶች በበቂ ክምችት ላይ ናቸው።",
+  "dashboardTopCustomers": "ምርጥ ደንበኞች",
+  "dashboardUnpaidOrders": "ያልተከፈሉ ትዕዛዞች",
+  "dashboardNoTopCustomers": "ገና ምርጥ ደንበኞች የሉም።",
+  "dashboardNoUnpaidOrders": "ያልተከፈሉ ትዕዛዞች የሉም።",
+  "dashboardOrders": "ትዕዛዞች",
+  "dashboardTotalSpent": "ጠቅላላ ወጪ",
+  "dashboardOutstanding": "ቀሪ ክፍያ",
   "typeBrakeLining": "ብሬክ ላይኒንግ",
   "typeGlass": "ብርጭቆ",
   "typeCoffeeTools": "የቡና እቃዎች"
