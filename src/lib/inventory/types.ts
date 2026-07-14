@@ -38,6 +38,7 @@ export type ProductRecord = {
 	is_active?: boolean | null;
 	barcode?: string | null;
 	qr_code?: string | null;
+	treshold_quantity?: number | string | null;
 	product_type?: ProductTypeRef | null;
 };
 

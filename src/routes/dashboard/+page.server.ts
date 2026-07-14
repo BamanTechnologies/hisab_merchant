@@ -9,6 +9,7 @@ import {
   fetchRecentStocks,
   fetchWeeklySalesTrend,
   fetchCompanyBranchIds,
+  fetchLowStockProducts,
 } from "$lib/dashboard.server";
 
 export const load: PageServerLoad = async ({ request, parent, url }) => {
@@ -30,6 +31,7 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
       topProducts: [],
       recentStocks: [],
       salesTrend: [],
+      lowStockProducts: [],
     };
   }
 
@@ -45,7 +47,7 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
     branchIds = [merchantBranchId];
   }
 
-  const [stats, outstandingCredit, paymentsResult, topProducts, recentStocks, salesTrend] =
+  const [stats, outstandingCredit, paymentsResult, topProducts, recentStocks, salesTrend, lowStockProducts] =
     await Promise.all([
       fetchStats(merchantId, from, to),
       fetchOutstandingCredit(merchantId, from, to),
@@ -53,6 +55,7 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
       fetchTopSellingProducts(merchantId, from, to),
       fetchRecentStocks(branchIds),
       fetchWeeklySalesTrend(merchantId, from, to),
+      companyId ? fetchLowStockProducts(companyId) : Promise.resolve([]),
     ]);
 
   return {
@@ -65,5 +68,6 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
     topProducts,
     recentStocks,
     salesTrend,
+    lowStockProducts,
   };
 };

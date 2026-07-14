@@ -27,6 +27,8 @@
     is_active?: boolean | null;
     barcode?: string | null;
     qr_code?: string | null;
+    treshold_quantity?: number | string | null;
+    total_stock?: number;
     created_at?: string | null;
     product_type?: ProductType | null;
   };
@@ -123,6 +125,14 @@
     return raw;
   });
 
+  const tresholdVal = $derived(
+    product.treshold_quantity != null ? Number(product.treshold_quantity) : 0,
+  );
+  const totalStockVal = $derived(product.total_stock ?? 0);
+  const isBelowThreshold = $derived(
+    tresholdVal > 0 && totalStockVal < tresholdVal,
+  );
+
   const productDetailRows = $derived.by(() => {
     const rows: { label: string; value: string }[] = [
       { label: "Name", value: product.displayName || product.name || "—" },
@@ -134,6 +144,9 @@
       { label: "Barcode", value: dash(product.barcode) },
       { label: "QR code", value: dash(product.qr_code) },
     ];
+    if (tresholdVal > 0) {
+      rows.push({ label: "Stock threshold", value: String(tresholdVal) });
+    }
     for (const key of dynamicFields) {
       rows.push({ label: attributeLabel(key), value: attrValue(key) });
     }
@@ -232,6 +245,16 @@
     </div>
   </div>
 
+  {#if isBelowThreshold}
+    <div
+      class="flex items-center gap-2 border-b border-[#e6eaed] bg-amber-50 px-5 py-3 dark:border-white/10 dark:bg-amber-950/30"
+    >
+      <span class="text-sm font-semibold text-amber-700 dark:text-amber-400">
+        Low stock — only {totalStockVal} {product.default_unit || "unit"}{totalStockVal === 1 ? "" : "s"} available
+        (threshold: {tresholdVal})
+      </span>
+    </div>
+  {/if}
   <dl
     class="grid divide-x divide-y divide-[#e6eaed] dark:divide-white/10 sm:grid-cols-2 lg:grid-cols-3"
   >

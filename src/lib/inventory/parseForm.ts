@@ -66,6 +66,13 @@ export function parseInvestors(raw: FormDataEntryValue | null): string[] {
 	}
 }
 
+export function parsePositiveNumber(raw: FormDataEntryValue | null): number {
+  const s = String(raw ?? '').trim();
+  if (!s) return 0;
+  const n = Number(s.replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
 export function parsePositiveFactor(
 	attributes: Record<string, unknown>,
 	explicitFactor: unknown,

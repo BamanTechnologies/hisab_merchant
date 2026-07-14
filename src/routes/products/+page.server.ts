@@ -13,6 +13,7 @@ import {
   parseInvestors,
   parseOptionalString,
   parsePositiveFactor,
+  parsePositiveNumber,
   parseUnit,
   normalizeProductTypeName,
   PRODUCT_TYPE_FIELDS,
@@ -37,10 +38,18 @@ const FETCH_PRODUCTS_QUERY = `
       is_active
       barcode
       qr_code
+      treshold_quantity
       created_at
       product_type {
         id
         name
+      }
+      stocks_aggregate {
+        aggregate {
+          sum {
+            quantity
+          }
+        }
       }
     }
     total_products: products_aggregate(where: $filter) {
@@ -133,8 +142,15 @@ async function fetchProducts(
       limit: pageSize,
       offset,
     });
+    const products = (data.products ?? []).map((p) => {
+      const stocksAgg = (p.stocks_aggregate as Record<string, unknown> | undefined) ?? {};
+      const agg = (stocksAgg.aggregate as Record<string, unknown> | undefined) ?? {};
+      const sum = (agg.sum as Record<string, unknown> | undefined) ?? {};
+      const totalStock = Number(sum.quantity ?? 0);
+      return { ...p, total_stock: Number.isFinite(totalStock) ? totalStock : 0 };
+    });
     return {
-      products: data.products ?? [],
+      products,
       totalCount: data.total_products?.aggregate?.count ?? 0,
     };
   } catch {
@@ -185,7 +201,7 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
   const products = productsRaw.map((p) => ({
     ...p,
     displayName: buildProductLabel(
-      p as Parameters<typeof buildProductLabel>[0],
+      p as unknown as Parameters<typeof buildProductLabel>[0],
     ),
   }));
 
@@ -227,6 +243,7 @@ export const actions: Actions = {
     const barcode = parseOptionalString(formData.get("barcode"));
     const qr_code = parseOptionalString(formData.get("qr_code"));
     const factor = parsePositiveFactor(attributes, formData.get("factor"));
+    const treshold_quantity = parsePositiveNumber(formData.get("treshold_quantity"));
 
     const resolved = resolveCatalogProductName({
       productTypeName,
@@ -259,6 +276,7 @@ export const actions: Actions = {
             attributes,
             investors,
             factor,
+            treshold_quantity,
             barcode,
             qr_code,
             is_active: true,
@@ -300,6 +318,7 @@ export const actions: Actions = {
     const isActiveRaw = String(formData.get("is_active") ?? "true").trim();
     const is_active = isActiveRaw !== "false";
     const factor = parsePositiveFactor(attributes, formData.get("factor"));
+    const treshold_quantity = parsePositiveNumber(formData.get("treshold_quantity"));
 
     if (!id) return { success: false, message: "Product ID is required" };
     const resolved = resolveCatalogProductName({
@@ -333,6 +352,7 @@ export const actions: Actions = {
             attributes,
             investors,
             factor,
+            treshold_quantity,
             barcode,
             qr_code,
             is_active,

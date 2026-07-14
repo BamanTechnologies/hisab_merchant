@@ -44,6 +44,8 @@
     is_active?: boolean | null;
     barcode?: string | null;
     qr_code?: string | null;
+    treshold_quantity?: number | string | null;
+    total_stock?: number;
     product_type?: ProductType | null;
   };
 
@@ -78,6 +80,7 @@
   let barcode = $state("");
   let qrCode = $state("");
   let isActive = $state(true);
+  let tresholdQuantity = $state("");
   let selectedInvestorIds = $state<string[]>([]);
   let investorDropdownOpen = $state(false);
   let investorMultiselectEl = $state<HTMLDivElement | null>(null);
@@ -183,6 +186,7 @@
     barcode = "";
     qrCode = "";
     isActive = true;
+    tresholdQuantity = "";
     selectedInvestorIds = [];
     investorDropdownOpen = false;
     investorMenuPosStyle = "";
@@ -218,6 +222,7 @@
     barcode = String(product.barcode ?? "").trim();
     qrCode = String(product.qr_code ?? "").trim();
     isActive = product.is_active !== false;
+    tresholdQuantity = product.treshold_quantity != null ? String(product.treshold_quantity) : "";
     selectedInvestorIds = Array.isArray(product.investors)
       ? [...product.investors]
       : [];
@@ -564,6 +569,17 @@
             <span>QR code <span class="optional">(optional)</span></span>
             <input type="text" name="qr_code" bind:value={qrCode} />
           </label>
+          <label>
+            <span>Stock threshold <span class="optional">(optional)</span></span>
+            <input
+              type="number"
+              name="treshold_quantity"
+              bind:value={tresholdQuantity}
+              min="0"
+              step="any"
+              placeholder="0"
+            />
+          </label>
           {#if editingProductId}
             <label class="checkbox-field">
               <input type="checkbox" bind:checked={isActive} />
@@ -629,12 +645,13 @@
           <th class={mc.th}>Type</th>
           <th class={mc.th}>Unit</th>
           <th class={mc.th}>Status</th>
+          <th class={mc.thCenter}>Stock</th>
           <th class={mc.thCenter}>Actions</th>
         </tr>
       </thead>
       <tbody>
         {#if navigating.to}
-          <TableLoading rows={1} cols={6} />
+          <TableLoading rows={1} cols={7} />
         {:else}
           {#each products as p, i}
             <tr
@@ -656,6 +673,23 @@
                 </span>
               </td>
               <td class={mc.tdCenter}>
+                {#if p.treshold_quantity != null && Number(p.treshold_quantity) > 0}
+                  {@const threshold = Number(p.treshold_quantity)}
+                  {@const totalStock = p.total_stock ?? 0}
+                  <span
+                    class="stock-pill"
+                    class:stock-low={totalStock < threshold}
+                    title={totalStock < threshold
+                      ? `Stock (${totalStock}) is below stock threshold (${threshold})`
+                      : `Stock (${totalStock}) meets threshold (${threshold})`}
+                  >
+                    {totalStock}/{threshold}
+                  </span>
+                {:else}
+                  <span class="stock-pill stock-ok">Enough Stock</span>
+                {/if}
+              </td>
+              <td class={mc.tdCenter}>
                 <button
                   type="button"
                   class={mc.actionBtn}
@@ -673,7 +707,7 @@
           {/each}
           {#if products.length === 0}
             <tr>
-              <td colspan="6" class={mc.emptyCell}>
+              <td colspan="7" class={mc.emptyCell}>
                 {#if searchQuery.trim()}
                   No products match your search.
                 {:else}
@@ -783,6 +817,39 @@
   }
 
   :global(html.dark) .status-pill.status-inactive {
+    color: #d1d5db;
+  }
+
+  .stock-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 9999px;
+    padding: 0.125rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: color-mix(in oklab, #67b186, transparent 75%);
+    color: #166534;
+  }
+
+  .stock-pill.stock-low {
+    background: color-mix(in oklab, #f59e0b, transparent 70%);
+    color: #92400e;
+  }
+
+  .stock-pill.stock-ok {
+    background: color-mix(in oklab, #9ca3af, transparent 70%);
+    color: #374151;
+  }
+
+  :global(html.dark) .stock-pill {
+    color: #bbf7d0;
+  }
+
+  :global(html.dark) .stock-pill.stock-low {
+    color: #fde68a;
+  }
+
+  :global(html.dark) .stock-pill.stock-ok {
     color: #d1d5db;
   }
 </style>

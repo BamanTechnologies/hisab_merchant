@@ -339,6 +339,8 @@
   "attrThickness": "Gadi Fageenya",
   "attrModelNo": "Lakk. Mudela",
   "attrCapacityUnit": "Isa Dandeettii",
+  "dashboardLowStock": "Meeshaalee kuusaa gadi bu'aa",
+  "dashboardNoLowStock": "Meeshaaleen hundi sirritti kuusamaniiru.",
   "typeBrakeLining": "Brake Lining",
   "typeGlass": "Biloo",
   "typeCoffeeTools": "Meeshaa Bunaa"
