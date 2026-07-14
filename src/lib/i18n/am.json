@@ -339,6 +339,8 @@
   "attrThickness": "ውፍረት",
   "attrModelNo": "ሞዴል ቁጥር",
   "attrCapacityUnit": "የአቅም ክፍል",
+  "dashboardLowStock": "ዝቅተኛ ክምችት ያላቸው ምርቶች",
+  "dashboardNoLowStock": "ሁሉም ምርቶች በበቂ ክምችት ላይ ናቸው።",
   "typeBrakeLining": "ብሬክ ላይኒንግ",
   "typeGlass": "ብርጭቆ",
   "typeCoffeeTools": "የቡና እቃዎች"

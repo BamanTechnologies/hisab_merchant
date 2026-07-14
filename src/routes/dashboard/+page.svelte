@@ -8,6 +8,7 @@
   import RecentPaymentsTable from "$lib/components/dashboard/RecentPaymentsTable.svelte";
   import TopSellingProducts from "$lib/components/dashboard/TopSellingProducts.svelte";
   import RecentStocks from "$lib/components/dashboard/RecentStocks.svelte";
+  import LowStockProducts from "$lib/components/dashboard/LowStockProducts.svelte";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();
@@ -229,7 +230,7 @@
 
       <!-- Recent Payments header (separate from table card) -->
       <div class="flex items-center justify-between">
-        <h3 class="text-base font-bold uppercase tracking-wide text-gray-900 dark:text-gray-100">{$_('dashboardRecentPayments')}</h3>
+        <h3 class="font-bold capitalize text-lg  text-gray-900 dark:text-gray-100">{$_('dashboardRecentPayments')}</h3>
         <a href="/payments" class="text-sm font-semibold text-[#4DA0E6] hover:underline">
           {$_('dashboardViewAll')} &rarr;
         </a>
@@ -240,6 +241,7 @@
 
     <!-- Right Column (35%) -->
     <div class="flex flex-col gap-6">
+      <LowStockProducts products={data.lowStockProducts} {loading} />
       <TopSellingProducts products={data.topProducts} {loading} />
       <RecentStocks stocks={data.recentStocks} {loading} />
     </div>

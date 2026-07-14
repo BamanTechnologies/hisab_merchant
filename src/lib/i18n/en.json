@@ -339,6 +339,8 @@
   "attrThickness": "Thickness",
   "attrModelNo": "Model No",
   "attrCapacityUnit": "Capacity unit",
+  "dashboardLowStock": "Low stock products",
+  "dashboardNoLowStock": "All products are well-stocked.",
   "typeBrakeLining": "Brake lining",
   "typeGlass": "Glass",
   "typeCoffeeTools": "Coffee tools"

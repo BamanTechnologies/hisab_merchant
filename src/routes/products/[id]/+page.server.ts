@@ -21,10 +21,18 @@ const FETCH_PRODUCT_DETAIL_QUERY = `
       is_active
       barcode
       qr_code
+      treshold_quantity
       created_at
       product_type {
         id
         name
+      }
+      stocks_aggregate {
+        aggregate {
+          sum {
+            quantity
+          }
+        }
       }
     }
     stock_movements(
@@ -102,9 +110,15 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
 	const productRaw = data.products?.[0];
 	if (!productRaw) throw error(404, 'Product not found');
 
+	const stocksAgg = (productRaw.stocks_aggregate as Record<string, unknown> | undefined) ?? {};
+	const agg = (stocksAgg.aggregate as Record<string, unknown> | undefined) ?? {};
+	const sum = (agg.sum as Record<string, unknown> | undefined) ?? {};
+	const totalStock = Number(sum.quantity ?? 0);
+
 	const product = {
 		...productRaw,
 		displayName: buildProductLabel(productRaw as Parameters<typeof buildProductLabel>[0]),
+		total_stock: Number.isFinite(totalStock) ? totalStock : 0,
 	};
 
 	return {

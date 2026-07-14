@@ -381,6 +381,70 @@ export async function fetchMerchantBranchId(merchantId: string): Promise<string 
   }
 }
 
+const LOW_STOCK_QUERY = `
+  query LowStockProducts($companyId: uuid!) {
+    products(
+      where: {
+        company_id: { _eq: $companyId }
+        treshold_quantity: { _gt: 0 }
+      }
+      order_by: [{ name: asc }]
+    ) {
+      id
+      name
+      default_unit
+      treshold_quantity
+      stocks_aggregate {
+        aggregate {
+          sum {
+            quantity
+          }
+        }
+      }
+    }
+  }
+`;
+
+export type LowStockProduct = {
+  product_id: string;
+  name: string;
+  total_stock: number;
+  threshold: number;
+  unit: string;
+};
+
+export async function fetchLowStockProducts(companyId: string): Promise<LowStockProduct[]> {
+  try {
+    const data = await gql<{
+      products: Array<{
+        id: string;
+        name: string;
+        default_unit: string | null;
+        treshold_quantity: unknown;
+        stocks_aggregate: { aggregate: { sum: { quantity: unknown } } };
+      }>;
+    }>(LOW_STOCK_QUERY, { companyId });
+
+    return (data.products ?? [])
+      .map((p) => {
+        const totalStock = parseMoney(p.stocks_aggregate?.aggregate?.sum?.quantity);
+        const threshold = parseMoney(p.treshold_quantity);
+        return {
+          product_id: p.id,
+          name: p.name,
+          total_stock: totalStock,
+          threshold,
+          unit: p.default_unit ?? "pcs",
+        };
+      })
+      .filter((p) => p.threshold > 0 && p.total_stock < p.threshold)
+      .slice(0, 10);
+  } catch (error) {
+    console.error("Error fetching low stock products:", error);
+    return [];
+  }
+}
+
 const FETCH_BRANCH_IDS_FOR_COMPANY_QUERY = `
   query BranchIdsForCompany($companyId: uuid!) {
     branches(where: { company: { _eq: $companyId } }) {

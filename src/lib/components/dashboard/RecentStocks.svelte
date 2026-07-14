@@ -32,7 +32,7 @@
       <div class="flex size-10 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-500/15">
         <Package size={20} class="text-blue-600 dark:text-blue-400" />
       </div>
-      <h3 class="text-base font-bold uppercase tracking-wide text-gray-900 dark:text-gray-100">{$_('dashboardRecentStocks')}</h3>
+      <h3 class="text-base font-bold capitalize tracking-wide text-gray-900 dark:text-gray-100">{$_('dashboardRecentStocks')}</h3>
     </div>
   </div>
   <div class="divide-y divide-gray-50 dark:divide-white/5">
