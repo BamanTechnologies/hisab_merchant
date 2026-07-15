@@ -1,10 +1,10 @@
-import { config, getGraphQLHeaders } from '$lib/config';
-import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
+import { config, getGraphQLHeaders } from "$lib/config";
+import { fetchMerchantBranchId } from "$lib/merchantBranch.server";
 import {
-	resolveDefaultAppRoute,
-	resolveMerchantRouteAccess,
-	type MerchantRouteAccess,
-} from '$lib/merchantAccess.server';
+  resolveDefaultAppRoute,
+  resolveMerchantRouteAccess,
+  type MerchantRouteAccess,
+} from "$lib/merchantAccess.server";
 
 const BRANCH_ROW_FOR_CONTEXT_QUERY = `
   query MerchantContextBranch($id: uuid!) {
@@ -16,9 +16,12 @@ const BRANCH_ROW_FOR_CONTEXT_QUERY = `
   }
 `;
 
-async function gql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+async function gql<T>(
+  query: string,
+  variables?: Record<string, unknown>,
+): Promise<T> {
   const response = await fetch(config.graphql.endpoint, {
-    method: 'POST',
+    method: "POST",
     headers: getGraphQLHeaders(),
     body: JSON.stringify({ query, variables }),
   });
@@ -44,18 +47,20 @@ export type MerchantAppContext = {
   companyId: string | null;
   branch: { id: string; name: string | null } | null;
   routeAccess: MerchantRouteAccess;
-  defaultAppRoute: '/products' | '/stocks';
+  defaultAppRoute: "/dashboard" | "/stocks";
 };
 
 /**
  * Branch row + company id for the logged-in merchant. Uses two GraphQL round trips
  * (merchant → branch id, then branches_by_pk); callers should prefer layout `merchantContext`.
  */
-export async function fetchMerchantAppContext(merchantId: string): Promise<MerchantAppContext> {
+export async function fetchMerchantAppContext(
+  merchantId: string,
+): Promise<MerchantAppContext> {
   const merchantBranchId = await fetchMerchantBranchId(merchantId);
 
   const finish = (
-    partial: Omit<MerchantAppContext, 'routeAccess' | 'defaultAppRoute'>,
+    partial: Omit<MerchantAppContext, "routeAccess" | "defaultAppRoute">,
   ): MerchantAppContext => {
     const routeAccess = resolveMerchantRouteAccess(partial);
     return {

@@ -1,16 +1,16 @@
-import type { MerchantAppContext } from '$lib/merchantContext.server';
+import type { MerchantAppContext } from "$lib/merchantContext.server";
 
 /** Route-level access flags for the signed-in merchant (extend when roles land in Hasura). */
 export type MerchantRouteAccess = {
-	/** Catalog list and product detail pages. */
-	products: boolean;
-	/** Purchase/cost prices on product overview and batch edit flows. */
-	viewPurchasePrice: boolean;
+  /** Catalog list and product detail pages. */
+  products: boolean;
+  /** Purchase/cost prices on product overview and batch edit flows. */
+  viewPurchasePrice: boolean;
 };
 
 const FULL_ACCESS: MerchantRouteAccess = {
-	products: true,
-	viewPurchasePrice: true,
+  products: true,
+  viewPurchasePrice: true,
 };
 
 /**
@@ -18,20 +18,22 @@ const FULL_ACCESS: MerchantRouteAccess = {
  * hired/staff role column exists on `merchant`.
  */
 export function resolveMerchantRouteAccess(
-	merchantContext: Pick<MerchantAppContext, 'merchantId'> | null,
+  merchantContext: Pick<MerchantAppContext, "merchantId"> | null,
 ): MerchantRouteAccess {
-	if (!merchantContext?.merchantId) {
-		return { products: false, viewPurchasePrice: false };
-	}
-	return FULL_ACCESS;
+  if (!merchantContext?.merchantId) {
+    return { products: false, viewPurchasePrice: false };
+  }
+  return FULL_ACCESS;
 }
 
 /** First app screen after sign-in: products when allowed, otherwise stocks. */
-export function resolveDefaultAppRoute(access: MerchantRouteAccess): '/products' | '/stocks' {
-	if (access.products) return '/products';
-	return '/stocks';
+export function resolveDefaultAppRoute(
+  access: MerchantRouteAccess,
+): "/dashboard" | "/stocks" {
+  if (access.products) return "/dashboard";
+  return "/stocks";
 }
 
 export function canViewPurchasePrice(access: MerchantRouteAccess): boolean {
-	return access.viewPurchasePrice;
+  return access.viewPurchasePrice;
 }

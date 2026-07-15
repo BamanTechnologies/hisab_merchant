@@ -84,7 +84,7 @@
           localStorage.removeItem("merchantBranchId");
           document.cookie = "merchantBranchId=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
         }
-        goto(form.defaultAppRoute ?? "/products");
+        goto(form.defaultAppRoute ?? "/dashboard");
       } else {
         showToast("One of the details is incorrect", "error");
       }
