@@ -1,8 +1,8 @@
-import type { Actions } from './$types';
-import { getUserIdFromToken } from '$lib/auth';
-import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
-import { fetchMerchantAppContext } from '$lib/merchantContext.server';
-import { config, getGraphQLHeaders } from '$lib/config';
+import type { Actions } from "./$types";
+import { getUserIdFromToken } from "$lib/auth";
+import { fetchMerchantBranchId } from "$lib/merchantBranch.server";
+import { fetchMerchantAppContext } from "$lib/merchantContext.server";
+import { config, getGraphQLHeaders } from "$lib/config";
 
 // GraphQL mutation to login
 const LOGIN_MUTATION = `
@@ -21,7 +21,7 @@ async function loginUser(phone: string, password: string) {
   };
 
   const response = await fetch(config.graphql.endpoint, {
-    method: 'POST',
+    method: "POST",
     headers: getGraphQLHeaders(),
     body: JSON.stringify({
       query: LOGIN_MUTATION,
@@ -31,7 +31,9 @@ async function loginUser(phone: string, password: string) {
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+    throw new Error(
+      `HTTP error! status: ${response.status}, body: ${errorText}`,
+    );
   }
 
   const result = await response.json();
@@ -46,36 +48,40 @@ async function loginUser(phone: string, password: string) {
 export const actions: Actions = {
   login: async ({ request, cookies }) => {
     const formData = await request.formData();
-    
+
     // Extract form data
-    const phone = formData.get('phone') as string;
-    const password = formData.get('password') as string;
+    const phone = formData.get("phone") as string;
+    const password = formData.get("password") as string;
 
     try {
       const loginResult = await loginUser(phone, password);
 
-      const userId = loginResult.token ? getUserIdFromToken(loginResult.token) : null;
-      const merchantBranchId = userId ? await fetchMerchantBranchId(userId) : null;
+      const userId = loginResult.token
+        ? getUserIdFromToken(loginResult.token)
+        : null;
+      const merchantBranchId = userId
+        ? await fetchMerchantBranchId(userId)
+        : null;
       const defaultAppRoute = userId
         ? (await fetchMerchantAppContext(userId)).defaultAppRoute
-        : '/products';
+        : "/dashboard";
 
       if (loginResult.token) {
-        cookies.set('authToken', loginResult.token, {
-          path: '/',
-          sameSite: 'strict',
+        cookies.set("authToken", loginResult.token, {
+          path: "/",
+          sameSite: "strict",
           httpOnly: false,
         });
       }
 
       if (merchantBranchId) {
-        cookies.set('merchantBranchId', merchantBranchId, {
-          path: '/',
-          sameSite: 'strict',
+        cookies.set("merchantBranchId", merchantBranchId, {
+          path: "/",
+          sameSite: "strict",
           httpOnly: false,
         });
       } else {
-        cookies.delete('merchantBranchId', { path: '/' });
+        cookies.delete("merchantBranchId", { path: "/" });
       }
 
       return {
@@ -84,8 +90,8 @@ export const actions: Actions = {
         defaultAppRoute,
       };
     } catch {
-      cookies.delete('authToken', { path: '/' });
-      cookies.delete('merchantBranchId', { path: '/' });
+      cookies.delete("authToken", { path: "/" });
+      cookies.delete("merchantBranchId", { path: "/" });
       return {
         token: null,
         merchantBranchId: null,
