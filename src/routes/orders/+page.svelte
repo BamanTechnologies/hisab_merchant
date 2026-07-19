@@ -23,14 +23,8 @@
   import type { FifoBatchRow, FifoSlice, ProductRecord } from "$lib/inventory/types";
   import { buildStockLabel } from "$lib/stockLabel";
   import { Trash2 } from "@lucide/svelte";
+  import SearchSelect from "$lib/components/ui/search-select/search-select.svelte";
   import type { PageData } from "./$types";
-
-  type ProductPanelPos = {
-    top: number;
-    left: number;
-    width: number;
-    maxHeight: number;
-  };
 
   type CustomerRow = {
     id: string;
@@ -40,6 +34,8 @@
     phone_number?: string | null;
     address?: string | null;
   };
+
+  let selectedCustomer = $state<CustomerRow | null>(null);
 
   type ProductBatchRow = {
     id: string;
@@ -119,9 +115,7 @@
 
   const MAX_LINES = 15;
 
-  type OrdersPageData = PageData & { products: ProductRow[] };
-
-  let { data }: { data: OrdersPageData } = $props();
+  let { data }: { data: PageData } = $props();
 
   let showCancelModal = $state(false);
   let orderToCancel = $state<OrderSummary | null>(null);
@@ -132,7 +126,7 @@
   let totalOrdersAmount = $state((data as { totalOrdersAmount: number }).totalOrdersAmount ?? 0);
   let totalPaymentsAmount = $state((data as { totalPaymentsAmount: number }).totalPaymentsAmount ?? 0);
   let customers = $state(data.customers as CustomerRow[]);
-  let products = $state(data.products as ProductRow[]);
+  let selectedProducts = $state(new Map<string, ProductRow>());
   let errorMessage = $state("");
   let successMessage = $state("");
 
@@ -162,11 +156,6 @@
   let addCustomerSubmitting = $state(false);
   let addCustomerError = $state("");
 
-  let productPickerRowId = $state<string | null>(null);
-  let productSearchQuery = $state("");
-  let productPanelPos = $state<ProductPanelPos | null>(null);
-  let productSearchInputEl = $state<HTMLInputElement | null>(null);
-  let lastProductSearchFocusRowId: string | null = null;
   let dateRangePreset = $state(
     ($page.url.searchParams.get("dateRange") as "all" | "today" | "last7" | "last30" | "custom") ?? "all",
   );
@@ -210,7 +199,6 @@
     totalOrdersAmount = (data as { totalOrdersAmount: number }).totalOrdersAmount ?? 0;
     totalPaymentsAmount = (data as { totalPaymentsAmount: number }).totalPaymentsAmount ?? 0;
     customers = data.customers as CustomerRow[];
-    products = data.products as ProductRow[];
   });
 
   function allParamsFromState(): URLSearchParams {
@@ -293,7 +281,7 @@
   }
 
   function getProduct(productId: string): ProductRow | undefined {
-    return products.find((p) => p.id === productId);
+    return selectedProducts.get(productId);
   }
 
   function positiveBatchesForProduct(product: ProductRow): ProductBatchRow[] {
@@ -324,141 +312,6 @@
     );
   }
 
-  function productOptionLabel(p: ProductRow): string {
-    const label = buildProductLabel(p as ProductRecord);
-    const positive = positiveBatchesForProduct(p);
-    const avail = positive.reduce((sum, b) => sum + parseQty(b.quantity), 0);
-    const unit = p.default_unit?.trim();
-    const qtyHint = unit ? `${avail} ${unit} avail` : `${avail} avail`;
-    const batchHint = positive.length === 1 ? "1 batch" : `${positive.length} batches`;
-    return `${label} (${qtyHint}, from ${batchHint})`;
-  }
-
-  function productSearchHaystack(p: ProductRow): string {
-    const attrText = Object.entries(p.attributes ?? {})
-      .map(([k, v]) => `${k} ${v == null ? "" : String(v)}`)
-      .join(" ");
-    const parts = [
-      buildProductLabel(p as ProductRecord),
-      p.name,
-      p.default_unit,
-      p.product_type?.name,
-      attrText,
-      String(productAvailableQty(p)),
-    ];
-    return parts
-      .filter((part) => part != null && String(part).trim() !== "")
-      .join(" ")
-      .toLowerCase();
-  }
-
-  function productMatchesSearch(p: ProductRow, q: string): boolean {
-    const needle = q.trim().toLowerCase();
-    if (!needle) return true;
-    return productSearchHaystack(p).includes(needle);
-  }
-
-  function productsFilteredForPickerRow(rowId: string): ProductRow[] {
-    const base = productsForRow(rowId);
-    const q = productSearchQuery.trim();
-    if (!q) return base;
-    return base.filter((p) => productMatchesSearch(p, q));
-  }
-
-  function updateProductPanelPosition() {
-    if (!productPickerRowId) return;
-    const sel = `[data-product-trigger="${CSS.escape(productPickerRowId)}"]`;
-    const btn = document.querySelector(sel);
-    if (!(btn instanceof HTMLElement)) {
-      requestAnimationFrame(() => updateProductPanelPosition());
-      return;
-    }
-    const rect = btn.getBoundingClientRect();
-    const gap = 4;
-    const padding = 8;
-    let width = Math.max(rect.width * 2, 360);
-    width = Math.min(width, window.innerWidth - padding * 2);
-    let left = rect.left;
-    if (left + width > window.innerWidth - padding) {
-      left = Math.max(padding, window.innerWidth - padding - width);
-    }
-    const spaceBelow = window.innerHeight - rect.bottom - gap - padding;
-    const maxHeight = Math.min(280, Math.max(80, spaceBelow));
-    productPanelPos = {
-      top: rect.bottom + gap,
-      left,
-      width,
-      maxHeight,
-    };
-  }
-
-  function toggleProductPicker(rowId: string) {
-    if (productPickerRowId === rowId) {
-      productPickerRowId = null;
-    } else {
-      productPickerRowId = rowId;
-      productSearchQuery = "";
-    }
-  }
-
-  $effect(() => {
-    if (!productPickerRowId) {
-      productPanelPos = null;
-      return;
-    }
-    void tick().then(() => updateProductPanelPosition());
-    const onMove = () => updateProductPanelPosition();
-    window.addEventListener("resize", onMove);
-    window.addEventListener("scroll", onMove, true);
-    const scrollEl = document.querySelector("[data-create-order-scroll]");
-    scrollEl?.addEventListener("scroll", onMove);
-    return () => {
-      window.removeEventListener("resize", onMove);
-      window.removeEventListener("scroll", onMove, true);
-      scrollEl?.removeEventListener("scroll", onMove);
-    };
-  });
-
-  $effect(() => {
-    if (!productPickerRowId) {
-      lastProductSearchFocusRowId = null;
-      return;
-    }
-    if (!productPanelPos) return;
-    if (lastProductSearchFocusRowId === productPickerRowId) return;
-    lastProductSearchFocusRowId = productPickerRowId;
-    void tick().then(() => productSearchInputEl?.focus());
-  });
-
-  function selectProductForRow(rowId: string, productId: string) {
-    orderLines = orderLines.map((r) => {
-      if (r.rowId !== rowId) return r;
-      const qty = Number(r.quantity);
-      const price =
-        productId === ""
-          ? 0
-          : Number.isFinite(qty) && qty >= 1
-            ? fifoWeightedUnitPrice(productId, qty)
-            : defaultUnitPriceForProduct(productId);
-      return { ...r, productId, unitPrice: price };
-    });
-    productPickerRowId = null;
-    productSearchQuery = "";
-  }
-
-  $effect(() => {
-    if (!productPickerRowId) return;
-    const onDoc = (e: PointerEvent) => {
-      const t = e.target;
-      if (!(t instanceof Element)) return;
-      if (t.closest("[data-product-combo-wrap]")) return;
-      if (t.closest("[data-product-combo-panel]")) return;
-      productPickerRowId = null;
-    };
-    document.addEventListener("pointerdown", onDoc, true);
-    return () => document.removeEventListener("pointerdown", onDoc, true);
-  });
-
   function defaultUnitPriceForProduct(productId: string): number {
     if (!productId) return 0;
     const product = getProduct(productId);
@@ -484,25 +337,6 @@
     if (!row.productId) return "—";
     const u = getProduct(row.productId)?.default_unit?.trim();
     return u ?? "(no unit)";
-  }
-
-  function takenProductIds(exceptRowId: string): Set<string> {
-    const ids = new Set<string>();
-    for (const row of orderLines) {
-      if (row.rowId !== exceptRowId && row.productId) ids.add(row.productId);
-    }
-    return ids;
-  }
-
-  function productsForRow(exceptRowId: string): ProductRow[] {
-    const row = orderLines.find((r) => r.rowId === exceptRowId);
-    const currentId = row?.productId ?? "";
-    const taken = takenProductIds(exceptRowId);
-    return products.filter(
-      (p) =>
-        productAvailableQty(p) > 0 &&
-        (!taken.has(p.id) || p.id === currentId),
-    );
   }
 
   function lineFifoPreview(
@@ -558,19 +392,11 @@
     return false;
   });
 
-  const canAddLine = $derived.by(() => {
-    if (orderLines.length >= MAX_LINES) return false;
-    const taken = takenProductIds("");
-    const free = products.filter(
-      (p) => productAvailableQty(p) > 0 && !taken.has(p.id),
-    );
-    return free.length > 0;
-  });
+  const canAddLine = $derived(orderLines.length < MAX_LINES);
 
   function resetCreateModal() {
     selectedCustomerId = "";
-    productPickerRowId = null;
-    productSearchQuery = "";
+    selectedProducts = new Map();
     orderLines = [
       {
         rowId: crypto.randomUUID(),
@@ -661,6 +487,7 @@
       if (payload.customer) {
         customers = [...customers, payload.customer];
         selectedCustomerId = payload.customer.id;
+        selectedCustomer = payload.customer;
       }
       showToast(payload.message ?? "Customer added", "success");
       closeAddCustomerModal(true);
@@ -712,7 +539,6 @@
       });
     }
 
-    productPickerRowId = null;
     createSubmitting = true;
     try {
       const fd = new FormData();
@@ -1049,9 +875,9 @@
         e.preventDefault();
         return;
       }
-      if (e.key === "Escape" && productPickerRowId) {
+      if (e.key === "Escape") {
         e.preventDefault();
-        productPickerRowId = null;
+        closeCreateModal();
       }
     }}
   >
@@ -1083,17 +909,20 @@
 
       <label class="block-label">
         <span>Select Customer</span>
-        <select
-          class="native-select full"
+        <SearchSelect
           bind:value={selectedCustomerId}
+          bind:selected={selectedCustomer}
+          companyId={data.companyId ?? ''}
+          endpoint="/api/customers/search"
+          placeholder="Choose a customer"
           required
           disabled={!data.companyId || createSubmitting}
-        >
-          <option value="">Choose a customer</option>
-          {#each customers as c}
-            <option value={c.id}>{customerOptionLabel(c)}</option>
-          {/each}
-        </select>
+          itemLabel={(c: any) => {
+            const name = [c.first_name, c.last_name].filter(Boolean).join(" ").trim();
+            const phone = (c.phone ?? c.phone_number)?.trim() ?? "";
+            return phone ? `${name} - ${phone}` : name || c.id;
+          }}
+        />
       </label>
 
       <button
@@ -1115,30 +944,35 @@
               class:line-invalid={row.productId !== "" &&
                 (!!lineQuantityError(row) || !!lineUnitPriceError(row))}
             >
-              <div class="grow stock-combo-wrap" data-product-combo-wrap>
+              <div class="grow">
                 <span class="sr-only">Product</span>
-                <div class="stock-combobox">
-                  <button
-                    type="button"
-                    class="stock-combobox-trigger native-select full"
-                    data-product-trigger={row.rowId}
-                    disabled={createSubmitting}
-                    aria-expanded={productPickerRowId === row.rowId}
-                    aria-haspopup="listbox"
-                    onclick={() =>
-                      !createSubmitting && toggleProductPicker(row.rowId)}
-                  >
-                    <span class="stock-combobox-trigger-text">
-                      {#if row.productId}
-                        {@const product = getProduct(row.productId)}
-                        {product ? productOptionLabel(product) : "Select product"}
-                      {:else}
-                        Select product
-                      {/if}
-                    </span>
-                    <span class="stock-combobox-caret" aria-hidden="true">▾</span>
-                  </button>
-                </div>
+                <SearchSelect
+                  value={row.productId}
+                  onselect={(productId: string, product: any) => {
+                    selectedProducts = new Map(selectedProducts).set(productId, product as ProductRow);
+                    const qty = Number(row.quantity);
+                    const price =
+                      Number.isFinite(qty) && qty >= 1
+                        ? fifoWeightedUnitPrice(productId, qty)
+                        : defaultUnitPriceForProduct(productId);
+                    orderLines = orderLines.map((r) =>
+                      r.rowId === row.rowId ? { ...r, productId, unitPrice: price } : r,
+                    );
+                  }}
+                  companyId={data.companyId ?? ''}
+                  branchId={data.merchantBranchId ?? ''}
+                  placeholder="Search products..."
+                  disabled={createSubmitting}
+                  itemLabel={(p: any) => {
+                    const label = buildProductLabel(p as ProductRecord);
+                    const positive = (p.stocks ?? []).filter((s: any) => Number(s.quantity) > 0);
+                    const avail = positive.reduce((sum: number, s: any) => sum + Number(s.quantity), 0);
+                    const unit = (p as ProductRow).default_unit?.trim();
+                    const qtyHint = unit ? `${avail} ${unit} avail` : `${avail} avail`;
+                    const batchHint = positive.length === 1 ? "1 batch" : `${positive.length} batches`;
+                    return `${label} (${qtyHint}, from ${batchHint})`;
+                  }}
+                />
               </div>
               <label class="qty">
                 <span class="sr-only">Quantity</span>
@@ -1253,49 +1087,6 @@
         </button>
       </div>
     </div>
-    {#if productPickerRowId && productPanelPos}
-      {@const pickerRowId = productPickerRowId}
-      {@const pickerRow = orderLines.find((r) => r.rowId === pickerRowId)}
-      <div
-        class="stock-combobox-panel stock-combobox-panel--fixed"
-        data-product-combo-panel
-        style="top: {productPanelPos.top}px; left: {productPanelPos.left}px; width: {productPanelPos.width}px; max-height: {productPanelPos.maxHeight}px;"
-        role="listbox"
-      >
-        <input
-          bind:this={productSearchInputEl}
-          type="search"
-          class="stock-combobox-search"
-          placeholder="Search product name, type, attributes…"
-          value={productSearchQuery}
-          disabled={createSubmitting}
-          oninput={(e) => {
-            productSearchQuery = e.currentTarget.value;
-          }}
-          onkeydown={(e) => {
-            e.stopPropagation();
-          }}
-        />
-        <ul class="stock-combobox-list stock-combobox-list--in-fixed-panel">
-          {#each productsFilteredForPickerRow(pickerRowId) as p (p.id)}
-            <li role="none">
-              <button
-                type="button"
-                class="stock-combobox-option"
-                role="option"
-                aria-selected={pickerRow?.productId === p.id}
-                disabled={createSubmitting}
-                onclick={() => selectProductForRow(pickerRowId, p.id)}
-              >
-                {productOptionLabel(p)}
-              </button>
-            </li>
-          {:else}
-            <li class="stock-combobox-empty">No matching products</li>
-          {/each}
-        </ul>
-      </div>
-    {/if}
     <footer>
       <button
         type="button"
@@ -1733,106 +1524,6 @@
     width: 100%;
   }
 
-  .stock-combo-wrap {
-    position: relative;
-    min-width: 0;
-  }
-  .stock-combobox {
-    position: relative;
-    width: 100%;
-  }
-  .stock-combobox-trigger {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    width: 100%;
-    height: 2rem;
-    padding-top: 0;
-    padding-bottom: 0;
-    text-align: left;
-    cursor: pointer;
-    font: inherit;
-  }
-  .stock-combobox-trigger-text {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .stock-combobox-caret {
-    flex-shrink: 0;
-    opacity: 0.65;
-    font-size: 0.7rem;
-  }
-  .stock-combobox-panel {
-    display: flex;
-    flex-direction: column;
-    background: #ffffff;
-    border: 1px solid #e6eaed;
-    border-radius: 0.6rem;
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
-    overflow: hidden;
-  }
-  .stock-combobox-panel--fixed {
-    position: fixed;
-    z-index: 10050;
-    box-sizing: border-box;
-  }
-  .stock-combobox-search {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 0.65rem 0.75rem;
-    font-size: 0.95rem;
-    border: none;
-    border-bottom: 1px solid #e6eaed;
-    background: #f9fafb;
-    color: #111827;
-  }
-  .stock-combobox-search::placeholder {
-    color: #94a3b8;
-  }
-  .stock-combobox-search:focus {
-    outline: none;
-    background: #f1f5f9;
-  }
-  .stock-combobox-list {
-    list-style: none;
-    margin: 0;
-    padding: 0.25rem 0;
-    max-height: min(240px, 45vh);
-    overflow-y: auto;
-  }
-  .stock-combobox-list--in-fixed-panel {
-    flex: 1;
-    min-height: 0;
-    max-height: none;
-  }
-  .stock-combobox-option {
-    width: 100%;
-    display: block;
-    text-align: left;
-    padding: 0.45rem 0.65rem;
-    margin: 0;
-    border: none;
-    background: transparent;
-    color: #1f2937;
-    font-size: 0.82rem;
-    line-height: 1.35;
-    cursor: pointer;
-  }
-  .stock-combobox-option:hover,
-  .stock-combobox-option:focus-visible {
-    background: #f1f5f9;
-    outline: none;
-  }
-  .stock-combobox-empty {
-    padding: 0.65rem 0.75rem;
-    font-size: 0.85rem;
-    color: #94a3b8;
-    font-style: italic;
-  }
   .linkish {
     margin: 0.25rem 0 1rem;
     background: none;
@@ -2177,35 +1868,8 @@
   :global(html.dark) .line-total-factor {
     color: #94a3b8;
   }
-  :global(html.dark) .stock-combobox-trigger {
-    background: #111827;
-    color: #e5e7eb;
-  }
-  :global(html.dark) .stock-combobox-panel {
-    background: #0f172a;
-    border-color: rgba(255, 255, 255, 0.12);
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
-  }
-  :global(html.dark) .stock-combobox-search {
-    background: #0b1220;
-    border-bottom-color: rgba(255, 255, 255, 0.1);
-    color: #e5e7eb;
-  }
-  :global(html.dark) .stock-combobox-search:focus {
-    background: #111827;
-  }
-  :global(html.dark) .stock-combobox-option:hover,
-  :global(html.dark) .stock-combobox-option:focus-visible {
-    background: rgba(255, 255, 255, 0.06);
-  }
   :global(html.dark) .section-title {
     color: #e2e8f0;
-  }
-  :global(html.dark) .stock-combobox-search {
-    color: #e5e7eb;
-  }
-  :global(html.dark) .stock-combobox-option {
-    color: #e5e7eb;
   }
   :global(html.dark) .line-row .qty input,
   :global(html.dark) .line-row .line-price input {

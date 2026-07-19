@@ -14,6 +14,7 @@
   import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
   import { allocateFifo } from "$lib/inventory/fifo";
   import { buildProductLabel } from "$lib/inventory/productLabel";
+  import SearchSelect from "$lib/components/ui/search-select/search-select.svelte";
   import type { ProductRecord } from "$lib/inventory/types";
   import type { PageData } from "./$types";
   import { _ } from "svelte-i18n";
@@ -80,7 +81,6 @@
   const merchants = (data.merchants ?? []) as Merchant[];
   let stockTransfers = $state((data as any).stockTransfers ?? []) as StockTransfer[];
   let stockTransfersTotal = $state((data as any).stockTransfersTotal ?? 0);
-  const productsForTransfer: ProductForTransfer[] = (data as any).productsForTransfer ?? [];
   const merchantBranchId = (data as any).merchantBranchId as string | null;
 
   let expandedTransferId = $state<string | null>(null);
@@ -95,6 +95,7 @@
   let fifoQuantity = $state(0);
   let fifoToBranchId = $state("");
   let fifoDestinationMerchantId = $state("");
+  let selectedTransferProduct = $state<ProductForTransfer | null>(null);
 
   const fifoMerchantsForDest = $derived(
     fifoToBranchId
@@ -124,7 +125,7 @@
 
   function getSelectedProduct(): ProductForTransfer | null {
     if (!fifoProductId) return null;
-    return productsForTransfer.find((p) => p.id === fifoProductId) ?? null;
+    return selectedTransferProduct;
   }
 
   function productAvailableQty(product: ProductForTransfer): number {
@@ -608,23 +609,25 @@
         <div class="fifo-form-grid">
           <label>
             <span>Product</span>
-            <select
-              name="product_id"
-              bind:value={fifoProductId}
-              required
-              class="native-select"
-            >
-              <option value="" disabled>Select product</option>
-              {#each productsForTransfer as p}
-                <option value={p.id}>
-                  {buildProductLabel(p as any)}
-                  {(() => {
-                    const q = productAvailableQty(p);
-                    return q > 0 ? `(${q} ${p.default_unit?.trim() ?? 'units'})` : '(out of stock)';
-                  })()}
-                </option>
-              {/each}
-            </select>
+            <SearchSelect
+              value={fifoProductId}
+              onselect={(productId: string, product: any) => {
+                fifoProductId = productId;
+                selectedTransferProduct = product as ProductForTransfer;
+              }}
+              companyId={(data as any).companyId ?? ''}
+              branchId={merchantBranchId ?? ''}
+              placeholder="Search products..."
+              itemLabel={(p: any) => {
+                const label = buildProductLabel(p);
+                const stocks = (p as any).stocks ?? [];
+                const positive = stocks.filter((s: any) => Number(s.quantity) > 0);
+                const q = positive.reduce((sum: number, s: any) => sum + Number(s.quantity), 0);
+                const unit = (p as any).default_unit?.trim();
+                const qtyHint = unit ? `${q} ${unit} avail` : `${q} avail`;
+                return q > 0 ? `${label} (${qtyHint})` : `${label} (out of stock)`;
+              }}
+            />
           </label>
           <label>
             <span>Quantity (max {fifoAvailableQty} {fifoProductUnit})</span>

@@ -364,6 +364,7 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
     stock,
     investors,
     merchantId,
+    companyId,
     originBranchName,
     transferTargetBranches,
     merchantsInTransferBranches,

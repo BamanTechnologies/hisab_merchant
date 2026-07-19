@@ -15,7 +15,6 @@ import {
   applyOrderStockEffects,
   decrementStockSlices,
   fetchCancelRestoreSlices,
-  FETCH_PRODUCTS_FOR_ORDERS_QUERY,
   incrementStockSlices,
   insertOrderItemBatches,
   planOrderLines,
@@ -500,25 +499,6 @@ async function verifyCustomerInCompany(
     return c?.id ? normalizeCustomer(c) : null;
   } catch {
     return null;
-  }
-}
-
-async function fetchProductsForOrders(
-  companyId: string | null,
-  branchId: string | null,
-) {
-  if (!companyId || !branchId) return [];
-  try {
-    const data = await gql<{ products: unknown[] }>(
-      FETCH_PRODUCTS_FOR_ORDERS_QUERY,
-      {
-        companyId,
-        branchId,
-      },
-    );
-    return data.products ?? [];
-  } catch {
-    return [];
   }
 }
 
@@ -1037,7 +1017,7 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
   };
   const paymentOrder = [{ created_at: "desc" }];
 
-  const [ordersBlock, products, branches] = await Promise.all([
+  const [ordersBlock, branches] = await Promise.all([
     merchantId
       ? fetchOrders(
           merchantId,
@@ -1058,7 +1038,6 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
           totalOrdersAmount: 0,
           totalPaymentsAmount: 0,
         }),
-    fetchProductsForOrders(companyId, merchantBranchId),
     fetchBranchesForCompany(companyId),
   ]);
 
@@ -1070,7 +1049,6 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
     totalOrdersAmount: ordersBlock.totalOrdersAmount,
     totalPaymentsAmount: ordersBlock.totalPaymentsAmount,
     customers: customerCtx.customers,
-    products,
     branches,
     merchantId,
     merchantBranchId,
