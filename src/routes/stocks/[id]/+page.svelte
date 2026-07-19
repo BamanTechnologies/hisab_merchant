@@ -12,6 +12,7 @@
   import { buildProductLabel } from "$lib/inventory/productLabel";
   import type { FifoSlice, ProductRecord } from "$lib/inventory/types";
   import type { PageData } from "./$types";
+  import SearchSelect from "$lib/components/ui/search-select/search-select.svelte";
 
   type Investor = {
     id: string;
@@ -131,6 +132,7 @@
   let showFifoTransferModal = $state(false);
   let fifoFormPending = $state(false);
   let fifoProductId = $state("");
+  let selectedFifoProduct = $state<ProductForTransfer | null>(null);
   let fifoQuantity = $state(0);
   let fifoToBranchId = $state("");
   let fifoDestinationMerchantId = $state("");
@@ -172,8 +174,7 @@
   }
 
   function getSelectedProduct(): ProductForTransfer | null {
-    if (!fifoProductId) return null;
-    return productsForTransfer.find((p) => p.id === fifoProductId) ?? null;
+    return selectedFifoProduct;
   }
 
   function productAvailableQty(product: ProductForTransfer): number {
@@ -219,6 +220,7 @@
     errorMessage = "";
     successMessage = "";
     fifoProductId = currentProductId ?? "";
+    selectedFifoProduct = currentProduct;
     fifoQuantity = 0;
     fifoToBranchId = "";
     fifoDestinationMerchantId = "";
@@ -735,23 +737,28 @@
           <div class="flex flex-col gap-2">
             <label>
               <span>Product</span>
-              <select
-                name="product_id"
-                bind:value={fifoProductId}
-                required
-                class="native-select"
-              >
-                <option value="" disabled>Select product</option>
-                {#each productsForTransfer as p}
-                  <option value={p.id}>
-                    {buildProductLabel(p as any)}
-                    {(() => {
-                      const q = productAvailableQty(p);
-                      return q > 0 ? `(${q} ${p.default_unit?.trim() ?? 'units'})` : '(out of stock)';
-                    })()}
-                  </option>
-                {/each}
-              </select>
+              <div class="contents" data-search-container>
+                <SearchSelect
+                  bind:value={fifoProductId}
+                  bind:selected={selectedFifoProduct}
+                  name="product_id"
+                  companyId={String((data as any).companyId ?? '')}
+                  branchId={stock?.branch ?? ''}
+                  endpoint="/api/products/search"
+                  placeholder="Select product"
+                  required
+                  onselect={(_productId: string, product: any) => {
+                    selectedFifoProduct = product as ProductForTransfer;
+                  }}
+                  itemLabel={(p: any) => {
+                    const label = buildProductLabel(p);
+                    const batches = (p.stocks ?? []).filter((s: any) => Number(s.quantity) > 0);
+                    const q = batches.reduce((sum: number, b: any) => sum + Number(b.quantity), 0);
+                    const unit = p.default_unit?.trim() ?? 'units';
+                    return q > 0 ? `${label} (${q} ${unit})` : `${label} (out of stock)`;
+                  }}
+                />
+              </div>
             </label>
             <label>
               <span>Quantity to transfer (max {fifoAvailableQty} {fifoProductUnit})</span>

@@ -106,25 +106,6 @@ ${STOCK_FIELDS}
   }
 `;
 
-const FETCH_PRODUCTS_FOR_RECEIVE_QUERY = `
-  query ProductsForReceive($companyId: uuid!) {
-    products(
-      where: { _and: [{ company_id: { _eq: $companyId } }, { is_active: { _eq: true } }] }
-      order_by: [{ name: asc }]
-    ) {
-      id
-      name
-      default_unit
-      factor
-      attributes
-      product_type {
-        id
-        name
-      }
-    }
-  }
-`;
-
 const INSERT_PRODUCT_MUTATION = `
   mutation InsertProductForReceive($object: products_insert_input!) {
     insert_products_one(object: $object) {
@@ -231,19 +212,6 @@ async function gql<T>(
   if (result.errors)
     throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
   return result.data as T;
-}
-
-async function fetchProductsForReceive(companyId: string | null) {
-  if (!companyId) return [];
-  try {
-    const data = await gql<{ products: Record<string, unknown>[] }>(
-      FETCH_PRODUCTS_FOR_RECEIVE_QUERY,
-      { companyId },
-    );
-    return data.products ?? [];
-  } catch {
-    return [];
-  }
 }
 
 const FETCH_PRODUCT_TYPES_QUERY = `
@@ -388,7 +356,6 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
 
   const [
     stocksResult,
-    products,
     investors,
     productTypes,
     branches,
@@ -405,7 +372,6 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
       page,
       pageSize,
     ),
-    fetchProductsForReceive(companyId),
     fetchInvestorsForCompany(companyId),
     fetchProductTypes(merchantId),
     fetchBranchesForCompany(companyId),
@@ -435,7 +401,6 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
     stocks,
     totalCount: stocksResult.totalCount,
     stocksLoadError: stocksResult.error,
-    products,
     investors,
     productTypes,
     branches,

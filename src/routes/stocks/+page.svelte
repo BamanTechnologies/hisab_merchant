@@ -11,6 +11,7 @@
   import TablePagination from "$lib/components/TablePagination.svelte";
   import TableSearchInput from "$lib/components/TableSearchInput.svelte";
   import TableSortHeader from "$lib/components/TableSortHeader.svelte";
+  import SearchSelect from "$lib/components/ui/search-select/search-select.svelte";
   import {
     activeTypeFields,
     batchAttributeEntries,
@@ -61,13 +62,6 @@
   type Product = ProductRecord;
   type StockBatch = StockBatchRecord & { id: string };
 
-  type ProductPanelPos = {
-    top: number;
-    left: number;
-    width: number;
-    maxHeight: number;
-  };
-
   type ReceiveLine = {
     key: string;
     mode: "existing" | "new";
@@ -90,7 +84,6 @@
   let stocks = $state((data.stocks ?? []) as StockBatch[]);
   let totalCount = $state((data as { totalCount: number }).totalCount ?? 0);
   const stocksLoadError = $derived(data.stocksLoadError ?? null);
-  const products = (data.products ?? []) as Product[];
   const investors = (data.investors ?? []) as Investor[];
   const merchantBranchId = data.merchantBranchId as string | null;
   const companyName = (data.companyName as string | null) ?? "Company";
@@ -118,18 +111,13 @@
   let receiveBatchNumber = $state("");
   let receiveExpiryDate = $state("");
   let receiveLines = $state<ReceiveLine[]>([]);
+  let selectedStockProducts = $state(new Map<string, Product>());
 
   let editingBatch = $state<StockBatch | null>(null);
   let editQuantity = $state("");
   let editBatchNumber = $state("");
 
   let batchToDelete = $state<StockBatch | null>(null);
-
-  let productPickerLineKey = $state<string | null>(null);
-  let productSearchQuery = $state("");
-  let productPanelPos = $state<ProductPanelPos | null>(null);
-  let productSearchInputEl = $state<HTMLInputElement | null>(null);
-  let lastProductSearchFocusLineKey: string | null = null;
 
   const subscriptionLocked = $derived($subscriptionBlocksMutations);
 
@@ -278,7 +266,7 @@
       return name ? normalizeProductTypeName(name) : null;
     }
     if (!line.product_id) return null;
-    const product = getProduct(line.product_id);
+    const product = selectedStockProducts.get(line.product_id);
     const typeName = product?.product_type?.name;
     return typeName ? normalizeProductTypeName(String(typeName)) : null;
   }
@@ -341,139 +329,12 @@
     return resolveUniqueBatchNumber(companyName, existingBatchNumbers, preferred);
   }
 
-  function getProduct(productId: string): Product | undefined {
-    return products.find((p) => p.id === productId);
-  }
-
-  function productOptionLabel(p: Product): string {
-    const label = buildProductLabel(p);
-    const unit = p.default_unit?.trim();
-    return unit ? `${label} · ${unit}` : label;
-  }
-
-  function productSearchHaystack(p: Product): string {
-    const attrText = Object.entries(p.attributes ?? {})
-      .map(([k, v]) => `${k} ${v == null ? "" : String(v)}`)
-      .join(" ");
-    const parts = [
-      buildProductLabel(p),
-      p.name,
-      p.default_unit,
-      p.product_type?.name,
-      attrText,
-    ];
-    return parts
-      .filter((part) => part != null && String(part).trim() !== "")
-      .join(" ")
-      .toLowerCase();
-  }
-
-  function productMatchesSearch(p: Product, q: string): boolean {
-    const needle = q.trim().toLowerCase();
-    if (!needle) return true;
-    return productSearchHaystack(p).includes(needle);
-  }
-
-  function productsFilteredForPickerLine(_lineKey: string): Product[] {
-    const q = productSearchQuery.trim();
-    if (!q) return products;
-    return products.filter((p) => productMatchesSearch(p, q));
-  }
-
-  function updateProductPanelPosition() {
-    if (!productPickerLineKey) return;
-    const sel = `[data-product-trigger="${CSS.escape(productPickerLineKey)}"]`;
-    const btn = document.querySelector(sel);
-    if (!(btn instanceof HTMLElement)) {
-      requestAnimationFrame(() => updateProductPanelPosition());
-      return;
-    }
-    const rect = btn.getBoundingClientRect();
-    const gap = 4;
-    const padding = 8;
-    let width = Math.max(rect.width, 360);
-    width = Math.min(width, window.innerWidth - padding * 2);
-    let left = rect.left;
-    if (left + width > window.innerWidth - padding) {
-      left = Math.max(padding, window.innerWidth - padding - width);
-    }
-    const spaceBelow = window.innerHeight - rect.bottom - gap - padding;
-    const maxHeight = Math.min(280, Math.max(80, spaceBelow));
-    productPanelPos = {
-      top: rect.bottom + gap,
-      left,
-      width,
-      maxHeight,
-    };
-  }
-
-  function toggleProductPicker(lineKey: string) {
-    if (productPickerLineKey === lineKey) {
-      productPickerLineKey = null;
-    } else {
-      productPickerLineKey = lineKey;
-      productSearchQuery = "";
-    }
-  }
-
-  function selectProductForLine(lineKey: string, productId: string) {
-    receiveLines = receiveLines.map((line) =>
-      line.key === lineKey ? { ...line, product_id: productId } : line,
-    );
-    productPickerLineKey = null;
-    productSearchQuery = "";
-  }
-
-  $effect(() => {
-    if (!productPickerLineKey) {
-      productPanelPos = null;
-      return;
-    }
-    void tick().then(() => updateProductPanelPosition());
-    const onMove = () => updateProductPanelPosition();
-    window.addEventListener("resize", onMove);
-    window.addEventListener("scroll", onMove, true);
-    const scrollEl = document.querySelector("[data-receive-stock-scroll]");
-    scrollEl?.addEventListener("scroll", onMove);
-    return () => {
-      window.removeEventListener("resize", onMove);
-      window.removeEventListener("scroll", onMove, true);
-      scrollEl?.removeEventListener("scroll", onMove);
-    };
-  });
-
-  $effect(() => {
-    if (!productPickerLineKey) {
-      lastProductSearchFocusLineKey = null;
-      return;
-    }
-    if (!productPanelPos) return;
-    if (lastProductSearchFocusLineKey === productPickerLineKey) return;
-    lastProductSearchFocusLineKey = productPickerLineKey;
-    void tick().then(() => productSearchInputEl?.focus());
-  });
-
-  $effect(() => {
-    if (!productPickerLineKey) return;
-    const onDoc = (e: PointerEvent) => {
-      const t = e.target;
-      if (!(t instanceof Element)) return;
-      if (t.closest("[data-product-combo-wrap]")) return;
-      if (t.closest("[data-product-combo-panel]")) return;
-      productPickerLineKey = null;
-    };
-    document.addEventListener("pointerdown", onDoc, true);
-    return () => document.removeEventListener("pointerdown", onDoc, true);
-  });
-
   function openReceiveModal() {
     if (subscriptionLocked) return;
     receiveError = "";
     receiveBatchNumber = pickUniqueBatchNumber();
     receiveExpiryDate = "";
     receiveLines = [newReceiveLine()];
-    productPickerLineKey = null;
-    productSearchQuery = "";
     showReceiveModal = true;
   }
 
@@ -486,8 +347,6 @@
     showReceiveModal = false;
     receiveLines = [];
     receiveError = "";
-    productPickerLineKey = null;
-    productSearchQuery = "";
   }
 
   function addReceiveLine() {
@@ -497,18 +356,10 @@
 
   function removeReceiveLine(key: string) {
     if (receiveLines.length <= 1) return;
-    if (productPickerLineKey === key) {
-      productPickerLineKey = null;
-      productSearchQuery = "";
-    }
     receiveLines = receiveLines.filter((l) => l.key !== key);
   }
 
   function setLineMode(key: string, mode: "existing" | "new") {
-    if (productPickerLineKey === key) {
-      productPickerLineKey = null;
-      productSearchQuery = "";
-    }
     receiveLines = receiveLines.map((line) => {
       if (line.key !== key) return line;
       if (mode === "existing") {
@@ -1025,29 +876,27 @@
 
             {#if line.mode === "existing"}
               <div class="line-form-grid">
-                <div class="field span-2 stock-combo-wrap" data-product-combo-wrap>
+                <div class="field span-2">
                   <span>Product</span>
-                  <div class="stock-combobox">
-                    <button
-                      type="button"
-                      class="stock-combobox-trigger native-select full merchant-filter-select"
-                      data-product-trigger={line.key}
-                      disabled={receivePending}
-                      aria-expanded={productPickerLineKey === line.key}
-                      aria-haspopup="listbox"
-                      onclick={() => !receivePending && toggleProductPicker(line.key)}
-                    >
-                      <span class="stock-combobox-trigger-text">
-                        {#if line.product_id}
-                          {@const product = getProduct(line.product_id)}
-                          {product ? productOptionLabel(product) : "Select product"}
-                        {:else}
-                          Select product
-                        {/if}
-                      </span>
-                      <span class="stock-combobox-caret" aria-hidden="true">▾</span>
-                    </button>
-                  </div>
+                  <SearchSelect
+                    value={line.product_id}
+                    onselect={(productId: string, product: any) => {
+                      if (product) {
+                        selectedStockProducts = new Map(selectedStockProducts).set(productId, product as Product);
+                      }
+                      receiveLines = receiveLines.map((l) =>
+                        l.key === line.key ? { ...l, product_id: productId } : l,
+                      );
+                    }}
+                    companyId={data.companyId ?? ''}
+                    placeholder="Search and select a product"
+                    disabled={receivePending}
+                    itemLabel={(p: any) => {
+                      const label = buildProductLabel(p);
+                      const unit = p.default_unit?.trim();
+                      return unit ? `${label} · ${unit}` : label;
+                    }}
+                  />
                 </div>
               </div>
             {:else}
@@ -1179,50 +1028,6 @@
           </div>
         {/each}
       </fieldset>
-
-      {#if productPickerLineKey && productPanelPos}
-        {@const pickerLineKey = productPickerLineKey}
-        {@const pickerLine = receiveLines.find((l) => l.key === pickerLineKey)}
-        <div
-          class="stock-combobox-panel stock-combobox-panel--fixed"
-          data-product-combo-panel
-          style="top: {productPanelPos.top}px; left: {productPanelPos.left}px; width: {productPanelPos.width}px; max-height: {productPanelPos.maxHeight}px;"
-          role="listbox"
-        >
-          <input
-            bind:this={productSearchInputEl}
-            type="search"
-            class="stock-combobox-search"
-            placeholder="Search product name, type, attributes…"
-            value={productSearchQuery}
-            disabled={receivePending}
-            oninput={(e) => {
-              productSearchQuery = e.currentTarget.value;
-            }}
-            onkeydown={(e) => {
-              e.stopPropagation();
-            }}
-          />
-          <ul class="stock-combobox-list stock-combobox-list--in-fixed-panel">
-            {#each productsFilteredForPickerLine(pickerLineKey) as p (p.id)}
-              <li role="none">
-                <button
-                  type="button"
-                  class="stock-combobox-option"
-                  role="option"
-                  aria-selected={pickerLine?.product_id === p.id}
-                  disabled={receivePending}
-                  onclick={() => selectProductForLine(pickerLineKey, p.id)}
-                >
-                  {productOptionLabel(p)}
-                </button>
-              </li>
-            {:else}
-              <li class="stock-combobox-empty">No matching products</li>
-            {/each}
-          </ul>
-        </div>
-      {/if}
 
       <footer>
         <button type="button" class="ghost" onclick={closeReceiveModal} disabled={receivePending}>
@@ -1853,64 +1658,6 @@
   .danger-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
-  }
-
-  .stock-combo-wrap {
-    position: relative;
-    min-width: 0;
-  }
-
-  .stock-combobox {
-    position: relative;
-    width: 100%;
-  }
-
-  .stock-combobox-trigger {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    width: 100%;
-    min-height: 38px;
-    padding-top: 0;
-    padding-bottom: 0;
-    text-align: left;
-    cursor: pointer;
-    font: inherit;
-  }
-
-  .stock-combobox-trigger-text {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .stock-combobox-caret {
-    flex-shrink: 0;
-    opacity: 0.65;
-    font-size: 0.7rem;
-  }
-
-  .stock-combobox-panel--fixed {
-    position: fixed;
-    z-index: 10050;
-    box-sizing: border-box;
-  }
-
-  .stock-combobox-list {
-    list-style: none;
-    margin: 0;
-    padding: 0.25rem 0;
-    max-height: min(240px, 45vh);
-    overflow-y: auto;
-  }
-
-  .stock-combobox-list--in-fixed-panel {
-    flex: 1;
-    min-height: 0;
-    max-height: none;
   }
 
   .attr-row {

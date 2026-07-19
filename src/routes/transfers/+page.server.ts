@@ -6,7 +6,6 @@ import { fetchMerchantBranchId } from "$lib/merchantBranch.server";
 import { buildStockLabel, type StockLabelInput } from "$lib/stockLabel";
 import {
   executeTransfer,
-  FETCH_PRODUCTS_FOR_TRANSFER_QUERY,
   FETCH_STOCK_TRANSFERS_QUERY,
   planTransfer,
 } from "$lib/inventory/stockTransfers.server";
@@ -300,19 +299,6 @@ async function fetchMerchantByPkForTransfer(id: string) {
   }
 }
 
-async function fetchProductsForTransfer(companyId: string | null, branchId: string | null) {
-  if (!companyId || !branchId) return [];
-  try {
-    const data = await gqlRequest<{ products: unknown[] }>(
-      FETCH_PRODUCTS_FOR_TRANSFER_QUERY,
-      { companyId, branchId },
-    );
-    return data.products ?? [];
-  } catch {
-    return [];
-  }
-}
-
 export const load: PageServerLoad = async ({ request, url, parent }) => {
   const { merchantContext } = await parent();
   const merchantId =
@@ -436,10 +422,7 @@ export const load: PageServerLoad = async ({ request, url, parent }) => {
     }
 
     const stFilters = { from, to, destination_merchant: destinationMerchant, created_by: createdBy };
-    const [stockTransfersResult, productsForTransfer] = await Promise.all([
-      fetchStockTransfers(merchantId, companyId, merchantBranchId, stPage, stPageSize, stFilters),
-      fetchProductsForTransfer(companyId, merchantBranchId),
-    ]);
+    const stockTransfersResult = await fetchStockTransfers(merchantId, companyId, merchantBranchId, stPage, stPageSize, stFilters);
 
     return {
       transfers: transfersEnriched,
@@ -448,21 +431,18 @@ export const load: PageServerLoad = async ({ request, url, parent }) => {
       merchants: merchantData.merchant ?? [],
       merchantId,
       merchantBranchId,
+      companyId,
       stockTransfers: stockTransfersResult.transfers,
       stockTransfersTotal: stockTransfersResult.totalCount,
-      productsForTransfer,
     };
   } catch (_error) {
     const stFilters = { from, to, destination_merchant: destinationMerchant, created_by: createdBy };
-    const [stockTransfersFallback, productsFallback] = await Promise.all([
-      merchantId
-        ? fetchStockTransfers(merchantId, companyId, merchantBranchId, stPage, stPageSize, stFilters).catch(() => ({
-            transfers: [],
-            totalCount: 0,
-          }))
-        : Promise.resolve({ transfers: [], totalCount: 0 }),
-      fetchProductsForTransfer(companyId, merchantBranchId),
-    ]);
+    const stockTransfersFallback = merchantId
+      ? await fetchStockTransfers(merchantId, companyId, merchantBranchId, stPage, stPageSize, stFilters).catch(() => ({
+          transfers: [],
+          totalCount: 0,
+        }))
+      : { transfers: [], totalCount: 0 };
     return {
       transfers: [],
       totalCount: 0,
@@ -470,9 +450,9 @@ export const load: PageServerLoad = async ({ request, url, parent }) => {
       merchants: [],
       merchantId,
       merchantBranchId,
+      companyId,
       stockTransfers: stockTransfersFallback.transfers,
       stockTransfersTotal: stockTransfersFallback.totalCount,
-      productsForTransfer: productsFallback,
     };
   }
 };
