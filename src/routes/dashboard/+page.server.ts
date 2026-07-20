@@ -37,28 +37,38 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
   }
 
   const merchantBranchId =
-    merchantContext?.merchantBranchId ??
-    (await fetchBranchId(merchantId));
+    merchantContext?.merchantBranchId ?? (await fetchBranchId(merchantId));
 
   let branchIds: string[] = [];
   const companyId = merchantContext?.companyId ?? null;
+  const branchId = merchantContext?.branch ?? null;
   if (companyId) {
     branchIds = await fetchCompanyBranchIds(companyId);
   } else if (merchantBranchId) {
     branchIds = [merchantBranchId];
   }
 
-  const [stats, outstandingCredit, topCustomers, unpaidOrders, topProducts, recentStocks, salesTrend, lowStockProducts] =
-    await Promise.all([
-      fetchStats(merchantId, from, to),
-      fetchOutstandingCredit(merchantId, from, to),
-      fetchTopCustomers(merchantId, from, to),
-      fetchUnpaidOrders(merchantId, from, to),
-      fetchTopSellingProducts(merchantId, from, to),
-      fetchRecentStocks(branchIds),
-      fetchWeeklySalesTrend(merchantId, from, to),
-      companyId ? fetchLowStockProducts(companyId) : Promise.resolve([]),
-    ]);
+  const [
+    stats,
+    outstandingCredit,
+    topCustomers,
+    unpaidOrders,
+    topProducts,
+    recentStocks,
+    salesTrend,
+    lowStockProducts,
+  ] = await Promise.all([
+    fetchStats(merchantId, from, to),
+    fetchOutstandingCredit(merchantId, from, to),
+    fetchTopCustomers(merchantId, from, to),
+    fetchUnpaidOrders(merchantId, from, to),
+    fetchTopSellingProducts(merchantId, from, to),
+    fetchRecentStocks(branchIds),
+    fetchWeeklySalesTrend(merchantId, from, to),
+    companyId
+      ? fetchLowStockProducts(companyId, branchId?.id ?? null)
+      : Promise.resolve([]),
+  ]);
 
   return {
     totalSales: stats.totalSales,

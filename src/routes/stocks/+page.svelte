@@ -889,6 +889,7 @@
                       );
                     }}
                     companyId={data.companyId ?? ''}
+                    branchId={merchantBranchId ?? ''}
                     placeholder="Search and select a product"
                     disabled={receivePending}
                     itemLabel={(p: any) => {

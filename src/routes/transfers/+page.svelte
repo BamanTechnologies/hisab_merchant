@@ -317,7 +317,7 @@
 
 
 <section class={mc.pageHeader}>
-	<div class=" w-full flex items-center justify-between">
+	<div class=" w-full flex flex-col md:flex-row md:items-center justify-between">
     <div>
       <h1 class={mc.pageTitle}>{$_('pageTransfersTitle')}</h1>
       <p class={mc.pageSubtitle}>{$_('pageTransfersSubtitle')}</p>

@@ -160,7 +160,7 @@
       </h1>
       <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{$_('dashboardSubtitle')}</p>
     </div>
-    <div class="flex items-center gap-3">
+    <div class="flex flex-col md:flex-row items-center gap-3">
       <label class="flex items-center gap-2">
         <span class="text-sm font-medium text-gray-500 dark:text-gray-400">{$_('from')}</span>
         <input
@@ -205,11 +205,11 @@
   </div>
 
   <!-- Row 3: Charts & Tables -->
-  <div class="grid gap-6 lg:grid-cols-[63%_36%]">
+  <div class="grid gap-6 grid-cols-1 lg:grid-cols-[63%_36%]">
     <!-- Left Column (65%) -->
     <div class="flex flex-col gap-6">
       <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-100 dark:bg-[#0f172a] dark:ring-white/10">
-        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div class="mb-4 flex flex-col md:flex-row flex-wrap md:items-center justify-between gap-3">
           <div>
             <h3 class="text-base font-bold text-gray-900 dark:text-gray-100">{$_('dashboardWeeklySalesTitle')}</h3>
             <p class="text-sm text-gray-500 dark:text-gray-400">{$_('dashboardWeeklySalesTotal', { values: { amount: formatMoney(salesTrendTotal) } })}</p>

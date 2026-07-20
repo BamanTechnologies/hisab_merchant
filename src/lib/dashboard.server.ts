@@ -424,10 +424,11 @@ export async function fetchMerchantBranchId(
 }
 
 const LOW_STOCK_QUERY = `
-  query LowStockProducts($companyId: uuid!) {
+  query LowStockProducts($companyId: uuid!, $branchId: uuid!) {
     products(
       where: {
-        company_id: { _eq: $companyId }
+        company_id: { _eq: $companyId },
+        branch_id:{_eq: $branchId}
         treshold_quantity: { _gt: 0 }
       }
       order_by: [{ name: asc }]
@@ -457,6 +458,7 @@ export type LowStockProduct = {
 
 export async function fetchLowStockProducts(
   companyId: string,
+  branchId: string | null,
 ): Promise<LowStockProduct[]> {
   try {
     const data = await gql<{
@@ -467,7 +469,7 @@ export async function fetchLowStockProducts(
         treshold_quantity: unknown;
         stocks_aggregate: { aggregate: { sum: { quantity: unknown } } };
       }>;
-    }>(LOW_STOCK_QUERY, { companyId });
+    }>(LOW_STOCK_QUERY, { companyId, branchId });
 
     return (data.products ?? [])
       .map((p) => {
@@ -535,7 +537,10 @@ export async function fetchTopCustomers(
       }>;
     }>(TOP_CUSTOMERS_QUERY, { filter });
 
-    const customerMap = new Map<string, { name: string; count: number; total: number }>();
+    const customerMap = new Map<
+      string,
+      { name: string; count: number; total: number }
+    >();
 
     for (const order of data.orders ?? []) {
       const customerId = order.customer_id;

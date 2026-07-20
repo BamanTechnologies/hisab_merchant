@@ -7,9 +7,9 @@ import { config, getGraphQLHeaders } from '$lib/config';
 import { buildProductLabel } from '$lib/inventory/productLabel';
 
 const FETCH_PRODUCT_DETAIL_QUERY = `
-  query ProductDetail($id: uuid!, $companyId: uuid!) {
+  query ProductDetail($id: uuid!, $companyId: uuid!, $branchId: uuid!) {
     products(
-      where: { _and: [{ id: { _eq: $id } }, { company_id: { _eq: $companyId } }] }
+      where: { _and: [{ id: { _eq: $id } }, { company_id: { _eq: $companyId } }, { branch_id: { _eq: $branchId } }] }
       limit: 1
     ) {
       id
@@ -36,7 +36,7 @@ const FETCH_PRODUCT_DETAIL_QUERY = `
       }
     }
     stock_movements(
-      where: { product_id: { _eq: $id } }
+      where: { _and: [{ product_id: { _eq: $id } }, { branch_id: { _eq: $branchId } }] }
       order_by: [{ created_at: desc }, { id: desc }]
       limit: 500
     ) {
@@ -56,7 +56,7 @@ const FETCH_PRODUCT_DETAIL_QUERY = `
       }
     }
     stock(
-      where: { product_id: { _eq: $id } }
+      where: { _and: [{ product_id: { _eq: $id } }, { branch: { _eq: $branchId } }] }
       order_by: [{ created_at: asc }, { id: asc }]
     ) {
       id
@@ -99,13 +99,13 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
 		companyId = await fetchBranchCompanyId(merchantBranchId);
 	}
 
-	if (!companyId) throw error(404, 'Product not found');
+	if (!companyId || !merchantBranchId) throw error(404, 'Product not found');
 
 	const data = await gql<{
 		products: Record<string, unknown>[];
 		stock_movements: Record<string, unknown>[];
 		stock: Record<string, unknown>[];
-	}>(FETCH_PRODUCT_DETAIL_QUERY, { id: params.id, companyId });
+	}>(FETCH_PRODUCT_DETAIL_QUERY, { id: params.id, companyId, branchId: merchantBranchId });
 
 	const productRaw = data.products?.[0];
 	if (!productRaw) throw error(404, 'Product not found');

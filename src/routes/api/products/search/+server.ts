@@ -9,18 +9,23 @@ export const GET: RequestHandler = async ({ request, url }) => {
   const companyId = url.searchParams.get('companyId') ?? '';
   const branchId = url.searchParams.get('branchId') ?? '';
 
-  if (!companyId) {
+  const userId = getUserIdFromRequest(request);
+  let resolvedBranchId = branchId;
+  if (!resolvedBranchId && userId) {
+    resolvedBranchId = (await fetchMerchantBranchId(userId)) ?? '';
+  }
+
+  if (!companyId || !resolvedBranchId) {
     return new Response(JSON.stringify([]), {
       headers: { 'content-type': 'application/json' },
     });
   }
 
-  const resolvedCompanyId = companyId;
-
   try {
-    const products = await searchProducts(resolvedCompanyId, q, {
+    const products = await searchProducts(companyId, q, {
       limit: 50,
-      branchId: branchId || undefined,
+      branchId: resolvedBranchId,
+      includeStocks: true,
     });
     return new Response(JSON.stringify(products), {
       headers: { 'content-type': 'application/json' },

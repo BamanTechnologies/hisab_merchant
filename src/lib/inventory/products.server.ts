@@ -33,11 +33,12 @@ export type ProductSearchResult = {
 };
 
 const SEARCH_PRODUCTS_QUERY = `
-  query SearchProducts($companyId: uuid!, $search: String!, $limit: Int!) {
+  query SearchProducts($companyId: uuid!, $branchId: uuid!, $search: String!, $limit: Int!) {
     products(
       where: {
         _and: [
           { company_id: { _eq: $companyId } }
+          { branch_id: { _eq: $branchId } }
           { is_active: { _eq: true } }
           { name: { _ilike: $search } }
         ]
@@ -64,6 +65,7 @@ const SEARCH_PRODUCTS_WITH_STOCKS_QUERY = `
       where: {
         _and: [
           { company_id: { _eq: $companyId } }
+          { branch_id: { _eq: $branchId } }
           { is_active: { _eq: true } }
           { name: { _ilike: $search } }
         ]
@@ -97,23 +99,25 @@ const SEARCH_PRODUCTS_WITH_STOCKS_QUERY = `
 export async function searchProducts(
   companyId: string,
   search: string,
-  options?: { limit?: number; branchId?: string },
+  options: { limit?: number; branchId: string; includeStocks?: boolean },
 ): Promise<ProductSearchResult[]> {
   try {
-    const limit = options?.limit ?? 50;
+    const limit = options.limit ?? 50;
     const searchPattern = `%${search}%`;
+    const branchId = options.branchId;
+    if (!branchId) return [];
 
-    if (options?.branchId) {
+    if (options.includeStocks) {
       const data = await gql<{ products: ProductSearchResult[] }>(
         SEARCH_PRODUCTS_WITH_STOCKS_QUERY,
-        { companyId, branchId: options.branchId, search: searchPattern, limit },
+        { companyId, branchId, search: searchPattern, limit },
       );
       return data.products ?? [];
     }
 
     const data = await gql<{ products: ProductSearchResult[] }>(
       SEARCH_PRODUCTS_QUERY,
-      { companyId, search: searchPattern, limit },
+      { companyId, branchId, search: searchPattern, limit },
     );
     return data.products ?? [];
   } catch (error) {
