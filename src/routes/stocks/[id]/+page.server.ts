@@ -1,18 +1,18 @@
-import type { PageServerLoad, Actions } from './$types';
-import { error } from '@sveltejs/kit';
-import { getUserIdFromRequest } from '$lib/auth';
-import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
+import type { PageServerLoad, Actions } from "./$types";
+import { error } from "@sveltejs/kit";
+import { getUserIdFromRequest } from "$lib/auth";
+import { fetchMerchantBranchId } from "$lib/merchantBranch.server";
 import {
   fetchBranchCompanyId,
   fetchInvestorsForCompany,
-} from '$lib/companyInvestors.server';
-import { config, getGraphQLHeaders } from '$lib/config';
-import { subscriptionWriteActionBlockedForRequest } from '$lib/subscription/server';
+} from "$lib/companyInvestors.server";
+import { config, getGraphQLHeaders } from "$lib/config";
+import { subscriptionWriteActionBlockedForRequest } from "$lib/subscription/server";
 import {
   executeTransfer,
   FETCH_PRODUCTS_FOR_TRANSFER_QUERY,
   planTransfer,
-} from '$lib/inventory/stockTransfers.server';
+} from "$lib/inventory/stockTransfers.server";
 
 const FETCH_STOCK_BY_PK_QUERY = `
   query GetStockByPk($id: uuid!) {
@@ -56,7 +56,7 @@ const FETCH_STOCK_BY_PK_QUERY = `
 async function fetchStockByPk(id: string) {
   try {
     const response = await fetch(config.graphql.endpoint, {
-      method: 'POST',
+      method: "POST",
       headers: getGraphQLHeaders(),
       body: JSON.stringify({
         query: FETCH_STOCK_BY_PK_QUERY,
@@ -121,7 +121,7 @@ const FETCH_PRODUCT_TYPES_QUERY = `
 async function fetchBranchByPk(id: string) {
   try {
     const response = await fetch(config.graphql.endpoint, {
-      method: 'POST',
+      method: "POST",
       headers: getGraphQLHeaders(),
       body: JSON.stringify({
         query: FETCH_BRANCH_BY_PK_QUERY,
@@ -144,7 +144,7 @@ async function fetchProductTypes(merchantId: string | null) {
   if (!merchantId) return [];
   try {
     const response = await fetch(config.graphql.endpoint, {
-      method: 'POST',
+      method: "POST",
       headers: getGraphQLHeaders(),
       body: JSON.stringify({
         query: FETCH_PRODUCT_TYPES_QUERY,
@@ -160,10 +160,13 @@ async function fetchProductTypes(merchantId: string | null) {
   }
 }
 
-async function fetchTransferTargetBranches(companyId: string, excludeBranchId: string) {
+async function fetchTransferTargetBranches(
+  companyId: string,
+  excludeBranchId: string,
+) {
   try {
     const response = await fetch(config.graphql.endpoint, {
-      method: 'POST',
+      method: "POST",
       headers: getGraphQLHeaders(),
       body: JSON.stringify({
         query: FETCH_BRANCHES_SAME_COMPANY_QUERY,
@@ -206,7 +209,7 @@ async function fetchMerchantsInBranches(branchIds: string[]) {
   if (branchIds.length === 0) return [];
   try {
     const response = await fetch(config.graphql.endpoint, {
-      method: 'POST',
+      method: "POST",
       headers: getGraphQLHeaders(),
       body: JSON.stringify({
         query: MERCHANTS_IN_BRANCHES_QUERY,
@@ -228,7 +231,7 @@ async function fetchMerchantsInBranches(branchIds: string[]) {
 async function fetchMerchantByPkForTransfer(id: string) {
   try {
     const response = await fetch(config.graphql.endpoint, {
-      method: 'POST',
+      method: "POST",
       headers: getGraphQLHeaders(),
       body: JSON.stringify({
         query: MERCHANT_BY_PK_QUERY,
@@ -247,24 +250,32 @@ async function fetchMerchantByPkForTransfer(id: string) {
   }
 }
 
-async function gql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+async function gql<T>(
+  query: string,
+  variables?: Record<string, unknown>,
+): Promise<T> {
   const response = await fetch(config.graphql.endpoint, {
-    method: 'POST',
+    method: "POST",
     headers: getGraphQLHeaders(),
     body: JSON.stringify({ query, variables }),
   });
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   const result = await response.json();
-  if (result.errors) throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
+  if (result.errors)
+    throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
   return result.data as T;
 }
 
-async function fetchProductsForTransfer(companyId: string | null, branchId: string | null) {
+async function fetchProductsForTransfer(
+  companyId: string | null,
+  branchId: string | null,
+  merchantBranchId: string | null,
+) {
   if (!companyId || !branchId) return [];
   try {
     const data = await gql<{ products: unknown[] }>(
       FETCH_PRODUCTS_FOR_TRANSFER_QUERY,
-      { companyId, branchId },
+      { companyId, branchId, merchantBranchId },
     );
     return data.products ?? [];
   } catch {
@@ -274,6 +285,7 @@ async function fetchProductsForTransfer(companyId: string | null, branchId: stri
 
 export const load: PageServerLoad = async ({ params, request, parent }) => {
   const { merchantContext } = await parent();
+
   const merchantId =
     merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
   const merchantBranchId =
@@ -293,31 +305,36 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
 
   const typeById = new Map<string, { id: string; name?: string | null }>();
   for (const raw of productTypes as Array<Record<string, unknown>>) {
-    const id = typeof raw.id === 'string' ? raw.id : '';
+    const id = typeof raw.id === "string" ? raw.id : "";
     if (!id) continue;
     const name = raw.name == null ? null : String(raw.name);
     typeById.set(id, { id, name });
   }
   const productTypeRef =
-    stockRaw && typeof (stockRaw as Record<string, unknown>).product_type === 'string'
+    stockRaw &&
+    typeof (stockRaw as Record<string, unknown>).product_type === "string"
       ? String((stockRaw as Record<string, unknown>).product_type)
-      : '';
-  const productTypeObj = productTypeRef ? typeById.get(productTypeRef) : undefined;
-  const stock = (stockRaw
-    ? {
-        ...(stockRaw as Record<string, unknown>),
-        product_type: productTypeObj
-          ? { id: productTypeObj.id, name: productTypeObj.name ?? null }
-          : null,
-      }
-    : null) as Record<string, unknown> | null;
+      : "";
+  const productTypeObj = productTypeRef
+    ? typeById.get(productTypeRef)
+    : undefined;
+  const stock = (
+    stockRaw
+      ? {
+          ...(stockRaw as Record<string, unknown>),
+          product_type: productTypeObj
+            ? { id: productTypeObj.id, name: productTypeObj.name ?? null }
+            : null,
+        }
+      : null
+  ) as Record<string, unknown> | null;
 
   if (!stock) {
-    error(404, 'Stock not found');
+    error(404, "Stock not found");
   }
 
-  const stockBranch = typeof stock?.branch === 'string' ? stock.branch : null;
-  const stockOrigin = typeof stock?.origin === 'string' ? stock.origin : null;
+  const stockBranch = typeof stock?.branch === "string" ? stock.branch : null;
+  const stockOrigin = typeof stock?.origin === "string" ? stock.origin : null;
 
   if (
     merchantBranchId != null &&
@@ -326,7 +343,7 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
   ) {
     const homeBranch = await fetchBranchByPk(stockBranch);
     const branchName =
-      homeBranch?.name != null && String(homeBranch.name).trim() !== ''
+      homeBranch?.name != null && String(homeBranch.name).trim() !== ""
         ? String(homeBranch.name)
         : `${stockBranch.slice(0, 8)}…`;
     return {
@@ -343,7 +360,10 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
   let originBranchName: string | null = null;
   if (stockOrigin) {
     const ob = await fetchBranchByPk(stockOrigin);
-    originBranchName = ob?.name != null && String(ob.name).trim() !== '' ? String(ob.name) : null;
+    originBranchName =
+      ob?.name != null && String(ob.name).trim() !== ""
+        ? String(ob.name)
+        : null;
   }
 
   let transferTargetBranches: { id: string; name?: string | null }[] = [];
@@ -351,14 +371,20 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
     const sourceBranch = await fetchBranchByPk(stockBranch);
     const companyId = sourceBranch?.company;
     if (companyId) {
-      transferTargetBranches = await fetchTransferTargetBranches(companyId, stockBranch);
+      transferTargetBranches = await fetchTransferTargetBranches(
+        companyId,
+        stockBranch,
+      );
     }
   }
 
   const transferBranchIds = transferTargetBranches.map((b) => b.id);
-  const merchantsInTransferBranches = await fetchMerchantsInBranches(transferBranchIds);
+  const merchantsInTransferBranches =
+    await fetchMerchantsInBranches(transferBranchIds);
 
-  const productsForTransfer = stockBranch ? await fetchProductsForTransfer(companyId, stockBranch) : [];
+  const productsForTransfer = stockBranch
+    ? await fetchProductsForTransfer(companyId, stockBranch, merchantBranchId)
+    : [];
 
   return {
     stock,
@@ -477,10 +503,7 @@ type StockRowForTransfer = {
   id: string;
   branch?: string | null;
   type?: string | null;
-  product_type?:
-    | { id?: string | null; name?: string | null }
-    | string
-    | null;
+  product_type?: { id?: string | null; name?: string | null } | string | null;
   attributes?: Record<string, unknown> | null;
   investors?: string[] | null;
   purchased_price?: unknown;
@@ -496,7 +519,7 @@ async function fetchReusableDestinationStockId(input: {
 }) {
   try {
     const response = await fetch(config.graphql.endpoint, {
-      method: 'POST',
+      method: "POST",
       headers: getGraphQLHeaders(),
       body: JSON.stringify({
         query: FIND_REUSABLE_DESTINATION_TRANSFER_QUERY,
@@ -512,14 +535,17 @@ async function fetchReusableDestinationStockId(input: {
     const result = await response.json();
     if (result.errors) return null;
 
-    const rows = Array.isArray(result.data?.transfers) ? result.data.transfers : [];
+    const rows = Array.isArray(result.data?.transfers)
+      ? result.data.transfers
+      : [];
     let destId: string | null = null;
     for (const row of rows) {
-      const rowFrom = typeof row?.from === 'string' ? row.from : '';
-      const rowTo = typeof row?.to === 'string' ? row.to : '';
-      const rowStock = typeof row?.stock === 'string' ? row.stock : '';
+      const rowFrom = typeof row?.from === "string" ? row.from : "";
+      const rowTo = typeof row?.to === "string" ? row.to : "";
+      const rowStock = typeof row?.stock === "string" ? row.stock : "";
       const rowDest =
-        typeof row?.destination_stock === 'string' && row.destination_stock.trim() !== ''
+        typeof row?.destination_stock === "string" &&
+        row.destination_stock.trim() !== ""
           ? row.destination_stock
           : null;
 
@@ -534,7 +560,7 @@ async function fetchReusableDestinationStockId(input: {
         rowFrom === input.toBranch &&
         rowTo === input.fromBranch &&
         rowStock &&
-        rowStock.trim() !== ''
+        rowStock.trim() !== ""
       ) {
         destId = rowStock;
         break;
@@ -544,7 +570,7 @@ async function fetchReusableDestinationStockId(input: {
 
     // Guard against stale references when a destination stock row was deleted.
     const stockResp = await fetch(config.graphql.endpoint, {
-      method: 'POST',
+      method: "POST",
       headers: getGraphQLHeaders(),
       body: JSON.stringify({
         query: FETCH_STOCK_BRANCH_BY_PK_QUERY,
@@ -575,9 +601,9 @@ function buildNewStockInsertInput(
 ): Record<string, unknown> {
   const inv = Array.isArray(row.investors) ? row.investors : [];
   const productTypeId =
-    row.product_type && typeof row.product_type === 'object'
+    row.product_type && typeof row.product_type === "object"
       ? (row.product_type.id ?? null)
-      : typeof row.product_type === 'string'
+      : typeof row.product_type === "string"
         ? row.product_type
         : null;
   return {
@@ -605,11 +631,12 @@ async function transferStockPartial(input: {
   actorId: string;
   assigneeId: string;
 }) {
-  const { sourceRow, transferQty, fromBranch, toBranch, actorId, assigneeId } = input;
+  const { sourceRow, transferQty, fromBranch, toBranch, actorId, assigneeId } =
+    input;
   const sourceQty = Number(sourceRow.quantity);
   const remainingQty = sourceQty - transferQty;
   if (!(remainingQty >= 0) || !Number.isFinite(remainingQty)) {
-    throw new Error('Invalid remaining quantity');
+    throw new Error("Invalid remaining quantity");
   }
 
   const reusableDestinationId = await fetchReusableDestinationStockId({
@@ -630,7 +657,7 @@ async function transferStockPartial(input: {
     };
 
     const reuseResp = await fetch(config.graphql.endpoint, {
-      method: 'POST',
+      method: "POST",
       headers: getGraphQLHeaders(),
       body: JSON.stringify({
         query: REUSE_TRANSFER_STOCK_MUTATION,
@@ -648,7 +675,9 @@ async function transferStockPartial(input: {
 
     if (!reuseResp.ok) {
       const errorText = await reuseResp.text();
-      throw new Error(`HTTP error! status: ${reuseResp.status}, body: ${errorText}`);
+      throw new Error(
+        `HTTP error! status: ${reuseResp.status}, body: ${errorText}`,
+      );
     }
 
     const reuseResult = await reuseResp.json();
@@ -660,7 +689,7 @@ async function transferStockPartial(input: {
     const updatedSource = reuseResult.data?.update_source;
     const insertedTr = reuseResult.data?.insert_transfers?.returning?.[0];
     if (!updatedDest?.id || !updatedSource?.id || !insertedTr?.id) {
-      throw new Error('Transfer did not complete');
+      throw new Error("Transfer did not complete");
     }
 
     return {
@@ -698,7 +727,7 @@ async function transferStockPartial(input: {
   };
 
   const insertResp = await fetch(config.graphql.endpoint, {
-    method: 'POST',
+    method: "POST",
     headers: getGraphQLHeaders(),
     body: JSON.stringify({
       query: PARTIAL_TRANSFER_STOCK_MUTATION,
@@ -708,7 +737,9 @@ async function transferStockPartial(input: {
 
   if (!insertResp.ok) {
     const errorText = await insertResp.text();
-    throw new Error(`HTTP error! status: ${insertResp.status}, body: ${errorText}`);
+    throw new Error(
+      `HTTP error! status: ${insertResp.status}, body: ${errorText}`,
+    );
   }
 
   const insertResult = await insertResp.json();
@@ -720,7 +751,7 @@ async function transferStockPartial(input: {
   const updated = insertResult.data?.update_stock_by_pk;
   const insertedTr = insertResult.data?.insert_transfers?.returning?.[0];
   if (!insertedStock?.id || !updated?.id || !insertedTr?.id) {
-    throw new Error('Transfer did not complete');
+    throw new Error("Transfer did not complete");
   }
 
   return {
@@ -738,66 +769,73 @@ export const actions: Actions = {
 
     const userId = getUserIdFromRequest(request);
     if (!userId) {
-      return { success: false, message: 'Authentication required' };
+      return { success: false, message: "Authentication required" };
     }
 
     const stock_id = params.id;
-    const to_branch = formData.get('to_branch') as string;
-    const new_stock_created_by = formData.get('stock_created_by') as string;
-    const quantityRaw = formData.get('quantity');
+    const to_branch = formData.get("to_branch") as string;
+    const new_stock_created_by = formData.get("stock_created_by") as string;
+    const quantityRaw = formData.get("quantity");
 
     if (!to_branch) {
-      return { success: false, message: 'Select a destination branch' };
+      return { success: false, message: "Select a destination branch" };
     }
 
     if (!new_stock_created_by) {
-      return { success: false, message: 'Select a merchant for the destination branch' };
+      return {
+        success: false,
+        message: "Select a merchant for the destination branch",
+      };
     }
 
     const quantity = Number(quantityRaw);
     if (!Number.isFinite(quantity) || quantity <= 0) {
-      return { success: false, message: 'Invalid quantity' };
+      return { success: false, message: "Invalid quantity" };
     }
 
     const merchantBranchId = await fetchMerchantBranchId(userId);
     const stockRow = await fetchStockByPk(stock_id);
     if (!stockRow) {
-      return { success: false, message: 'Stock not found' };
+      return { success: false, message: "Stock not found" };
     }
     if (merchantBranchId != null && stockRow.branch !== merchantBranchId) {
-      return { success: false, message: 'Stock not found' };
+      return { success: false, message: "Stock not found" };
     }
 
     const stockQty = Number(stockRow.quantity);
     if (!Number.isFinite(stockQty) || stockQty <= 0) {
-      return { success: false, message: 'Invalid stock quantity' };
+      return { success: false, message: "Invalid stock quantity" };
     }
     if (quantity > stockQty) {
       return {
         success: false,
-        message: 'Transfer quantity cannot exceed available quantity',
+        message: "Transfer quantity cannot exceed available quantity",
       };
     }
 
     const fromBranchId = stockRow.branch;
     if (!fromBranchId) {
-      return { success: false, message: 'Stock has no branch assigned' };
+      return { success: false, message: "Stock has no branch assigned" };
     }
 
     if (to_branch === fromBranchId) {
-      return { success: false, message: 'Choose a different branch than the current one' };
+      return {
+        success: false,
+        message: "Choose a different branch than the current one",
+      };
     }
 
     const fromRow = await fetchBranchByPk(fromBranchId);
     const toRow = await fetchBranchByPk(to_branch);
     if (!fromRow || !toRow) {
-      return { success: false, message: 'Branch not found' };
+      return { success: false, message: "Branch not found" };
     }
 
     if (!fromRow.company || fromRow.company !== toRow.company) {
       return {
         success: false,
-        message: 'Destination branch must belong to the same company as this stock’s branch',
+        message:
+          "Destination branch must belong to the same company as this stock’s branch",
       };
     }
 
@@ -805,7 +843,7 @@ export const actions: Actions = {
     if (!assignee || assignee.branch !== to_branch) {
       return {
         success: false,
-        message: 'Selected merchant must belong to the destination branch',
+        message: "Selected merchant must belong to the destination branch",
       };
     }
 
@@ -821,7 +859,7 @@ export const actions: Actions = {
     } catch (err) {
       return {
         success: false,
-        message: `Failed to transfer: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        message: `Failed to transfer: ${err instanceof Error ? err.message : "Unknown error"}`,
       };
     }
 
@@ -838,47 +876,53 @@ export const actions: Actions = {
     const formData = await request.formData();
     const userId = getUserIdFromRequest(request);
     if (!userId) {
-      return { success: false, message: 'Authentication required' };
+      return { success: false, message: "Authentication required" };
     }
 
-    const productId = formData.get('product_id') as string;
-    const quantityRaw = formData.get('quantity');
-    const toBranch = formData.get('to_branch') as string;
-    const destinationMerchant = formData.get('destination_merchant') as string;
+    const productId = formData.get("product_id") as string;
+    const quantityRaw = formData.get("quantity");
+    const toBranch = formData.get("to_branch") as string;
+    const destinationMerchant = formData.get("destination_merchant") as string;
 
     if (!productId) {
-      return { success: false, message: 'Select a product' };
+      return { success: false, message: "Select a product" };
     }
     if (!toBranch) {
-      return { success: false, message: 'Select a destination branch' };
+      return { success: false, message: "Select a destination branch" };
     }
     if (!destinationMerchant) {
-      return { success: false, message: 'Select a merchant for the destination branch' };
+      return {
+        success: false,
+        message: "Select a merchant for the destination branch",
+      };
     }
 
     const quantity = Number(quantityRaw);
     if (!Number.isFinite(quantity) || quantity <= 0) {
-      return { success: false, message: 'Invalid quantity' };
+      return { success: false, message: "Invalid quantity" };
     }
 
     const merchantBranchId = await fetchMerchantBranchId(userId);
     if (!merchantBranchId) {
-      return { success: false, message: 'No branch assigned to your account' };
+      return { success: false, message: "No branch assigned to your account" };
     }
 
     if (toBranch === merchantBranchId) {
-      return { success: false, message: 'Choose a different branch than the current one' };
+      return {
+        success: false,
+        message: "Choose a different branch than the current one",
+      };
     }
 
     const fromRow = await fetchBranchByPk(merchantBranchId);
     const toRow = await fetchBranchByPk(toBranch);
     if (!fromRow || !toRow) {
-      return { success: false, message: 'Branch not found' };
+      return { success: false, message: "Branch not found" };
     }
     if (!fromRow.company || fromRow.company !== toRow.company) {
       return {
         success: false,
-        message: 'Destination branch must belong to the same company',
+        message: "Destination branch must belong to the same company",
       };
     }
 
@@ -886,7 +930,7 @@ export const actions: Actions = {
     if (!assignee || assignee.branch !== toBranch) {
       return {
         success: false,
-        message: 'Selected merchant must belong to the destination branch',
+        message: "Selected merchant must belong to the destination branch",
       };
     }
 
@@ -908,7 +952,7 @@ export const actions: Actions = {
     } catch (err) {
       return {
         success: false,
-        message: `Failed to transfer: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        message: `Failed to transfer: ${err instanceof Error ? err.message : "Unknown error"}`,
       };
     }
 

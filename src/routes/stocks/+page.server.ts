@@ -501,6 +501,7 @@ export const actions: Actions = {
           }>(INSERT_PRODUCT_MUTATION, {
             object: {
               company_id: companyId,
+              branch_id: branchRaw,
               product_type_id: line.product_type_id,
               name: line.name,
               default_unit: line.default_unit,

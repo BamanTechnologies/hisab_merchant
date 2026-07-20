@@ -107,28 +107,31 @@ async function gql<T>(
 
 async function fetchProducts(
   companyId: string | null,
+  branchId: string | null,
   search: string,
   page: number,
   pageSize: number,
 ) {
-  if (!companyId) return { products: [], totalCount: 0 };
+  if (!companyId || !branchId) return { products: [], totalCount: 0 };
 
   const offset = (page - 1) * pageSize;
 
-  const filter: Record<string, unknown> = search
-    ? {
-        _and: [
-          { company_id: { _eq: companyId } },
-          {
-            _or: [
-              { name: { _ilike: `%${search}%` } },
-              { product_type: { name: { _ilike: `%${search}%` } } },
-              { default_unit: { _ilike: `%${search}%` } },
-            ],
-          },
-        ],
-      }
-    : { company_id: { _eq: companyId } };
+  const conditions: Record<string, unknown>[] = [
+    { company_id: { _eq: companyId } },
+    { branch_id: { _eq: branchId } },
+  ];
+
+  if (search) {
+    conditions.push({
+      _or: [
+        { name: { _ilike: `%${search}%` } },
+        { product_type: { name: { _ilike: `%${search}%` } } },
+        { default_unit: { _ilike: `%${search}%` } },
+      ],
+    });
+  }
+
+  const filter: Record<string, unknown> = { _and: conditions };
 
   const order = [{ created_at: "desc" }, { name: "asc" }];
 
@@ -193,7 +196,7 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
 
   const [{ products: productsRaw, totalCount }, investors, productTypes] =
     await Promise.all([
-      fetchProducts(companyId, search, page, pageSize),
+      fetchProducts(companyId, merchantBranchId, search, page, pageSize),
       fetchInvestorsForCompany(companyId),
       fetchProductTypes(merchantId),
     ]);
@@ -270,6 +273,7 @@ export const actions: Actions = {
         {
           object: {
             company_id: companyId,
+            branch_id: merchantBranchId,
             product_type_id: productTypeId,
             name,
             default_unit,

@@ -116,7 +116,7 @@
 </script>
 
 <div class="relative">
-  <div bind:this={chartContainer} class="h-[280px] w-full"></div>
+  <div bind:this={chartContainer} class="h-[280px] w-fit md:w-full"></div>
   {#if loading}
     <div class="absolute inset-0 animate-pulse rounded bg-gray-100 dark:bg-gray-800"></div>
   {:else if categories.length === 0}
