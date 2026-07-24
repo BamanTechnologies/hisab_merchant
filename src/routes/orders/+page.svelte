@@ -913,6 +913,7 @@
           bind:value={selectedCustomerId}
           bind:selected={selectedCustomer}
           companyId={data.companyId ?? ''}
+          branchId={data.merchantBranchId ?? ''}
           endpoint="/api/customers/search"
           placeholder="Choose a customer"
           required

@@ -25,9 +25,14 @@ export type CustomerSearchResult = {
 };
 
 const FETCH_COMPANY_CUSTOMER_IDS_QUERY = `
-  query CompanyCustomerIds($companyId: uuid!) {
+  query CompanyCustomerIds($companyId: uuid!, $branchId: uuid!) {
     company_customer(
-      where: { company: { _eq: $companyId } }
+      where: {
+        _and: [
+          { company: { _eq: $companyId } }
+          { branch: { _eq: $branchId } }
+        ]
+      }
     ) {
       customer
     }
@@ -63,6 +68,7 @@ const SEARCH_CUSTOMERS_BY_IDS_QUERY = `
 
 export async function searchCustomers(
   companyId: string,
+  branchId: string,
   search: string,
   options?: { limit?: number },
 ): Promise<CustomerSearchResult[]> {
@@ -72,7 +78,7 @@ export async function searchCustomers(
 
     const junction = await gql<{
       company_customer: Array<{ customer: string } | null>;
-    }>(FETCH_COMPANY_CUSTOMER_IDS_QUERY, { companyId });
+    }>(FETCH_COMPANY_CUSTOMER_IDS_QUERY, { companyId, branchId });
 
     const ids = [
       ...new Set(

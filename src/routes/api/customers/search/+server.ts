@@ -4,15 +4,16 @@ import { searchCustomers } from '$lib/customers.server';
 export const GET: RequestHandler = async ({ url }) => {
   const q = url.searchParams.get('q') ?? '';
   const companyId = url.searchParams.get('companyId') ?? '';
+  const branchId = url.searchParams.get('branchId') ?? '';
 
-  if (!companyId) {
+  if (!companyId || !branchId) {
     return new Response(JSON.stringify([]), {
       headers: { 'content-type': 'application/json' },
     });
   }
 
   try {
-    const customers = await searchCustomers(companyId, q, { limit: 50 });
+    const customers = await searchCustomers(companyId, branchId, q, { limit: 50 });
     return new Response(JSON.stringify(customers), {
       headers: { 'content-type': 'application/json' },
     });
