@@ -281,6 +281,10 @@
   </div>
 </div>
 
+{#if name}
+  <input type="hidden" {name} value={value} />
+{/if}
+
 {#if open}
   <div
     bind:this={panelEl}

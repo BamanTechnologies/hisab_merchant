@@ -610,6 +610,7 @@
           <label>
             <span>Product</span>
             <SearchSelect
+              name="product_id"
               value={fifoProductId}
               onselect={(productId: string, product: any) => {
                 fifoProductId = productId;
