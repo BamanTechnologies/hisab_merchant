@@ -22,7 +22,7 @@ import {
 import { subscriptionWriteActionBlockedForRequest } from "$lib/subscription/server";
 
 const FETCH_PRODUCTS_QUERY = `
-  query CompanyProducts($filter: products_bool_exp, $order: [products_order_by!], $limit: Int, $offset: Int) {
+  query CompanyProducts($filter: products_bool_exp, $order: [products_order_by!], $limit: Int, $offset: Int, $branchId: uuid!) {
     products(
       where: $filter
       order_by: $order
@@ -44,10 +44,10 @@ const FETCH_PRODUCTS_QUERY = `
         id
         name
       }
-      stocks_aggregate {
+      stock_movements_aggregate(where: { branch_id: { _eq: $branchId } }) {
         aggregate {
           sum {
-            quantity
+            quantity_delta
           }
         }
       }
@@ -118,7 +118,12 @@ async function fetchProducts(
 
   const conditions: Record<string, unknown>[] = [
     { company_id: { _eq: companyId } },
-    { branch_id: { _eq: branchId } },
+    {
+      _or: [
+        { branch_id: { _eq: branchId } },
+        { stock_movements: { branch_id: { _eq: branchId } } },
+      ],
+    },
   ];
 
   if (search) {
@@ -144,12 +149,13 @@ async function fetchProducts(
       order,
       limit: pageSize,
       offset,
+      branchId,
     });
     const products = (data.products ?? []).map((p) => {
-      const stocksAgg = (p.stocks_aggregate as Record<string, unknown> | undefined) ?? {};
-      const agg = (stocksAgg.aggregate as Record<string, unknown> | undefined) ?? {};
+      const movementsAgg = (p.stock_movements_aggregate as Record<string, unknown> | undefined) ?? {};
+      const agg = (movementsAgg.aggregate as Record<string, unknown> | undefined) ?? {};
       const sum = (agg.sum as Record<string, unknown> | undefined) ?? {};
-      const totalStock = Number(sum.quantity ?? 0);
+      const totalStock = Number(sum.quantity_delta ?? 0);
       return { ...p, total_stock: Number.isFinite(totalStock) ? totalStock : 0 };
     });
     return {

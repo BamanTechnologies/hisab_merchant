@@ -9,7 +9,18 @@ import { buildProductLabel } from '$lib/inventory/productLabel';
 const FETCH_PRODUCT_DETAIL_QUERY = `
   query ProductDetail($id: uuid!, $companyId: uuid!, $branchId: uuid!) {
     products(
-      where: { _and: [{ id: { _eq: $id } }, { company_id: { _eq: $companyId } }, { branch_id: { _eq: $branchId } }] }
+      where: {
+        _and: [
+          { id: { _eq: $id } }
+          { company_id: { _eq: $companyId } }
+          {
+            _or: [
+              { branch_id: { _eq: $branchId } }
+              { stock_movements: { branch_id: { _eq: $branchId } } }
+            ]
+          }
+        ]
+      }
       limit: 1
     ) {
       id
@@ -27,10 +38,10 @@ const FETCH_PRODUCT_DETAIL_QUERY = `
         id
         name
       }
-      stocks_aggregate {
+      stock_movements_aggregate(where: { branch_id: { _eq: $branchId } }) {
         aggregate {
           sum {
-            quantity
+            quantity_delta
           }
         }
       }
@@ -110,10 +121,10 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
 	const productRaw = data.products?.[0];
 	if (!productRaw) throw error(404, 'Product not found');
 
-	const stocksAgg = (productRaw.stocks_aggregate as Record<string, unknown> | undefined) ?? {};
-	const agg = (stocksAgg.aggregate as Record<string, unknown> | undefined) ?? {};
+	const movementsAgg = (productRaw.stock_movements_aggregate as Record<string, unknown> | undefined) ?? {};
+	const agg = (movementsAgg.aggregate as Record<string, unknown> | undefined) ?? {};
 	const sum = (agg.sum as Record<string, unknown> | undefined) ?? {};
-	const totalStock = Number(sum.quantity ?? 0);
+	const totalStock = Number(sum.quantity_delta ?? 0);
 
 	const product = {
 		...productRaw,

@@ -269,13 +269,12 @@ async function gql<T>(
 async function fetchProductsForTransfer(
   companyId: string | null,
   branchId: string | null,
-  merchantBranchId: string | null,
 ) {
   if (!companyId || !branchId) return [];
   try {
     const data = await gql<{ products: unknown[] }>(
       FETCH_PRODUCTS_FOR_TRANSFER_QUERY,
-      { companyId, branchId, merchantBranchId },
+      { companyId, branchId },
     );
     return data.products ?? [];
   } catch {
@@ -383,7 +382,7 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
     await fetchMerchantsInBranches(transferBranchIds);
 
   const productsForTransfer = stockBranch
-    ? await fetchProductsForTransfer(companyId, stockBranch, merchantBranchId)
+    ? await fetchProductsForTransfer(companyId, stockBranch)
     : [];
 
   return {

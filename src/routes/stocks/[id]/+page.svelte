@@ -752,8 +752,7 @@
                   }}
                   itemLabel={(p: any) => {
                     const label = buildProductLabel(p);
-                    const batches = (p.stocks ?? []).filter((s: any) => Number(s.quantity) > 0);
-                    const q = batches.reduce((sum: number, b: any) => sum + Number(b.quantity), 0);
+                    const q = p.stock_movements_aggregate?.aggregate?.sum?.quantity_delta ?? 0;
                     const unit = p.default_unit?.trim() ?? 'units';
                     return q > 0 ? `${label} (${q} ${unit})` : `${label} (out of stock)`;
                   }}

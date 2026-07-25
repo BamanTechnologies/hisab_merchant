@@ -30,6 +30,13 @@ export type ProductSearchResult = {
     created_at?: string | null;
     batch_number?: string | null;
   }>;
+  stock_movements_aggregate?: {
+    aggregate?: {
+      sum?: {
+        quantity_delta?: number | null;
+      } | null;
+    } | null;
+  };
 };
 
 const SEARCH_PRODUCTS_QUERY = `
@@ -38,7 +45,12 @@ const SEARCH_PRODUCTS_QUERY = `
       where: {
         _and: [
           { company_id: { _eq: $companyId } }
-          { branch_id: { _eq: $branchId } }
+          {
+            _or: [
+              { branch_id: { _eq: $branchId } }
+              { stock_movements: { branch_id: { _eq: $branchId } } }
+            ]
+          }
           { is_active: { _eq: true } }
           { name: { _ilike: $search } }
         ]
@@ -54,6 +66,13 @@ const SEARCH_PRODUCTS_QUERY = `
       product_type {
         id
         name
+      }
+      stock_movements_aggregate(where: { branch_id: { _eq: $branchId } }) {
+        aggregate {
+          sum {
+            quantity_delta
+          }
+        }
       }
     }
   }
@@ -65,7 +84,12 @@ const SEARCH_PRODUCTS_WITH_STOCKS_QUERY = `
       where: {
         _and: [
           { company_id: { _eq: $companyId } }
-          { branch_id: { _eq: $branchId } }
+          {
+            _or: [
+              { branch_id: { _eq: $branchId } }
+              { stock_movements: { branch_id: { _eq: $branchId } } }
+            ]
+          }
           { is_active: { _eq: true } }
           { name: { _ilike: $search } }
         ]
@@ -81,6 +105,13 @@ const SEARCH_PRODUCTS_WITH_STOCKS_QUERY = `
       product_type {
         id
         name
+      }
+      stock_movements_aggregate(where: { branch_id: { _eq: $branchId } }) {
+        aggregate {
+          sum {
+            quantity_delta
+          }
+        }
       }
       stocks(
         where: { _and: [{ branch: { _eq: $branchId } }, { quantity: { _gt: 0 } }] }
