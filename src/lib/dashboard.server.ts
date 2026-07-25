@@ -427,9 +427,16 @@ const LOW_STOCK_QUERY = `
   query LowStockProducts($companyId: uuid!, $branchId: uuid!) {
     products(
       where: {
-        company_id: { _eq: $companyId },
-        branch_id:{_eq: $branchId}
-        treshold_quantity: { _gt: 0 }
+        _and: [
+          { company_id: { _eq: $companyId } }
+          {
+            _or: [
+              { branch_id: { _eq: $branchId } }
+              { stock_movements: { branch_id: { _eq: $branchId } } }
+            ]
+          }
+          { treshold_quantity: { _gt: 0 } }
+        ]
       }
       order_by: [{ name: asc }]
     ) {
@@ -437,10 +444,10 @@ const LOW_STOCK_QUERY = `
       name
       default_unit
       treshold_quantity
-      stocks_aggregate {
+      stock_movements_aggregate(where: { branch_id: { _eq: $branchId } }) {
         aggregate {
           sum {
-            quantity
+            quantity_delta
           }
         }
       }
@@ -467,14 +474,14 @@ export async function fetchLowStockProducts(
         name: string;
         default_unit: string | null;
         treshold_quantity: unknown;
-        stocks_aggregate: { aggregate: { sum: { quantity: unknown } } };
+        stock_movements_aggregate: { aggregate: { sum: { quantity_delta: unknown } } };
       }>;
     }>(LOW_STOCK_QUERY, { companyId, branchId });
 
     return (data.products ?? [])
       .map((p) => {
         const totalStock = parseMoney(
-          p.stocks_aggregate?.aggregate?.sum?.quantity,
+          p.stock_movements_aggregate?.aggregate?.sum?.quantity_delta,
         );
         const threshold = parseMoney(p.treshold_quantity);
         return {

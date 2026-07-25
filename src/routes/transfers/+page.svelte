@@ -621,9 +621,7 @@
               placeholder="Search products..."
               itemLabel={(p: any) => {
                 const label = buildProductLabel(p);
-                const stocks = (p as any).stocks ?? [];
-                const positive = stocks.filter((s: any) => Number(s.quantity) > 0);
-                const q = positive.reduce((sum: number, s: any) => sum + Number(s.quantity), 0);
+                const q = p.stock_movements_aggregate?.aggregate?.sum?.quantity_delta ?? 0;
                 const unit = (p as any).default_unit?.trim();
                 const qtyHint = unit ? `${q} ${unit} avail` : `${q} avail`;
                 return q > 0 ? `${label} (${qtyHint})` : `${label} (out of stock)`;

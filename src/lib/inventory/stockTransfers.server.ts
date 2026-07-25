@@ -362,9 +362,20 @@ export async function executeTransfer(input: {
 }
 
 export const FETCH_PRODUCTS_FOR_TRANSFER_QUERY = `
-  query ProductsForTransfer($companyId: uuid!, $branchId: uuid!,$merchantBranchId: uuid!) {
+  query ProductsForTransfer($companyId: uuid!, $branchId: uuid!) {
     products(
-      where: { _and: [{ company_id: { _eq: $companyId } },{branch_id: { _eq: $merchantBranchId }}, { is_active: { _eq: true } }] }
+      where: {
+        _and: [
+          { company_id: { _eq: $companyId } }
+          {
+            _or: [
+              { branch_id: { _eq: $branchId } }
+              { stock_movements: { branch_id: { _eq: $branchId } } }
+            ]
+          }
+          { is_active: { _eq: true } }
+        ]
+      }
       order_by: [{ name: asc }]
     ) {
       id
@@ -375,6 +386,13 @@ export const FETCH_PRODUCTS_FOR_TRANSFER_QUERY = `
       product_type {
         id
         name
+      }
+      stock_movements_aggregate(where: { branch_id: { _eq: $branchId } }) {
+        aggregate {
+          sum {
+            quantity_delta
+          }
+        }
       }
       stocks(
         where: { _and: [{ branch: { _eq: $branchId } }, { quantity: { _gt: 0 } }] }
