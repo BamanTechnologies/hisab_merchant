@@ -673,22 +673,21 @@
                 </span>
               </td>
               <td class={mc.tdCenter}>
-                {#if p.treshold_quantity != null && Number(p.treshold_quantity) > 0}
-                  {@const threshold = Number(p.treshold_quantity)}
-                  {@const totalStock = p.total_stock ?? 0}
+                {#if !p.total_stock}
+                  <span class="stock-pill stock-out">
+                    0 (Out of Stock)
+                  </span>
+                {:else if p.treshold_quantity != null && Number(p.treshold_quantity) > 0 && p.total_stock < Number(p.treshold_quantity)}
                   <span
-                    class="stock-pill"
-                    class:stock-low={totalStock < threshold}
-                    title={totalStock < threshold
-                      ? `Stock (${totalStock}) is below stock threshold (${threshold})`
-                      : `Stock (${totalStock}) meets threshold (${threshold})`}
+                    class="stock-pill stock-low"
+                    title={`Stock (${p.total_stock}) is below stock threshold (${Number(p.treshold_quantity)})`}
                   >
-                    {totalStock} (Low Stock)
+                    {p.total_stock} (Low Stock)
                   </span>
                 {:else}
-                  {@const threshold = Number(p.treshold_quantity)}
-                  {@const totalStock = p.total_stock ?? 0}
-                  <span class="stock-pill stock-green-500/10">{totalStock} (Enough Stock)</span>
+                  <span class="stock-pill">
+                    {p.total_stock} (Enough Stock)
+                  </span>
                 {/if}
               </td>
               <td class={mc.tdCenter}>
@@ -838,6 +837,11 @@
     color: #92400e;
   }
 
+  .stock-pill.stock-out {
+    background: color-mix(in oklab, #dc2626, transparent 70%);
+    color: #991b1b;
+  }
+
   .stock-pill.stock-ok {
     background: color-mix(in oklab, #9ca3af, transparent 70%);
     color: #374151;
@@ -849,6 +853,10 @@
 
   :global(html.dark) .stock-pill.stock-low {
     color: #fde68a;
+  }
+
+  :global(html.dark) .stock-pill.stock-out {
+    color: #fca5a5;
   }
 
   :global(html.dark) .stock-pill.stock-ok {
