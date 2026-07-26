@@ -143,6 +143,12 @@
       },
       { label: "Barcode", value: dash(product.barcode) },
       { label: "QR code", value: dash(product.qr_code) },
+      {label:"Current Available Stock", value: `${totalStockVal} ${product.default_unit || "unit"}${totalStockVal === 1 ? "" : "s"}`},
+      { label: "Created at", value: formatDate(product.created_at) },
+      {
+        label: "Product type",
+        value: typeDisplay(typeFromProduct()),
+      },
     ];
     if (tresholdVal > 0) {
       rows.push({ label: "Stock threshold", value: String(tresholdVal) });
@@ -249,10 +255,17 @@
     <div
       class="flex items-center gap-2 border-b border-[#e6eaed] bg-amber-50 px-5 py-3 dark:border-white/10 dark:bg-amber-950/30"
     >
+    {#if totalStockVal >0}
       <span class="text-sm font-semibold text-amber-700 dark:text-amber-400">
         Low stock — only {totalStockVal} {product.default_unit || "unit"}{totalStockVal === 1 ? "" : "s"} available
         (threshold: {tresholdVal})
       </span>
+    {:else}
+      <span class="text-sm font-semibold text-rose-700 dark:text-rose-400">
+        Out of stock — no {product.default_unit || "unit"} available
+        (threshold: {tresholdVal})
+      </span>
+    {/if}
     </div>
   {/if}
   <dl
