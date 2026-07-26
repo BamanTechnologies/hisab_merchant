@@ -683,10 +683,12 @@
                       ? `Stock (${totalStock}) is below stock threshold (${threshold})`
                       : `Stock (${totalStock}) meets threshold (${threshold})`}
                   >
-                    {totalStock}/{threshold}
+                    {totalStock} (Low Stock)
                   </span>
                 {:else}
-                  <span class="stock-pill stock-ok">Enough Stock</span>
+                  {@const threshold = Number(p.treshold_quantity)}
+                  {@const totalStock = p.total_stock ?? 0}
+                  <span class="stock-pill stock-green-500/10">{totalStock} (Enough Stock)</span>
                 {/if}
               </td>
               <td class={mc.tdCenter}>
@@ -832,7 +834,7 @@
   }
 
   .stock-pill.stock-low {
-    background: color-mix(in oklab, #f59e0b, transparent 70%);
+    background: color-mix(in oklab, #f5420b, transparent 70%);
     color: #92400e;
   }
 
