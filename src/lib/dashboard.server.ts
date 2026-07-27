@@ -117,9 +117,9 @@ const RECENT_STOCKS_QUERY = `
 `;
 
 const WEEKLY_SALES_TREND_QUERY = `
-  query WeeklySalesTrend($startDate: date!, $endDate: date!, $merchantId: uuid!) {
+  query WeeklySalesTrend($startDate: date!, $endDate: date!, $merchantId: uuid!,$groupBy:String) {
     sales_trend_for_merchant(
-      args: { start_date: $startDate, end_date: $endDate, merchant_id: $merchantId }
+      args: { group_period: $groupBy, start_date: $startDate, end_date: $endDate, merchant_id: $merchantId }
       where: { total_sales: { _neq: 0 } }
     ) {
       sales_date
@@ -137,6 +137,7 @@ export async function fetchWeeklySalesTrend(
   merchantId: string,
   startDate: string,
   endDate: string,
+  groupBy: string = "per_week",
 ): Promise<SalesTrend[]> {
   const now = new Date();
   const yearStart = new Date(now.getFullYear(), 0, 1);
@@ -145,7 +146,7 @@ export async function fetchWeeklySalesTrend(
   try {
     const data = await gql<{
       sales_trend_for_merchant: SalesTrend[];
-    }>(WEEKLY_SALES_TREND_QUERY, { startDate: sd, endDate: ed, merchantId });
+    }>(WEEKLY_SALES_TREND_QUERY, { startDate: sd, endDate: ed, merchantId, groupBy });
 
     return (data.sales_trend_for_merchant ?? []).map((s) => ({
       sales_date: s.sales_date,
@@ -474,7 +475,9 @@ export async function fetchLowStockProducts(
         name: string;
         default_unit: string | null;
         treshold_quantity: unknown;
-        stock_movements_aggregate: { aggregate: { sum: { quantity_delta: unknown } } };
+        stock_movements_aggregate: {
+          aggregate: { sum: { quantity_delta: unknown } };
+        };
       }>;
     }>(LOW_STOCK_QUERY, { companyId, branchId });
 

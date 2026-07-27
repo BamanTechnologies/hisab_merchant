@@ -23,6 +23,9 @@
   let dateFrom = $state(initialFrom);
   let dateTo = $state(initialTo);
 
+  const initialGroupBy = $page.url.searchParams.get("groupBy") ?? "per_week";
+  let groupPeriod = $state(initialGroupBy);
+
   let loading = $state(false);
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -129,6 +132,7 @@
     const params = new URLSearchParams();
     if (dateFrom) params.set("from", dateFrom);
     if (dateTo) params.set("to", dateTo);
+    if (groupPeriod) params.set("groupBy", groupPeriod);
     const qs = params.toString();
     goto(qs ? `/dashboard?${qs}` : "/dashboard", { replaceState: true, keepFocus: true });
   }
@@ -213,6 +217,14 @@
           <div>
             <h3 class="text-base font-bold text-gray-900 dark:text-gray-100">{$_('dashboardWeeklySalesTitle')}</h3>
             <p class="text-sm text-gray-500 dark:text-gray-400">{$_('dashboardWeeklySalesTotal', { values: { amount: formatMoney(salesTrendTotal) } })}</p>
+          </div>
+          <div class="flex items-center gap-1">
+            {#each ['per_day', 'per_week', 'per_month', 'per_year'] as g}
+              <button
+                class="rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors {groupPeriod === g ? 'bg-[#4DA0E6] text-white' : 'bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300'}"
+                onclick={() => { groupPeriod = g; navigateWithDates(); }}
+              >Per {g === 'per_day' ? 'Day' : g === 'per_week' ? 'Week' : g === 'per_month' ? 'Month' : 'Year'}</button>
+            {/each}
           </div>
           <select
             class="merchant-filter-select h-[32px] rounded-lg border border-gray-200 bg-white py-0 pl-3 pr-8 text-sm font-medium text-gray-700 focus:border-[#4DA0E6] focus:outline-none focus:ring-2 focus:ring-[#4DA0E6]/20 dark:border-white/10 dark:bg-[#111827] dark:text-gray-200"
