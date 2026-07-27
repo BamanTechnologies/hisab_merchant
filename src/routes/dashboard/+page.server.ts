@@ -20,6 +20,7 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
 
   const from = url.searchParams.get("from") ?? "";
   const to = url.searchParams.get("to") ?? "";
+  const groupBy = url.searchParams.get("groupBy") ?? "per_week";
 
   if (!merchantId) {
     return {
@@ -64,7 +65,7 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
     fetchUnpaidOrders(merchantId, from, to),
     fetchTopSellingProducts(merchantId, from, to),
     fetchRecentStocks(branchIds),
-    fetchWeeklySalesTrend(merchantId, from, to),
+    fetchWeeklySalesTrend(merchantId, from, to, groupBy),
     companyId
       ? fetchLowStockProducts(companyId, branchId?.id ?? null)
       : Promise.resolve([]),
