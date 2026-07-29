@@ -9,18 +9,23 @@
   type Props = {
     data: SalesTrend[];
     loading?: boolean;
+    groupPeriod?: string;
   };
 
-  let { data, loading = false }: Props = $props();
+  let { data, loading = false, groupPeriod = "per_week" }: Props = $props();
 
   let chartContainer: HTMLDivElement | undefined = $state();
   let chartInstance: ApexCharts | undefined = $state();
 
   function formatDateLabel(dateStr: string): string {
-    return new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    });
+    const d = new Date(dateStr + "T00:00:00");
+    if (groupPeriod === "per_month") {
+      return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+    }
+    if (groupPeriod === "per_year") {
+      return d.getFullYear().toString();
+    }
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   }
 
   let categories = $derived(data.map((d) => formatDateLabel(d.sales_date)));

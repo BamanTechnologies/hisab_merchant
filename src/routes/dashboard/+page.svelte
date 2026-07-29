@@ -238,7 +238,7 @@
             <option value="this_month">{$_('dashboardThisMonth')}</option>
           </select>
         </div>
-        <WeeklySalesChart data={salesTrend} {loading} />
+        <WeeklySalesChart data={salesTrend} {loading} groupPeriod={groupPeriod} />
       </div>
 
       <!-- Top Customers header -->
