@@ -300,7 +300,7 @@ async function generateInvestorReport(
     }
   }
 
-  return { ...reportData, orders: expandedOrders };
+  return { ...reportData, investor_id: investorId, orders: expandedOrders };
 }
 
 function withComputedSoldPrice(
