@@ -372,8 +372,8 @@
     <h1 class={mc.pageTitle}>{$_('pageReportsTitle')}</h1>
     <p class={mc.pageSubtitle}>{$_('pageReportsSubtitle')}</p>
   </div>
-  <div class="flex flex-wrap items-center gap-3">
-    <TableSearchInput bind:value={searchQuery} placeholder={$_('searchDots')} />
+  <div class="flex flex-col sm:flex-row items-center gap-3">
+    <TableSearchInput bind:value={searchQuery} placeholder={$_('searchDots')} class="sm:w-auto" />
     <button
       type="button"
       class={mc.primaryBtn}
