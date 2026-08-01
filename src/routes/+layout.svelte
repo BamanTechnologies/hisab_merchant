@@ -18,6 +18,8 @@
 		Menu,
 		Moon,
 		Package,
+		PanelLeftClose,
+		PanelLeftOpen,
 		Receipt,
 		ShoppingCart,
 		ShoppingBag,
@@ -41,6 +43,7 @@
 
 	let isAuthenticated = $state(shellVisible());
 	let sidebarOpen = $state(false);
+	let sidebarCollapsed = $state(false);
 	let theme = $state<"light" | "dark">("light");
 	let showLanguageDropdown = $state(false);
 
@@ -145,6 +148,7 @@
 
 	onMount(() => {
 		theme = localStorage.getItem("theme") === "dark" ? "dark" : "light";
+		sidebarCollapsed = localStorage.getItem("sidebarCollapsed") === "1";
 
 		const token = localStorage.getItem("authToken");
 		if (token) {
@@ -165,6 +169,17 @@
 	function toggleTheme() {
 		theme = theme === "dark" ? "light" : "dark";
 		if (browser) localStorage.setItem("theme", theme);
+	}
+
+	function toggleSidebar() {
+		if (browser && window.innerWidth >= 1024) {
+			sidebarCollapsed = !sidebarCollapsed;
+			if (browser) {
+				localStorage.setItem("sidebarCollapsed", sidebarCollapsed ? "1" : "0");
+			}
+		} else {
+			sidebarOpen = true;
+		}
 	}
 
 	function handleLogout() {
@@ -205,15 +220,16 @@
 
 		<aside
 			class={cn(
-				"fixed inset-y-0 left-0 z-50 flex h-dvh w-[260px] shrink-0 flex-col border-r border-gray-200 bg-white px-3 pb-5 pt-5 transition-transform duration-300 ease-in-out dark:border-white/10 dark:bg-[#0f172a] lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:translate-x-0",
+				"fixed inset-y-0 left-0 z-50 flex h-dvh w-[260px] shrink-0 flex-col border-r border-gray-200 bg-white px-3 pb-5 pt-5 transition-all duration-300 ease-in-out dark:border-white/10 dark:bg-[#0f172a] lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:translate-x-0",
 				sidebarOpen ? "translate-x-0" : "-translate-x-full",
+				sidebarCollapsed ? "lg:w-[76px] lg:px-2" : "lg:w-[260px]",
 			)}
 			aria-label="Main navigation"
 		>
-			<div class="-mt-4 mb-6 flex shrink-0 items-center justify-between gap-2 px-2">
+			<div class={cn("-mt-4 mb-6 flex shrink-0 items-center justify-between gap-2 px-2", sidebarCollapsed && "lg:mb-5")}>
 				<a
 					href="/"
-					class="flex items-center"
+					class={cn("flex items-center", sidebarCollapsed && "lg:hidden")}
 					aria-label="Go to homepage"
 				>
 					<img
@@ -238,8 +254,10 @@
 					{@const active = page.url.pathname.startsWith(item.match)}
 					<a
 						href={item.href}
+						title={item.label}
 						class={cn(
 							"relative flex items-center gap-3 rounded-r-lg py-2.5 pl-4 pr-3 text-sm font-medium transition",
+							sidebarCollapsed && "lg:justify-center lg:px-0",
 							active
 								? "bg-[#F0F7FF] font-semibold text-[#4DA0E6] dark:bg-[#4DA0E6]/15"
 								: "text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-white/5 dark:hover:text-white",
@@ -252,7 +270,7 @@
 							></span>
 						{/if}
 						<Icon size={20} strokeWidth={2} class={active ? "text-[#4DA0E6]" : "text-gray-500 dark:text-gray-400"} />
-						{item.label}
+						<span class={cn("truncate", sidebarCollapsed && "lg:hidden")}>{item.label}</span>
 					</a>
 				{/each}
 			</nav>
@@ -260,27 +278,33 @@
 			<div class="mt-auto flex flex-col gap-1 border-t border-gray-100 pt-4 dark:border-white/10">
 				<button
 					type="button"
-					class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-white/5 dark:hover:text-white"
+					class={cn(
+						"flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-white/5 dark:hover:text-white",
+						sidebarCollapsed && "lg:justify-center lg:px-0",
+					)}
 					onclick={toggleTheme}
 					aria-pressed={theme === "dark"}
 				>
 					{#if theme === "dark"}
 						<Sun size={20} strokeWidth={2} class="text-[#4DA0E6]" />
-						{$_('lightMode')}
+						<span class={cn(sidebarCollapsed && "lg:hidden")}>{$_('lightMode')}</span>
 					{:else}
 						<Moon size={20} strokeWidth={2} class="text-gray-500" />
-						{$_('darkMode')}
+						<span class={cn(sidebarCollapsed && "lg:hidden")}>{$_('darkMode')}</span>
 					{/if}
 				</button>
 				<div class="relative">
 					<button
 						type="button"
-						class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-white/5 dark:hover:text-white"
+						class={cn(
+							"flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-white/5 dark:hover:text-white",
+							sidebarCollapsed && "lg:justify-center lg:px-0",
+						)}
 						onclick={() => (showLanguageDropdown = !showLanguageDropdown)}
 						aria-label="Switch language"
 					>
 						<Globe size={20} strokeWidth={2} class="text-gray-500 dark:text-gray-400" />
-						{localeAbbr($locale)}
+						<span class={cn(sidebarCollapsed && "lg:hidden")}>{localeAbbr($locale)}</span>
 					</button>
 					{#if showLanguageDropdown}
 						<div class="absolute bottom-full left-0 mb-2 w-44 rounded-xl border border-gray-200 bg-white shadow-lg dark:border-white/10 dark:bg-[#0f172a] z-50 overflow-hidden">
@@ -298,11 +322,14 @@
 				</div>
 				<button
 					type="button"
-					class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[#D15B7A] transition hover:bg-red-50 dark:hover:bg-red-500/10"
+					class={cn(
+						"flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[#D15B7A] transition hover:bg-red-50 dark:hover:bg-red-500/10",
+						sidebarCollapsed && "lg:justify-center lg:px-0",
+					)}
 					onclick={handleLogout}
 				>
 					<LogOut size={20} strokeWidth={2} />
-					{$_('logout')}
+					<span class={cn(sidebarCollapsed && "lg:hidden")}>{$_('logout')}</span>
 				</button>
 			</div>
 		</aside>
@@ -310,18 +337,23 @@
 		<div class="flex min-w-0 flex-1 flex-col">
 			<div class="sticky top-0 z-30 shrink-0">
 				<header
-					class="flex items-center gap-3 border-b border-gray-200 bg-white/95 px-4 py-2.5 backdrop-blur-sm dark:border-white/10 dark:bg-[#0f172a]/95 lg:hidden"
+					class="flex items-center gap-3 border-b border-gray-200 bg-white/95 px-4 py-2.5 backdrop-blur-sm dark:border-white/10 dark:bg-[#0f172a]/95"
 				>
 				<button
 					type="button"
 					class="flex size-10 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/5"
-					aria-label="Open menu"
-					aria-expanded={sidebarOpen}
-					onclick={() => (sidebarOpen = true)}
+					aria-label="Toggle sidebar"
+					aria-expanded={sidebarOpen || !sidebarCollapsed}
+					onclick={toggleSidebar}
 				>
-					<Menu size={22} strokeWidth={2} />
+					<Menu size={22} strokeWidth={2} class="lg:hidden" />
+					{#if sidebarCollapsed}
+						<PanelLeftOpen size={22} strokeWidth={2} class="hidden lg:block" />
+					{:else}
+						<PanelLeftClose size={22} strokeWidth={2} class="hidden lg:block" />
+					{/if}
 				</button>
-				<a href="/" class="flex items-center" aria-label="Go to homepage">
+				<a href="/" class="flex items-center lg:hidden" aria-label="Go to homepage">
 					<img
 						src="/logonew.png"
 						alt="Bamanstock"
