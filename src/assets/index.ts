@@ -51,6 +51,7 @@ const icon = {
 	'icon/download': () => import('@lucide/svelte/icons/download'),
 	'icon/upload': () => import('@lucide/svelte/icons/upload'),
 	'icon/upload-cloud': () => import('@lucide/svelte/icons/upload-cloud'),
+	'icon/external-link': () => import('@lucide/svelte/icons/external-link'),
 	
 	// Commerce
 	'icon/shopping-cart': () => import('@lucide/svelte/icons/shopping-cart'),

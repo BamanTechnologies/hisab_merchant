@@ -1,5 +1,12 @@
-import type { Actions } from './$types';
+import { env } from '$env/dynamic/private';
+import type { Actions, PageServerLoad } from './$types';
 import { config, getGraphQLHeaders } from '$lib/config';
+
+export const load: PageServerLoad = async () => {
+  return {
+    investorPortalUrl: env.INVESTOR_PORTAL_URL ?? '',
+  };
+};
 
 const SEND_SINGLE_SMS_MUTATION = `
   mutation SendSingleSms($data: String!) {
