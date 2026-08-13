@@ -14,6 +14,10 @@
   import businessTwo from "../assets/landing/business_two.png";
   import businessThree from "../assets/landing/business_three.png";
 
+  let { data } = $props();
+
+  const investorPortalUrl = $derived(data.investorPortalUrl);
+
   const trustedBusinesses = [
     { src: businessOne, name: "Awtar Coffee and Machinery" },
     { src: businessTwo, name: "Lanta Brew Tech" },
@@ -217,6 +221,12 @@
           <Button variant="outline" size="lg" href="#features" onclick={(e) => smoothScrollToHash(e, '#features')} class="min-w-[200px]">
             {$_('learnMore')}
           </Button>
+          {#if investorPortalUrl}
+            <Button variant="outline" size="lg" href={investorPortalUrl} target="_blank" rel="noopener noreferrer" class="min-w-[200px]">
+              {$_('goToInvestor')}
+              <Icon iconName="icon/external-link" size={18} />
+            </Button>
+          {/if}
         </div>
       </div>
     </div>
@@ -327,6 +337,12 @@
               {$_('learnMoreBtn')}
               <Icon iconName="icon/arrow-right" size={16} />
             </Button>
+             {#if investorPortalUrl}
+            <Button variant="outline" size="lg" href={investorPortalUrl} target="_blank" rel="noopener noreferrer" class="min-w-[200px]">
+              {$_('goToInvestor')}
+              <Icon iconName="icon/external-link" size={18} />
+            </Button>
+          {/if}
           </div>
 
           <div>
@@ -424,10 +440,18 @@
         <p class="text-xl text-white/90 mb-8 max-w-2xl mx-auto">
           {$_('ctaDesc')}
         </p>
-        <Button href={isAuthenticated ? "/dashboard" : "/sign-in"} size="lg" class="bg-info text-info-foreground hover:bg-info/90 min-w-[200px]">
-          {isAuthenticated ? $_('openDashboard') : $_('getStartedNow')}
-          <Icon iconName="icon/arrow-right" size={20} />
-        </Button>
+        <div class="flex flex-col sm:flex-row gap-4 justify-center items-center pt-4">
+          <Button href={isAuthenticated ? "/dashboard" : "/sign-in"} size="lg" class="bg-info text-info-foreground hover:bg-info/90 min-w-[200px]">
+            {isAuthenticated ? $_('openDashboard') : $_('getStartedNow')}
+            <Icon iconName="icon/arrow-right" size={20} />
+          </Button>
+          {#if investorPortalUrl}
+            <Button variant="outline" size="lg" href={investorPortalUrl} target="_blank" rel="noopener noreferrer" class="bg-white/10 text-white border-white/40 hover:bg-white/20 hover:text-white min-w-[200px]">
+              {$_('goToInvestor')}
+              <Icon iconName="icon/external-link" size={18} />
+            </Button>
+          {/if}
+        </div>
       </div>
     </div>
   </section>
