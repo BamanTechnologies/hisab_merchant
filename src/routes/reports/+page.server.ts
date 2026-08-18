@@ -1,5 +1,5 @@
 import type { PageServerLoad, Actions } from "./$types";
-import { getUserIdFromRequest } from "$lib/auth";
+import { getMerchantIdFromRequest } from "$lib/auth";
 import { fetchMerchantBranchId } from "$lib/merchantBranch.server";
 import {
   fetchBranchCompanyId,
@@ -374,7 +374,7 @@ async function sendReport(reportData: any) {
 export const load: PageServerLoad = async ({ request, parent, url }) => {
   const { merchantContext } = await parent();
   const merchantId =
-    merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
+    merchantContext?.merchantId ?? getMerchantIdFromRequest(request) ?? null;
   const merchantBranchId =
     merchantContext?.merchantBranchId ??
     (merchantId ? await fetchMerchantBranchId(merchantId) : null);
@@ -409,7 +409,7 @@ export const actions: Actions = {
     const formData = await request.formData();
 
     // Get authenticated user ID
-    const userId = getUserIdFromRequest(request);
+    const userId = getMerchantIdFromRequest(request);
     if (!userId) {
       return {
         success: false,
@@ -481,7 +481,7 @@ export const actions: Actions = {
       };
     }
 
-    const userId = getUserIdFromRequest(request);
+    const userId = getMerchantIdFromRequest(request);
     if (!userId) {
       return {
         success: false,

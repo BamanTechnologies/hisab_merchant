@@ -1,5 +1,5 @@
 import { config, getGraphQLHeaders } from '$lib/config';
-import { getUserIdFromRequest } from '$lib/auth';
+import { getMerchantIdFromRequest } from '$lib/auth';
 import { fetchMerchantAppContext } from '$lib/merchantContext.server';
 import { isSubscriptionWriteBlocked, SUBSCRIPTION_BLOCKED_MESSAGE } from './status';
 import type { CompanySubscription, SubscriptionLoadResult } from './types';
@@ -93,7 +93,7 @@ function subscriptionWriteActionBlocked(
 }
 
 async function fetchSubscriptionLoadForRequest(request: Request): Promise<SubscriptionLoadResult> {
-	const merchantId = getUserIdFromRequest(request);
+	const merchantId = getMerchantIdFromRequest(request);
 	if (!merchantId) {
 		return { subscription: null, error: null, loaded: true };
 	}

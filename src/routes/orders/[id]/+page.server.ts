@@ -1,6 +1,6 @@
 import type { PageServerLoad, Actions } from "./$types";
 import { error } from "@sveltejs/kit";
-import { getUserIdFromRequest } from "$lib/auth";
+import { getMerchantIdFromRequest } from "$lib/auth";
 import { fetchMerchantBranchId } from "$lib/merchantBranch.server";
 import {
   fetchBranchCompanyId,
@@ -147,7 +147,7 @@ async function fetchOrderForMerchant(id: string, merchantId: string) {
 export const load: PageServerLoad = async ({ params, request, parent }) => {
   const { merchantContext } = await parent();
   const merchantId =
-    merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
+    merchantContext?.merchantId ?? getMerchantIdFromRequest(request) ?? null;
   if (!merchantId) {
     error(404, "Order not found");
   }
@@ -185,7 +185,7 @@ export const actions: Actions = {
     const formData = await request.formData();
 
     // Get authenticated user ID
-    const userId = getUserIdFromRequest(request);
+    const userId = getMerchantIdFromRequest(request);
     if (!userId) {
       return {
         success: false,

@@ -1,5 +1,5 @@
 import type { PageServerLoad, Actions } from './$types';
-import { getUserIdFromRequest } from '$lib/auth';
+import { getMerchantIdFromRequest } from '$lib/auth';
 import { config, getGraphQLHeaders } from '$lib/config';
 import { subscriptionWriteActionBlockedForRequest } from '$lib/subscription/server';
 
@@ -218,7 +218,7 @@ async function fetchCustomerNames(merchantId: string): Promise<string[]> {
 export const load: PageServerLoad = async ({ request, parent, url }) => {
   const { merchantContext } = await parent();
   const merchantId =
-    merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
+    merchantContext?.merchantId ?? getMerchantIdFromRequest(request) ?? null;
 
   const search = url.searchParams.get('search') ?? '';
   const customerName = url.searchParams.get('customer') ?? '';

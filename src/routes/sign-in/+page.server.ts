@@ -1,20 +1,33 @@
 import type { Actions } from "./$types";
-import { getUserIdFromToken } from "$lib/auth";
+import { env } from "$env/dynamic/private";
+import { getMerchantIdFromToken } from "$lib/auth";
 import { fetchMerchantBranchId } from "$lib/merchantBranch.server";
 import { fetchMerchantAppContext } from "$lib/merchantContext.server";
 import { config, getGraphQLHeaders } from "$lib/config";
+
+// Message returned by the backend when the credentials belong to an investor account
+const NOT_MERCHANT_MESSAGE =
+  "This user is not a merchant. Please login with the investor platform.";
 
 // GraphQL mutation to login
 const LOGIN_MUTATION = `
   mutation Login($password: String!, $phone: String!) {
     login(password: $password, phone: $phone) {
       token
+      message
+      status_code
     }
   }
 `;
 
+type LoginResult = {
+  token: string | null;
+  message: string | null;
+  status_code: number;
+};
+
 // Function to login user
-async function loginUser(phone: string, password: string) {
+async function loginUser(phone: string, password: string): Promise<LoginResult | null> {
   const variables = {
     phone,
     password,
@@ -29,20 +42,34 @@ async function loginUser(phone: string, password: string) {
     }),
   });
 
+  const body = await response.text();
+  let result: { data?: { login?: LoginResult | null }; errors?: unknown } | null = null;
+  try {
+    result = JSON.parse(body);
+  } catch {
+    // Non-JSON response (e.g. plain-text error) — keep `result` null
+  }
+
+  const rawResponse = JSON.stringify(result ?? body);
+  if (rawResponse.includes(NOT_MERCHANT_MESSAGE)) {
+    return {
+      token: null,
+      message: NOT_MERCHANT_MESSAGE,
+      status_code: 403,
+    };
+  }
+
   if (!response.ok) {
-    const errorText = await response.text();
     throw new Error(
-      `HTTP error! status: ${response.status}, body: ${errorText}`,
+      `HTTP error! status: ${response.status}, body: ${body}`,
     );
   }
 
-  const result = await response.json();
-
-  if (result.errors) {
+  if (result?.errors) {
     throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
   }
 
-  return result.data.login;
+  return result?.data?.login ?? null;
 }
 
 export const actions: Actions = {
@@ -56,8 +83,24 @@ export const actions: Actions = {
     try {
       const loginResult = await loginUser(phone, password);
 
+      if (loginResult?.status_code === 403 && loginResult.token == null) {
+        cookies.delete("authToken", { path: "/" });
+        cookies.delete("merchantBranchId", { path: "/" });
+        const baseUrl = (env.INVESTOR_PORTAL_URL ?? "").replace(/\/+$/, "");
+        return {
+          token: null,
+          merchantBranchId: null,
+          investorRedirect: true,
+          investorSigninUrl: baseUrl ? `${baseUrl}/onboarding/signin` : "",
+        };
+      }
+
+      if (!loginResult?.token) {
+        throw new Error("Login failed: no result returned");
+      }
+
       const userId = loginResult.token
-        ? getUserIdFromToken(loginResult.token)
+        ? getMerchantIdFromToken(loginResult.token)
         : null;
       const merchantBranchId = userId
         ? await fetchMerchantBranchId(userId)
@@ -89,9 +132,10 @@ export const actions: Actions = {
         merchantBranchId,
         defaultAppRoute,
       };
-    } catch {
+    } catch (error) {
       cookies.delete("authToken", { path: "/" });
       cookies.delete("merchantBranchId", { path: "/" });
+
       return {
         token: null,
         merchantBranchId: null,

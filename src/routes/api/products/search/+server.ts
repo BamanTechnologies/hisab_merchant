@@ -1,6 +1,6 @@
 import type { RequestHandler } from './$types';
 import { searchProducts } from '$lib/inventory/products.server';
-import { getUserIdFromRequest } from '$lib/auth';
+import { getMerchantIdFromRequest } from '$lib/auth';
 import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
 import { fetchBranchCompanyId } from '$lib/companyInvestors.server';
 
@@ -9,7 +9,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
   const companyId = url.searchParams.get('companyId') ?? '';
   const branchId = url.searchParams.get('branchId') ?? '';
 
-  const userId = getUserIdFromRequest(request);
+  const userId = getMerchantIdFromRequest(request);
   let resolvedBranchId = branchId;
   if (!resolvedBranchId && userId) {
     resolvedBranchId = (await fetchMerchantBranchId(userId)) ?? '';

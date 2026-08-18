@@ -1,6 +1,6 @@
 import type { PageServerLoad, Actions } from "./$types";
 import { error } from "@sveltejs/kit";
-import { getUserIdFromRequest } from "$lib/auth";
+import { getMerchantIdFromRequest } from "$lib/auth";
 import { fetchMerchantBranchId } from "$lib/merchantBranch.server";
 import {
   fetchBranchCompanyId,
@@ -286,7 +286,7 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
   const { merchantContext } = await parent();
 
   const merchantId =
-    merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
+    merchantContext?.merchantId ?? getMerchantIdFromRequest(request) ?? null;
   const merchantBranchId =
     merchantContext?.merchantBranchId ??
     (merchantId ? await fetchMerchantBranchId(merchantId) : null);
@@ -766,7 +766,7 @@ export const actions: Actions = {
 
     const formData = await request.formData();
 
-    const userId = getUserIdFromRequest(request);
+    const userId = getMerchantIdFromRequest(request);
     if (!userId) {
       return { success: false, message: "Authentication required" };
     }
@@ -873,7 +873,7 @@ export const actions: Actions = {
     if (blocked) return blocked;
 
     const formData = await request.formData();
-    const userId = getUserIdFromRequest(request);
+    const userId = getMerchantIdFromRequest(request);
     if (!userId) {
       return { success: false, message: "Authentication required" };
     }

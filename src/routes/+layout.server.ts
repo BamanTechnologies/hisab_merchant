@@ -1,5 +1,5 @@
 import type { LayoutServerLoad } from './$types';
-import { getUserIdFromRequest } from '$lib/auth';
+import { getMerchantIdFromRequest } from '$lib/auth';
 import { fetchMerchantAppContext } from '$lib/merchantContext.server';
 import { fetchCompanySubscription } from '$lib/subscription/server';
 
@@ -10,7 +10,7 @@ import { fetchCompanySubscription } from '$lib/subscription/server';
  * Form actions must use `subscriptionWriteActionBlockedForRequest(request)`.
  */
 export const load: LayoutServerLoad = async ({ request }) => {
-  const merchantId = getUserIdFromRequest(request);
+  const merchantId = getMerchantIdFromRequest(request);
 
   if (!merchantId) {
     return {
