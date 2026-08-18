@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { error } from '@sveltejs/kit';
-import { getUserIdFromRequest } from '$lib/auth';
+import { getMerchantIdFromRequest } from '$lib/auth';
 import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
 import { fetchBranchCompanyId } from '$lib/companyInvestors.server';
 import { fetchCustomerLatestBalance } from '$lib/customerTransactions.server';
@@ -442,7 +442,7 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
   const customerId = params.id;
   const { merchantContext } = await parent();
   const merchantId =
-    merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
+    merchantContext?.merchantId ?? getMerchantIdFromRequest(request) ?? null;
 
   if (!merchantId) {
     throw error(401, 'Unauthorized');

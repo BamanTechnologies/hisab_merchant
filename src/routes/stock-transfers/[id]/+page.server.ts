@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { error } from '@sveltejs/kit';
-import { getUserIdFromRequest } from '$lib/auth';
+import { getMerchantIdFromRequest } from '$lib/auth';
 import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
 import { fetchBranchCompanyId } from '$lib/companyInvestors.server';
 import { config, getGraphQLHeaders } from '$lib/config';
@@ -70,7 +70,7 @@ async function fetchMerchantName(id: string | null): Promise<string | null> {
 export const load: PageServerLoad = async ({ params, request, parent }) => {
 	const { merchantContext } = await parent();
 	const merchantId =
-		merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
+		merchantContext?.merchantId ?? getMerchantIdFromRequest(request) ?? null;
 	const merchantBranchId =
 		merchantContext?.merchantBranchId ??
 		(merchantId ? await fetchMerchantBranchId(merchantId) : null);

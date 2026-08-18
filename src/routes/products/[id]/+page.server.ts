@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { error, redirect } from '@sveltejs/kit';
-import { getUserIdFromRequest } from '$lib/auth';
+import { getMerchantIdFromRequest } from '$lib/auth';
 import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
 import { fetchBranchCompanyId } from '$lib/companyInvestors.server';
 import { config, getGraphQLHeaders } from '$lib/config';
@@ -100,7 +100,7 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
 		throw redirect(302, '/stocks');
 	}
 	const merchantId =
-		merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
+		merchantContext?.merchantId ?? getMerchantIdFromRequest(request) ?? null;
 	const merchantBranchId =
 		merchantContext?.merchantBranchId ??
 		(merchantId ? await fetchMerchantBranchId(merchantId) : null);

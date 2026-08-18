@@ -1,5 +1,5 @@
 import type { PageServerLoad } from "./$types";
-import { getUserIdFromRequest } from "$lib/auth";
+import { getMerchantIdFromRequest } from "$lib/auth";
 import { fetchMerchantBranchId as fetchBranchId } from "$lib/merchantBranch.server";
 import {
   fetchStats,
@@ -16,7 +16,7 @@ import {
 export const load: PageServerLoad = async ({ request, parent, url }) => {
   const { merchantContext } = await parent();
   const merchantId =
-    merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
+    merchantContext?.merchantId ?? getMerchantIdFromRequest(request) ?? null;
 
   const from = url.searchParams.get("from") ?? "";
   const to = url.searchParams.get("to") ?? "";

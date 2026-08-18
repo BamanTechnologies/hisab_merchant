@@ -31,6 +31,8 @@
 	import { cn } from "$lib/utils.js";
 	import { _ } from "svelte-i18n";
 	import { setLocale, localeAbbr, locale } from "$lib/i18n/index.js";
+	import { showToast } from "$lib/toast";
+	import { isTokenExpired } from "$lib/auth";
 
 	let { data, children }: { data: LayoutData; children: import("svelte").Snippet } =
 		$props();
@@ -161,8 +163,26 @@
 
 		const path = page.url.pathname;
 		const needsAuth = APP_PREFIXES.some((prefix) => path.startsWith(prefix));
-		if (!token && data.merchantContext == null && needsAuth) {
+		if (needsAuth && token && isTokenExpired(token)) {
+			handleSessionExpired();
+		} else if (!token && data.merchantContext == null && needsAuth) {
 			goto("/sign-in");
+		}
+	});
+
+	// Session-expiry middleware: whenever the user navigates to a protected
+	// page, validate the JWT `exp` claim and force a logout if it has passed.
+	$effect(() => {
+		if (!browser) return;
+		const to = navigating.to;
+		if (!to) return;
+		const needsAuth = APP_PREFIXES.some((prefix) =>
+			to.url.pathname.startsWith(prefix),
+		);
+		if (!needsAuth) return;
+		const token = localStorage.getItem("authToken");
+		if (token && isTokenExpired(token)) {
+			handleSessionExpired();
 		}
 	});
 
@@ -182,15 +202,27 @@
 		}
 	}
 
-	function handleLogout() {
-		subscriptionStore.reset();
+	function clearAuthStorage() {
 		localStorage.removeItem("authToken");
 		localStorage.removeItem("merchantBranchId");
 		document.cookie =
 			"authToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
 		document.cookie =
 			"merchantBranchId=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+	}
+
+	function handleLogout() {
+		subscriptionStore.reset();
+		clearAuthStorage();
 		isAuthenticated = false;
+		goto("/sign-in");
+	}
+
+	function handleSessionExpired() {
+		subscriptionStore.reset();
+		clearAuthStorage();
+		isAuthenticated = false;
+		showToast("Session expired", "error");
 		goto("/sign-in");
 	}
 </script>
