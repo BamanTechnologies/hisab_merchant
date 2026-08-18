@@ -1,5 +1,5 @@
 import type { PageServerLoad, Actions } from "./$types";
-import { getUserIdFromRequest } from "$lib/auth";
+import { getMerchantIdFromRequest } from "$lib/auth";
 import { config, getGraphQLHeaders } from "$lib/config";
 import { fetchBranchCompanyId } from "$lib/companyInvestors.server";
 import { fetchMerchantBranchId } from "$lib/merchantBranch.server";
@@ -302,7 +302,7 @@ async function fetchMerchantByPkForTransfer(id: string) {
 export const load: PageServerLoad = async ({ request, url, parent }) => {
   const { merchantContext } = await parent();
   const merchantId =
-    merchantContext?.merchantId ?? getUserIdFromRequest(request) ?? null;
+    merchantContext?.merchantId ?? getMerchantIdFromRequest(request) ?? null;
   const merchantBranchId = merchantContext?.merchantBranchId ?? null;
   let companyId = merchantContext?.companyId ?? null;
   if (!companyId && merchantBranchId) {
@@ -463,7 +463,7 @@ export const actions: Actions = {
     if (blocked) return blocked;
 
     const formData = await request.formData();
-    const userId = getUserIdFromRequest(request);
+    const userId = getMerchantIdFromRequest(request);
     if (!userId) {
       return { success: false, message: 'Authentication required' };
     }

@@ -14,6 +14,12 @@
   let password = $state("");
   let signInPending = $state(false);
 
+  // Investor redirect board
+  const REDIRECT_SECONDS = 10;
+  let investorRedirect = $state(false);
+  let investorSigninUrl = $state("");
+  let countdown = $state(REDIRECT_SECONDS);
+
   // Carousel
   let currentSlide = $state(0);
   let carouselContainer: HTMLDivElement;
@@ -85,11 +91,37 @@
           document.cookie = "merchantBranchId=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
         }
         goto(form.defaultAppRoute ?? "/dashboard");
+      } else if (form.investorRedirect) {
+        if (form.investorSigninUrl) {
+          investorSigninUrl = form.investorSigninUrl;
+          countdown = REDIRECT_SECONDS;
+          investorRedirect = true;
+        } else {
+          showToast("One of the details is incorrect", "error");
+        }
       } else {
         showToast("One of the details is incorrect", "error");
       }
     }
   });
+
+  // Countdown then redirect to the investor sign-in page
+  $effect(() => {
+    if (!investorRedirect || !investorSigninUrl) return;
+    const interval = setInterval(() => {
+      countdown -= 1;
+      if (countdown <= 0) {
+        clearInterval(interval);
+        window.location.href = investorSigninUrl;
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  });
+
+  function cancelInvestorRedirect() {
+    investorRedirect = false;
+    countdown = REDIRECT_SECONDS;
+  }
 </script>
 
 <svelte:head>
@@ -166,6 +198,41 @@
     <div class="w-full lg:w-1/2 bg-white flex items-center justify-center p-8 lg:p-16">
       <div class="w-full max-w-md space-y-8">
 
+        {#if investorRedirect}
+          <div class="space-y-6 text-center">
+            <div class="mx-auto flex size-16 items-center justify-center rounded-full bg-amber-50">
+              <Icon iconName="icon/user" size={32} class="text-amber-500" />
+            </div>
+            <div class="space-y-2">
+              <h2 class="text-3xl font-bold text-foreground">This credential belongs to an investor</h2>
+              <p class="text-muted-foreground text-sm">
+                The account you signed in with is registered on the investor platform.
+                You will be redirected there to continue.
+              </p>
+            </div>
+            <div class="flex items-center justify-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-6 py-5">
+              <span class="text-4xl font-bold text-info tabular-nums">{countdown}</span>
+              <div class="text-left">
+                <p class="text-sm font-medium text-foreground">Redirecting to the investor platform</p>
+                <p class="text-xs text-muted-foreground">
+                  in {countdown} second{countdown === 1 ? "" : "s"}
+                </p>
+              </div>
+            </div>
+            <Button
+              type="button"
+              size="lg"
+              variant="outline"
+              class="w-full rounded-full"
+              onclick={cancelInvestorRedirect}
+            >
+              Cancel
+            </Button>
+            <p class="text-xs text-muted-foreground">
+              Cancel and try again with your merchant credentials instead.
+            </p>
+          </div>
+        {:else}
         <div class="space-y-2 text-center lg:text-left">
           <h2 class="text-3xl font-bold text-foreground">Log in to your account</h2>
           <p class="text-muted-foreground text-sm">Please enter your details to continue.</p>
@@ -212,6 +279,7 @@
             {signInPending ? "Signing in…" : "Login"}
           </Button>
         </form>
+        {/if}
 
       </div>
     </div>

@@ -1,5 +1,13 @@
-// Utility function to decode JWT token and extract user ID
-export function getUserIdFromToken(token: string): string | null {
+type TokenPayload = {
+  sub?: string;
+  exp?: number;
+  'x-hasura-user-id'?: string;
+  metadata?: {
+    'x-hasura-merchant-id'?: string;
+  };
+};
+
+function decodeTokenPayload(token: string): TokenPayload | null {
   try {
     // JWT tokens have 3 parts separated by dots: header.payload.signature
     const parts = token.split('.');
@@ -12,29 +20,51 @@ export function getUserIdFromToken(token: string): string | null {
     // Add padding if needed for base64 decoding
     const paddedPayload = payload + '='.repeat((4 - payload.length % 4) % 4);
     const decodedPayload = atob(paddedPayload);
-    const payloadObj = JSON.parse(decodedPayload);
-
-    // Extract user ID from the token payload
-    // The user ID is typically in 'sub' field or 'x-hasura-user-id' field
-    const userId = payloadObj['x-hasura-user-id'] || payloadObj.sub;
-    
-    if (!userId) {
-      return null;
-    }
-
-    return userId;
+    return JSON.parse(decodedPayload) as TokenPayload;
   } catch {
     return null;
   }
 }
 
-// Function to get user ID from request headers or cookies
-export function getUserIdFromRequest(request: Request): string | null {
+// Utility function to decode JWT token and extract the merchant ID
+export function getMerchantIdFromToken(token: string): string | null {
+  const payloadObj = decodeTokenPayload(token);
+  if (!payloadObj) {
+    return null;
+  }
+
+  // Current token format nests the merchant id in metadata.x-hasura-merchant-id
+  const merchantId =
+    payloadObj.metadata?.['x-hasura-merchant-id'] ??
+    // Legacy token format carried the merchant id in x-hasura-user-id / sub
+    payloadObj['x-hasura-user-id'] ??
+    payloadObj.sub;
+
+  return merchantId ?? null;
+}
+
+// Utility function to decode JWT token and extract the expiry timestamp (in seconds)
+export function getTokenExpiry(token: string): number | null {
+  const payloadObj = decodeTokenPayload(token);
+  if (!payloadObj) return null;
+  const exp = payloadObj.exp;
+  return typeof exp === "number" && Number.isFinite(exp) ? exp : null;
+}
+
+// Check whether the JWT token has expired
+export function isTokenExpired(token: string): boolean {
+  const exp = getTokenExpiry(token);
+  if (exp === null) return false;
+  return exp * 1000 <= Date.now();
+}
+
+// Function to get merchant ID from request headers or cookies
+export function getMerchantIdFromRequest(request: Request): string | null {
   // Try to get token from Authorization header first
   const authHeader = request.headers.get('authorization');
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7);
-    return getUserIdFromToken(token);
+    return getMerchantIdFromToken(token);
   }
 
   // Try to get token from cookies
@@ -47,7 +77,7 @@ export function getUserIdFromRequest(request: Request): string | null {
     }, {} as Record<string, string>);
 
     if (cookies.authToken) {
-      return getUserIdFromToken(cookies.authToken);
+      return getMerchantIdFromToken(cookies.authToken);
     }
   }
 
