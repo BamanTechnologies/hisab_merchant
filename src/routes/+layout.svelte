@@ -2,6 +2,7 @@
 	import "../app.css";
 	import favicon from "$lib/assets/favicon.svg";
 	import ToastHost from "$lib/ToastHost.svelte";
+	import NotificationBell from "$lib/components/NotificationBell.svelte";
 	import SubscriptionWarningBar from "$lib/components/SubscriptionWarningBar.svelte";
 	import { subscriptionSnapshot, subscriptionStore } from "$lib/subscription/client";
 	import { browser } from "$app/environment";
@@ -21,6 +22,7 @@
 		PanelLeftClose,
 		PanelLeftOpen,
 		Receipt,
+		Settings,
 		ShoppingCart,
 		ShoppingBag,
 		Sun,
@@ -33,6 +35,7 @@
 	import { setLocale, localeAbbr, locale } from "$lib/i18n/index.js";
 	import { showToast } from "$lib/toast";
 	import { isTokenExpired } from "$lib/auth";
+	import { ensurePushNotifications } from "$lib/notification/push-notification";
 
 	let { data, children }: { data: LayoutData; children: import("svelte").Snippet } =
 		$props();
@@ -66,6 +69,7 @@
 		"/payments",
 		"/expenses",
 		"/reports",
+		"/settings",
 	] as const;
 
 	const isAppShellRoute = $derived(
@@ -83,6 +87,7 @@
 			{ href: "/payments", label: $_('navPayments'), icon: Wallet, match: "/payments" },
 			{ href: "/expenses", label: $_('navExpenses'), icon: Receipt, match: "/expenses" },
 			{ href: "/reports", label: $_('navReports'), icon: BarChart3, match: "/reports" },
+			{ href: "/settings", label: $_('navSettings'), icon: Settings, match: "/settings" },
 		] as const;
 		if (data.merchantContext?.routeAccess.products === false) {
 			return items.filter((item) => item.href !== "/products");
@@ -104,6 +109,13 @@
 			return;
 		}
 		isAuthenticated = serverOk || !!localStorage.getItem("authToken");
+	});
+
+	// Register the Firebase device token (and attach message listeners) as soon as
+	// the user is authenticated, including right after a fresh sign-in navigation.
+	$effect(() => {
+		if (!browser || !isAuthenticated) return;
+		void ensurePushNotifications();
 	});
 
 	$effect.pre(() => {
@@ -392,9 +404,13 @@
 						class="h-14 w-auto max-w-full object-cover md:h-20"
 					/>
 				</a>
+				<div class="ml-auto flex items-center gap-1">
+				{#if isAuthenticated}
+					<NotificationBell />
+				{/if}
 				<button
 					type="button"
-					class="ml-auto flex size-10 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/5"
+					class="flex size-10 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/5"
 					aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
 					aria-pressed={theme === "dark"}
 					onclick={toggleTheme}
@@ -405,6 +421,7 @@
 						<Moon size={20} strokeWidth={2} />
 					{/if}
 				</button>
+			</div>
 			</header>
 
 				{#if isAuthenticated && subscriptionBarVisible}

@@ -26,6 +26,13 @@ function decodeTokenPayload(token: string): TokenPayload | null {
   }
 }
 
+// Utility function to decode JWT token and extract the account user ID
+export function getUserIdFromToken(token: string): string | null {
+  const payloadObj = decodeTokenPayload(token);
+  if (!payloadObj) return null;
+  return payloadObj['x-hasura-user-id'] ?? payloadObj.sub ?? null;
+}
+
 // Utility function to decode JWT token and extract the merchant ID
 export function getMerchantIdFromToken(token: string): string | null {
   const payloadObj = decodeTokenPayload(token);
