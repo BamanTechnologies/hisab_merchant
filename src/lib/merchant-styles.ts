@@ -100,3 +100,17 @@ export function smsStatusChipClass(status: string | null | undefined): string {
 	}
 	return cn(chipBase, "bg-[#D15B5B]");
 }
+
+/** Customer status pill derived from orders counts (pending / in_debt / active_paying). */
+export function customerStatusChipClass(status: string | null | undefined): string {
+	if (status === "active_paying") {
+		return cn(chipBase, "bg-[#67B186]");
+	}
+	if (status === "pending") {
+		return cn(chipBase, "bg-[#F4C44E]");
+	}
+	if (status === "in_debt") {
+		return cn(chipBase, "bg-[#D15B5B]");
+	}
+	return cn(chipBase, "bg-gray-400");
+}

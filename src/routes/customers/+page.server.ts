@@ -5,14 +5,24 @@ import { config, getGraphQLHeaders } from "$lib/config";
 
 const FETCH_CUSTOMERS_QUERY = `
   query CustomersList($limit: Int, $offset: Int, $filter: customers_bool_exp, $order: [customers_order_by!]) {
-    customers(where: $filter, limit: $limit, offset: $offset, order_by: $order) {
-      id
-      first_name
-      last_name
-      phone_number
-      address
-      created_at
+   customers(where: $filter, limit: $limit, offset: $offset, order_by: $order) {
+    id
+    first_name
+    last_name
+    phone_number
+    address
+    created_at
+    total_orders: orders_aggregate {
+      aggregate {
+        count
+      }
     }
+    total_unpayed_or_partially_Payed_orders:orders_aggregate(where:{_or:[{status:{_eq:"unpaid"}},{status:{_eq:"partially_paid"}}]}){
+      aggregate{
+        count
+      }
+    }
+  }
     total_customers: customers_aggregate(where: $filter) {
       aggregate {
         count
@@ -43,6 +53,10 @@ async function gql<T>(
   return result.data as T;
 }
 
+export type CustomerAggregateBucket = {
+  aggregate?: { count?: number | null } | null;
+};
+
 export type CustomerListRow = {
   id: string;
   first_name?: string | null;
@@ -50,6 +64,8 @@ export type CustomerListRow = {
   phone_number?: string | null;
   address?: string | null;
   created_at?: string | null;
+  total_orders?: CustomerAggregateBucket | null;
+  total_unpayed_or_partially_Payed_orders?: CustomerAggregateBucket | null;
 };
 
 async function fetchCustomersList(
