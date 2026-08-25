@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
+  import SendSmsModal from "$lib/components/SendSmsModal.svelte";
   import TablePagination from "$lib/components/TablePagination.svelte";
   import TableSortHeader from "$lib/components/TableSortHeader.svelte";
   import SummaryMetricCard from "$lib/components/SummaryMetricCard.svelte";
@@ -169,6 +170,7 @@
   );
   let errorMessage = $state("");
   let successMessage = $state("");
+  let showSmsModal = $state(false);
 
   $effect(() => {
     orders = data.orders;
@@ -297,14 +299,19 @@
   </div>
 {/if}
 
-<header class="mb-6">
-  <h1 class={mc.pageTitle}>{fullName()}</h1>
-  {#if data.customer.phone_number}
-    <p class={mc.pageSubtitle}>{data.customer.phone_number}</p>
-  {/if}
-  {#if data.customer.address}
-    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{data.customer.address}</p>
-  {/if}
+<header class="mb-6 flex flex-wrap items-start justify-between gap-4">
+  <div>
+    <h1 class={mc.pageTitle}>{fullName()}</h1>
+    {#if data.customer.phone_number}
+      <p class={mc.pageSubtitle}>{data.customer.phone_number}</p>
+    {/if}
+    {#if data.customer.address}
+      <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{data.customer.address}</p>
+    {/if}
+  </div>
+  <button type="button" class={mc.primaryBtn} onclick={() => (showSmsModal = true)}>
+    Send SMS message
+  </button>
 </header>
 
 <section class={mc.summaryGrid} aria-label="Customer summary">
@@ -487,4 +494,12 @@
       resetKey={customerActivityResetKey}
     />
   </section>
+{/if}
+
+{#if showSmsModal}
+  <SendSmsModal
+    customerIds={[data.customer.id]}
+    oncancel={() => (showSmsModal = false)}
+    oncomplete={() => (showSmsModal = false)}
+  />
 {/if}
