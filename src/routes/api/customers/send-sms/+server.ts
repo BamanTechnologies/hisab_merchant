@@ -3,8 +3,8 @@ import { config } from "$lib/config";
 import type { SendSmsActionResult } from "$lib/sms";
 
 const SEND_CUSTOMERS_MESSAGE_MUTATION = `
-  mutation sendCustomersMessage($customerIds: [String!]!, $message: String!) {
-    send_customer_sms(customer_ids: $customerIds, message: $message, is_reminder: false) {
+  mutation sendCustomersMessage($ids: [String!]!, $message: String ,$isWaightlistReminder:Boolean!) {
+    send_customer_sms(ids: $ids, message: $message, is_waightlist_reminder: $isWaightlistReminder) {
       error
       failure_count
       message
@@ -38,7 +38,9 @@ export const POST: RequestHandler = async ({ request }) => {
   }
 
   const customerIds = Array.isArray(body.customerIds)
-    ? body.customerIds.filter((id): id is string => typeof id === "string" && id.trim() !== "")
+    ? body.customerIds.filter(
+        (id): id is string => typeof id === "string" && id.trim() !== "",
+      )
     : [];
   const message = typeof body.message === "string" ? body.message.trim() : "";
 
@@ -59,7 +61,7 @@ export const POST: RequestHandler = async ({ request }) => {
       },
       body: JSON.stringify({
         query: SEND_CUSTOMERS_MESSAGE_MUTATION,
-        variables: { customerIds, message },
+        variables: { ids: customerIds, message, isWaightlistReminder: false },
       }),
     });
 
