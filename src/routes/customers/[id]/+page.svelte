@@ -7,6 +7,7 @@
   import { mc, statusChipClass } from "$lib/merchant-styles.js";
   import { paginateSlice } from "$lib/pagination.js";
   import { buildStockLabel } from "$lib/stockLabel";
+  import WaightListSection from "$lib/components/WaightListSection.svelte";
   import type { PageData } from "./$types";
   import type { CustomerDetailOrder } from "./+page.server";
 
@@ -495,6 +496,13 @@
     />
   </section>
 {/if}
+
+<WaightListSection
+  customerId={data.customer.id}
+  companyId={data.companyId ?? ""}
+  merchantBranchId={data.merchantBranchId ?? ""}
+  title="Waight List"
+/>
 
 {#if showSmsModal}
   <SendSmsModal
