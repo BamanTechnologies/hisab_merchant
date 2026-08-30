@@ -4,6 +4,7 @@
   import { paginateSlice } from "$lib/pagination.js";
   import { formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
   import { parseQty } from "$lib/inventory/fifo";
+  import WaightListSection from "$lib/components/WaightListSection.svelte";
   import type { StockMovementRecord } from "$lib/inventory/types";
   import type { PageData } from "./$types";
 
@@ -401,3 +402,10 @@
     />
   {/if}
 </section>
+
+<WaightListSection
+  productId={product.id}
+  companyId={data.companyId ?? ""}
+  merchantBranchId={data.merchantBranchId ?? ""}
+  title="Waight List"
+/>
