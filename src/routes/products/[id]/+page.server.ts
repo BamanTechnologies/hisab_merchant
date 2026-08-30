@@ -137,5 +137,7 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
 		movements: data.stock_movements ?? [],
 		batches: data.stock ?? [],
 		canViewPurchasePrice: merchantContext?.routeAccess.viewPurchasePrice ?? true,
+		companyId,
+		merchantBranchId,
 	};
 };

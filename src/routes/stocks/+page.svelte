@@ -5,6 +5,7 @@
   import { page } from "$app/stores";
   import { invalidateAll } from "$app/navigation";
   import { onMount, tick } from "svelte";
+  import { browser } from "$app/environment";
   import { Eye, Pencil, Plus, RefreshCw, Trash2, X } from "@lucide/svelte";
   import InvestorMultiSelect from "$lib/components/InvestorMultiSelect.svelte";
   import TableLoading from "$lib/components/TableLoading.svelte";
@@ -79,6 +80,27 @@
     qr_code: string;
   };
 
+  type RestockRow = {
+    id: string;
+    product_id: string;
+    customer_id: string;
+    quantity?: number | string | null;
+    status?: string | null;
+    created_at?: string | null;
+    customer?: {
+      id: string;
+      first_name?: string | null;
+      last_name?: string | null;
+      phone_number?: string | null;
+      address?: string | null;
+    } | null;
+    product?: {
+      id: string;
+      name?: string | null;
+      default_unit?: string | null;
+    } | null;
+  };
+
   let { data }: { data: PageData } = $props();
 
   let stocks = $state((data.stocks ?? []) as StockBatch[]);
@@ -118,6 +140,12 @@
   let editBatchNumber = $state("");
 
   let batchToDelete = $state<StockBatch | null>(null);
+
+  let showRestockModal = $state(false);
+  let restockRows = $state<RestockRow[]>([]);
+  let restockSelectedIds = $state<string[]>([]);
+  let restockSending = $state(false);
+  let showRestockReminderModal = $state(false);
 
   const subscriptionLocked = $derived($subscriptionBlocksMutations);
 
@@ -519,6 +547,112 @@
   function canDelete(batch: StockBatch): boolean {
     return parseQty(batch.quantity) === 0;
   }
+
+  function getToken(): string | null {
+    return browser ? localStorage.getItem("authToken") : null;
+  }
+
+  async function restockApi(
+    body: Record<string, unknown>,
+  ): Promise<{ ok: boolean; error?: string; data?: any }> {
+    const token = getToken();
+    if (!token) return { ok: false, error: "No auth token found." };
+    try {
+      const res = await fetch("/api/waight-lists", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      });
+      const result = await res.json();
+      if (!res.ok) return { ok: false, error: result?.error ?? "Request failed" };
+      return { ok: true, data: result };
+    } catch {
+      return { ok: false, error: "Request failed" };
+    }
+  }
+
+  async function checkRestock(productIds: string[]) {
+    if (productIds.length === 0 || !merchantBranchId) return;
+    const res = await restockApi({
+      action: "restockLists",
+      productIds,
+      branchId: merchantBranchId,
+    });
+    if (!res.ok || !Array.isArray(res.data?.rows) || res.data.rows.length === 0) {
+      return;
+    }
+    restockRows = res.data.rows as RestockRow[];
+    restockSelectedIds = [];
+    showRestockModal = true;
+  }
+
+  function closeRestockModal() {
+    if (restockSending) return;
+    showRestockModal = false;
+    showRestockReminderModal = false;
+    restockRows = [];
+    restockSelectedIds = [];
+  }
+
+  function restockFullName(c: RestockRow["customer"]): string {
+    const parts = [c?.first_name, c?.last_name].filter(Boolean);
+    return parts.join(" ").trim() || "—";
+  }
+
+  function restockProductLabel(p: RestockRow["product"]): string {
+    const name = String(p?.name ?? "").trim();
+    return name || "—";
+  }
+
+  function toggleRestockSelect(id: string) {
+    if (restockSelectedIds.includes(id)) {
+      restockSelectedIds = restockSelectedIds.filter((x) => x !== id);
+    } else {
+      restockSelectedIds = [...restockSelectedIds, id];
+    }
+  }
+
+  const restockAllSelected = $derived(
+    restockRows.length > 0 && restockRows.every((r) => restockSelectedIds.includes(r.id)),
+  );
+
+  function toggleRestockSelectAll() {
+    if (restockAllSelected) {
+      restockSelectedIds = [];
+    } else {
+      restockSelectedIds = restockRows.map((r) => r.id);
+    }
+  }
+
+  function requestRestockReminder() {
+    if (restockSelectedIds.length === 0) return;
+    showRestockReminderModal = true;
+  }
+
+  function closeRestockReminder() {
+    if (restockSending) return;
+    showRestockReminderModal = false;
+  }
+
+  async function confirmRestockReminder() {
+    if (restockSending || restockSelectedIds.length === 0) return;
+    restockSending = true;
+    try {
+      const res = await restockApi({ action: "sendReminder", ids: restockSelectedIds });
+      if (!res.ok) throw new Error(res.error ?? "Failed to send reminder");
+      showRestockReminderModal = false;
+      showRestockModal = false;
+      showToast("Reminder sent", "success");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to send reminder", "error");
+      showRestockReminderModal = false;
+    } finally {
+      restockSending = false;
+    }
+  }
 </script>
 
 <section class={mc.pageHeader}>
@@ -772,8 +906,16 @@
             "success" in result.data &&
             (result.data as { success?: boolean }).success === true;
           if (ok) {
+            const data = result.data as {
+              success?: boolean;
+              productIds?: string[];
+            };
+            const restockProductIds = (data.productIds ?? []).filter(Boolean);
             closeReceiveModal();
             afterToast(TOAST_MS, () => void invalidateAll());
+            if (restockProductIds.length > 0) {
+              void checkRestock(restockProductIds);
+            }
           } else if (t?.variant === "error") {
             receiveError = t.message;
           }
@@ -1181,6 +1323,122 @@
         {deletePending ? "Deleting…" : "Delete"}
       </button>
     </footer>
+  </dialog>
+{/if}
+
+{#if showRestockModal}
+  <div
+    class="modal-overlay"
+    role="button"
+    tabindex="0"
+    onclick={() => !restockSending && closeRestockModal()}
+    onkeydown={(e) =>
+      !restockSending && (e.key === "Enter" || e.key === " ") && closeRestockModal()}
+  ></div>
+  <dialog
+    open
+    class="modal modal-wide"
+    onclick={(e) => e.stopPropagation()}
+    oncancel={(e) => restockSending && e.preventDefault()}
+  >
+    <header>
+      <h2>Alert customers to order</h2>
+      <button
+        type="button"
+        class="icon-btn"
+        aria-label="Close"
+        disabled={restockSending}
+        onclick={closeRestockModal}
+      >
+        <X size={18} />
+      </button>
+    </header>
+
+    {#if showRestockReminderModal}
+      <div class="modal-body">
+        <p>
+          Send an SMS reminder to the selected customer{restockSelectedIds.length > 1 ? "s" : ""}
+          about their waight list ({restockSelectedIds.length}) record{restockSelectedIds.length === 1
+            ? ""
+            : "s"}?
+        </p>
+      </div>
+      <footer>
+        <button type="button" class={mc.tableBtn} onclick={closeRestockReminder} disabled={restockSending}>
+          Cancel
+        </button>
+        <button type="button" class={mc.primaryBtn} onclick={confirmRestockReminder} disabled={restockSending}>
+          {restockSending ? "Sending…" : "Confirm"}
+        </button>
+      </footer>
+    {:else}
+      <div class="modal-body">
+        <p class="restock-intro">
+          These customers have waight list records you can now fulfill with the stock you just
+          received. Select the records to notify them.
+        </p>
+        <div class="restock-table-wrap">
+          <table class="restock-table">
+            <thead>
+              <tr>
+                <th>
+                  {#if restockRows.length > 0}
+                    <input
+                      type="checkbox"
+                      class="restock-check"
+                      checked={restockAllSelected}
+                      onchange={toggleRestockSelectAll}
+                      aria-label="Select all"
+                    />
+                  {/if}
+                </th>
+                <th>Customer</th>
+                <th>Product</th>
+                <th>Qty</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each restockRows as r}
+                <tr>
+                  <td>
+                    <input
+                      type="checkbox"
+                      class="restock-check"
+                      checked={restockSelectedIds.includes(r.id)}
+                      onchange={() => toggleRestockSelect(r.id)}
+                      aria-label="Select for reminder"
+                    />
+                  </td>
+                  <td>
+                    <span class="restock-strong">{restockFullName(r.customer)}</span>
+                    {#if r.customer?.phone_number}
+                      <span class="restock-muted"> · {r.customer.phone_number}</span>
+                    {/if}
+                  </td>
+                  <td>{restockProductLabel(r.product)}</td>
+                  <td class="restock-num">{r.quantity ?? "—"}</td>
+                  <td class="restock-cap">{r.status ?? "—"}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <footer>
+        <button type="button" class={mc.tableBtn} onclick={closeRestockModal} disabled={restockSending}>
+          Close
+        </button>
+        <button
+          type="button"
+          class={mc.primaryBtn}
+          onclick={requestRestockReminder}
+          disabled={restockSelectedIds.length === 0}
+        >
+          Send reminder sms ({restockSelectedIds.length})
+        </button>
+      </footer>
+    {/if}
   </dialog>
 {/if}
 
@@ -1689,6 +1947,89 @@
   .generated-name-placeholder {
     color: #6b7280;
     font-style: italic;
+  }
+
+  .restock-intro {
+    font-size: 0.875rem !important;
+    color: #64748b;
+  }
+
+  :global(.dark) .restock-intro {
+    color: #94a3b8;
+  }
+
+  .restock-table-wrap {
+    margin-top: 0.75rem;
+    border: 1px solid #e6eaed;
+    border-radius: 0.5rem;
+    overflow: auto;
+    max-height: 50vh;
+  }
+
+  :global(.dark) .restock-table-wrap {
+    border-color: rgb(255 255 255 / 0.1);
+  }
+
+  .restock-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+
+  .restock-table th {
+    position: sticky;
+    top: 0;
+    background: #f8fafc;
+    text-align: left;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    color: #64748b;
+    border-bottom: 1px solid #e6eaed;
+  }
+
+  :global(.dark) .restock-table th {
+    background: #1e293b;
+    color: #94a3b8;
+    border-bottom-color: rgb(255 255 255 / 0.1);
+  }
+
+  .restock-table td {
+    padding: 0.55rem 0.75rem;
+    border-bottom: 1px solid #f1f5f9;
+    vertical-align: top;
+  }
+
+  :global(.dark) .restock-table td {
+    border-bottom-color: rgb(255 255 255 / 0.06);
+  }
+
+  .restock-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  .restock-check {
+    width: 16px;
+    height: 16px;
+    accent-color: #4da0e6;
+  }
+
+  .restock-strong {
+    font-weight: 600;
+  }
+
+  .restock-muted {
+    color: #94a3b8;
+  }
+
+  .restock-num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .restock-cap {
+    text-transform: capitalize;
   }
 
   @media (max-width: 640px) {

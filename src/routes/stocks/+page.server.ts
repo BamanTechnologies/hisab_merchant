@@ -484,6 +484,7 @@ export const actions: Actions = {
     );
 
     const createdStockIds: string[] = [];
+    const createdProductIds: string[] = [];
 
     try {
       for (const line of lines) {
@@ -536,6 +537,8 @@ export const actions: Actions = {
           investors = prod.products_by_pk.investors ?? [];
         }
 
+        createdProductIds.push(productId);
+
         const stockIns = await gql<{
           insert_stock_one: { id: string; product_id: string | null } | null;
         }>(INSERT_STOCK_MUTATION, {
@@ -584,6 +587,7 @@ export const actions: Actions = {
           lines.length === 1
             ? "Batch received successfully"
             : `${lines.length} batches received successfully`,
+        productIds: createdProductIds,
       };
     } catch (err) {
       for (const id of createdStockIds) {
