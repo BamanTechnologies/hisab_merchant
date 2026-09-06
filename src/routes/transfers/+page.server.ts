@@ -183,14 +183,31 @@ type StockTransferRow = {
   created_by?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+  product_name?: string | null;
+  product_id?: string | null;
   stock_transfer_batches?: Array<{
     id: string;
     stock_id?: string | null;
     destination_stock?: string | null;
     quantity?: number | string | null;
     created_at?: string | null;
+    stockByStock?: {
+      id?: string | null;
+      product_id?: string | null;
+      product?: { id?: string | null; name?: string | null } | null;
+    } | null;
   }> | null;
 };
+
+const FETCH_PRODUCTS_BY_NAME_QUERY = `
+  query TransferProductsByName($companyId: uuid!, $name: String!) {
+    products(
+      where: { _and: [{ company_id: { _eq: $companyId } }, { name: { _ilike: $name } }] }
+    ) {
+      id
+    }
+  }
+`;
 
 async function fetchStockTransfers(
   merchantId: string,
@@ -198,7 +215,7 @@ async function fetchStockTransfers(
   branchId: string | null,
   page: number,
   pageSize: number,
-  filters?: { from?: string; to?: string; destination_merchant?: string; created_by?: string },
+  filters?: { from?: string; to?: string; destination_merchant?: string; created_by?: string; product_name?: string },
 ): Promise<{ transfers: StockTransferRow[]; totalCount: number }> {
   const conditions: Record<string, unknown>[] = [
     {
@@ -230,6 +247,26 @@ async function fetchStockTransfers(
   if (filters?.destination_merchant) conditions.push({ destination_merchant: { _eq: filters.destination_merchant } });
   if (filters?.created_by) conditions.push({ created_by: { _eq: filters.created_by } });
 
+  const productName = (filters?.product_name ?? "").trim();
+  if (productName && companyId) {
+    let productIds: string[] = [];
+    try {
+      const productData = await gqlRequest<{ products: { id: string }[] }>(
+        FETCH_PRODUCTS_BY_NAME_QUERY,
+        { companyId, name: `%${productName}%` },
+      );
+      productIds = (productData.products ?? []).map((p) => p.id);
+    } catch {
+      productIds = [];
+    }
+    if (productIds.length === 0) {
+      return { transfers: [], totalCount: 0 };
+    }
+    conditions.push({
+      stock_transfer_batches: { stockByStock: { product_id: { _in: productIds } } },
+    });
+  }
+
   const filter = { _and: conditions };
   const order = [{ created_at: "desc" as const }, { id: "desc" as const }];
   const offset = (page - 1) * pageSize;
@@ -239,8 +276,22 @@ async function fetchStockTransfers(
       stock_transfers: StockTransferRow[];
       total_stock_transfers: { aggregate: { count: number } };
     }>(FETCH_STOCK_TRANSFERS_QUERY, { filter, order, limit: pageSize, offset });
+
+    const transfers = (data.stock_transfers ?? []).map((st) => {
+      const firstBatch = st.stock_transfer_batches?.find(
+        (b) => b.stockByStock?.product,
+      );
+      const product = firstBatch?.stockByStock?.product ?? null;
+      const productId = firstBatch?.stockByStock?.product_id ?? null;
+      return {
+        ...st,
+        product_id: productId,
+        product_name: product?.name ?? null,
+      };
+    });
+
     return {
-      transfers: data.stock_transfers ?? [],
+      transfers,
       totalCount: data.total_stock_transfers?.aggregate?.count ?? 0,
     };
   } catch {
@@ -327,6 +378,7 @@ export const load: PageServerLoad = async ({ request, url, parent }) => {
   const to = url.searchParams.get("to") ?? "";
   const destinationMerchant = url.searchParams.get("destination_merchant") ?? "";
   const createdBy = url.searchParams.get("created_by") ?? "";
+  const productName = url.searchParams.get("product_name") ?? "";
   const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
   const pageSize = Math.max(1, Number(url.searchParams.get("pageSize")) || 10);
   const offset = (page - 1) * pageSize;
@@ -421,7 +473,7 @@ export const load: PageServerLoad = async ({ request, url, parent }) => {
       branches = Array.from(involvedBranchIds).map((id) => ({ id, name: id }));
     }
 
-    const stFilters = { from, to, destination_merchant: destinationMerchant, created_by: createdBy };
+    const stFilters = { from, to, destination_merchant: destinationMerchant, created_by: createdBy, product_name: productName };
     const stockTransfersResult = await fetchStockTransfers(merchantId, companyId, merchantBranchId, stPage, stPageSize, stFilters);
 
     return {
@@ -436,7 +488,7 @@ export const load: PageServerLoad = async ({ request, url, parent }) => {
       stockTransfersTotal: stockTransfersResult.totalCount,
     };
   } catch (_error) {
-    const stFilters = { from, to, destination_merchant: destinationMerchant, created_by: createdBy };
+    const stFilters = { from, to, destination_merchant: destinationMerchant, created_by: createdBy, product_name: productName };
     const stockTransfersFallback = merchantId
       ? await fetchStockTransfers(merchantId, companyId, merchantBranchId, stPage, stPageSize, stFilters).catch(() => ({
           transfers: [],

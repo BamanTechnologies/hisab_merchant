@@ -425,6 +425,14 @@ export const FETCH_STOCK_TRANSFERS_QUERY = `
         destination_stock
         quantity
         created_at
+        stockByStock {
+          id
+          product_id
+          product {
+            id
+            name
+          }
+        }
       }
     }
     total_stock_transfers: stock_transfers_aggregate(where: $filter) {
