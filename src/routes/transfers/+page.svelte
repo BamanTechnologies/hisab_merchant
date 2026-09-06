@@ -49,6 +49,8 @@
     request_hash?: string | null;
     created_by?: string | null;
     created_at?: string | null;
+    product_name?: string | null;
+    product_id?: string | null;
     stock_transfer_batches?: StockTransferBatch[] | null;
   };
 
@@ -187,6 +189,7 @@
 	let toFilter = $state($page.url.searchParams.get("to") ?? "");
 	let destinationMerchantFilter = $state($page.url.searchParams.get("destination_merchant") ?? "");
 	let createdByFilter = $state($page.url.searchParams.get("created_by") ?? "");
+	let productNameFilter = $state($page.url.searchParams.get("product_name") ?? "");
 	let tablePage = $state(Number($page.url.searchParams.get("page")) || 1);
 	let tablePageSize = $state(Number($page.url.searchParams.get("pageSize")) || 10);
 	let stPage = $state(Number($page.url.searchParams.get("st_page")) || 1);
@@ -240,6 +243,7 @@
 		if (toFilter) params.set("to", toFilter);
 		if (destinationMerchantFilter) params.set("destination_merchant", destinationMerchantFilter);
 		if (createdByFilter) params.set("created_by", createdByFilter);
+		if (productNameFilter) params.set("product_name", productNameFilter);
 		if (tablePage > 1) params.set("page", String(tablePage));
 		if (tablePageSize !== 10) params.set("pageSize", String(tablePageSize));
 		if (stPage > 1) params.set("st_page", String(stPage));
@@ -249,12 +253,13 @@
 	}
 
 	$effect(() => {
-		const f = `${fromFilter}|${toFilter}|${destinationMerchantFilter}|${createdByFilter}`;
+		const f = `${fromFilter}|${toFilter}|${destinationMerchantFilter}|${createdByFilter}|${productNameFilter}`;
 		const urlFrom = $page.url.searchParams.get("from") ?? "";
 		const urlTo = $page.url.searchParams.get("to") ?? "";
 		const urlDm = $page.url.searchParams.get("destination_merchant") ?? "";
 		const urlCb = $page.url.searchParams.get("created_by") ?? "";
-		const urlFilters = `${urlFrom}|${urlTo}|${urlDm}|${urlCb}`;
+		const urlPn = $page.url.searchParams.get("product_name") ?? "";
+		const urlFilters = `${urlFrom}|${urlTo}|${urlDm}|${urlCb}|${urlPn}`;
 		if (f === urlFilters) return;
 
 		clearTimeout(filterDebounceTimer);
@@ -292,6 +297,7 @@
 		toFilter = "";
 		destinationMerchantFilter = "";
 		createdByFilter = "";
+		productNameFilter = "";
 	}
 
 	function stockLinkId(t: Transfer): string | null {
@@ -373,6 +379,15 @@
 			{/each}
 		</select>
 	</label>
+	<label>
+		<span class={mc.filterLabel}>Product</span>
+		<input
+			class={mc.filterSelect}
+			type="text"
+			bind:value={productNameFilter}
+			placeholder="Search product..."
+		/>
+	</label>
 	<div class="flex items-end">
 		<button class={mc.ghostBtn} type="button" onclick={clearFilters}>{$_('clear')}</button>
 	</div>
@@ -391,7 +406,7 @@
             <th class={mc.thRight}>Total qty</th>
             <th class={mc.th}>Batches</th>
             <th class={mc.th}>Date</th>
-            <th class={mc.th}></th>
+            <th class={mc.th}>Product</th>
           </tr>
         </thead>
         <tbody>
@@ -424,16 +439,20 @@
                 <td class={mc.td}>{batchCount}</td>
                 <td class={mc.td}>{formatDate(st.created_at)}</td>
                 <td class={mc.td}>
-                  <button
-                    type="button"
-                    class="text-xs font-semibold text-[#4DA0E6] hover:underline"
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      goto(`/stock-transfers/${st.id}`);
-                    }}
-                  >
-                    Details
-                  </button>
+                  {#if st.product_id}
+                    <button
+                      type="button"
+                      class="text-xs font-semibold text-[#4DA0E6] hover:underline"
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        goto(`/products/${st.product_id}`);
+                      }}
+                    >
+                      {st.product_name?.trim() || "-- N/A --"}
+                    </button>
+                  {:else}
+                    <span class="text-gray-400">-- N/A --</span>
+                  {/if}
                 </td>
               </tr>
               {#if expandedTransferId === st.id}

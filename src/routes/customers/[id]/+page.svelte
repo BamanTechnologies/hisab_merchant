@@ -1,11 +1,13 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
+  import SendSmsModal from "$lib/components/SendSmsModal.svelte";
   import TablePagination from "$lib/components/TablePagination.svelte";
   import TableSortHeader from "$lib/components/TableSortHeader.svelte";
   import SummaryMetricCard from "$lib/components/SummaryMetricCard.svelte";
   import { mc, statusChipClass } from "$lib/merchant-styles.js";
   import { paginateSlice } from "$lib/pagination.js";
   import { buildStockLabel } from "$lib/stockLabel";
+  import WaightListSection from "$lib/components/WaightListSection.svelte";
   import type { PageData } from "./$types";
   import type { CustomerDetailOrder } from "./+page.server";
 
@@ -169,6 +171,7 @@
   );
   let errorMessage = $state("");
   let successMessage = $state("");
+  let showSmsModal = $state(false);
 
   $effect(() => {
     orders = data.orders;
@@ -297,14 +300,19 @@
   </div>
 {/if}
 
-<header class="mb-6">
-  <h1 class={mc.pageTitle}>{fullName()}</h1>
-  {#if data.customer.phone_number}
-    <p class={mc.pageSubtitle}>{data.customer.phone_number}</p>
-  {/if}
-  {#if data.customer.address}
-    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{data.customer.address}</p>
-  {/if}
+<header class="mb-6 flex flex-wrap items-start justify-between gap-4">
+  <div>
+    <h1 class={mc.pageTitle}>{fullName()}</h1>
+    {#if data.customer.phone_number}
+      <p class={mc.pageSubtitle}>{data.customer.phone_number}</p>
+    {/if}
+    {#if data.customer.address}
+      <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{data.customer.address}</p>
+    {/if}
+  </div>
+  <button type="button" class={mc.primaryBtn} onclick={() => (showSmsModal = true)}>
+    Send SMS message
+  </button>
 </header>
 
 <section class={mc.summaryGrid} aria-label="Customer summary">
@@ -487,4 +495,19 @@
       resetKey={customerActivityResetKey}
     />
   </section>
+{/if}
+
+<WaightListSection
+  customerId={data.customer.id}
+  companyId={data.companyId ?? ""}
+  merchantBranchId={data.merchantBranchId ?? ""}
+  title="Waight List"
+/>
+
+{#if showSmsModal}
+  <SendSmsModal
+    customerIds={[data.customer.id]}
+    oncancel={() => (showSmsModal = false)}
+    oncomplete={() => (showSmsModal = false)}
+  />
 {/if}

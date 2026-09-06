@@ -582,5 +582,7 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
     totalPaymentAmount,
     outstandingAmount,
     merchantId,
+    companyId,
+    merchantBranchId,
   };
 };
