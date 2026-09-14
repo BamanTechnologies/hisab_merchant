@@ -259,12 +259,12 @@
     {#if totalStockVal >0}
       <span class="text-sm font-semibold text-amber-700 dark:text-amber-400">
         Low stock — only {totalStockVal} {product.default_unit || "unit"}{totalStockVal === 1 ? "" : "s"} available
-        (threshold: {tresholdVal})
+        (threshold: {tresholdVal} {product.default_unit || "unit"}{tresholdVal === 1 ? "" : "s"})
       </span>
     {:else}
       <span class="text-sm font-semibold text-rose-700 dark:text-rose-400">
         Out of stock — no {product.default_unit || "unit"} available
-        (threshold: {tresholdVal})
+        (threshold: {tresholdVal} {product.default_unit || "unit"}{tresholdVal === 1 ? "" : "s"})
       </span>
     {/if}
     </div>

@@ -675,18 +675,18 @@
               <td class={mc.tdCenter}>
                 {#if !p.total_stock}
                   <span class="stock-pill stock-out">
-                    0 (Out of Stock)
+                    0 {p.default_unit} / {p.treshold_quantity} {p.default_unit} (Out of Stock)
                   </span>
                 {:else if p.treshold_quantity != null && Number(p.treshold_quantity) > 0 && p.total_stock < Number(p.treshold_quantity)}
                   <span
                     class="stock-pill stock-low"
                     title={`Stock (${p.total_stock}) is below stock threshold (${Number(p.treshold_quantity)})`}
                   >
-                    {p.total_stock} (Low Stock)
+                    {p.total_stock} {p.default_unit} / {p.treshold_quantity} {p.default_unit} (Low Stock)
                   </span>
                 {:else}
                   <span class="stock-pill">
-                    {p.total_stock} (Enough Stock)
+                    {p.total_stock} {p.default_unit} / {p.treshold_quantity} {p.default_unit} (Enough Stock)
                   </span>
                 {/if}
               </td>

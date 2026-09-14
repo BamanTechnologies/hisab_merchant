@@ -982,6 +982,7 @@
                   min="1"
                   bind:value={row.quantity}
                   disabled={createSubmitting}
+                  onwheel={(e) => e.currentTarget.blur()}
                   oninput={() => {
                     const q = Number(row.quantity);
                     if (Number.isFinite(q) && q >= 1) {
@@ -1007,6 +1008,7 @@
                   placeholder="Price"
                   title="Unit selling price for this order (editable)"
                   bind:value={row.unitPrice}
+                  onwheel={(e) => e.currentTarget.blur()}
                   oninput={() => {
                     orderLines = [...orderLines];
                   }}
