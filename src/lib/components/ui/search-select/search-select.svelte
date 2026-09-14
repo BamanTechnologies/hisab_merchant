@@ -199,8 +199,12 @@
       left = Math.max(padding, window.innerWidth - padding - width);
     }
     const spaceBelow = window.innerHeight - rect.bottom - gap - padding;
-    const maxHeight = Math.min(280, Math.max(80, spaceBelow));
-    panelStyle = `top:${rect.bottom + gap}px;left:${left}px;width:${width}px;max-height:${maxHeight}px`;
+    const spaceAbove = rect.top - gap - padding;
+    const openUp = spaceBelow < 200 && spaceAbove > spaceBelow;
+    const maxHeight = Math.min(280, Math.max(80, openUp ? spaceAbove : spaceBelow));
+    panelStyle = openUp
+      ? `bottom:${window.innerHeight - rect.top + gap}px;left:${left}px;width:${width}px;max-height:${maxHeight}px`
+      : `top:${rect.bottom + gap}px;left:${left}px;width:${width}px;max-height:${maxHeight}px`;
   }
 
   $effect(() => {
