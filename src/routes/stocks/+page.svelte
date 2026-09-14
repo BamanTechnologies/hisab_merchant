@@ -1251,7 +1251,7 @@
         <div class="edit-grid">
           <label >
             <span>Batch number</span>
-            <input type="text" name="batch_number" bind:value={editBatchNumber} autocomplete="off" disabled  />
+            <input type="text" name="batch_number" bind:value={editBatchNumber} autocomplete="off" readonly  />
           </label>
           <label>
             <span>Quantity</span>
