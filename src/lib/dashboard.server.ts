@@ -62,6 +62,14 @@ function buildOrdersFilter(
   return { _and: conds };
 }
 
+const ORDER_WITHOUT_DELETED_PRODUCT_FILTER = {
+  _not: {
+    order_items: {
+      product: { is_deleted: { _eq: true } },
+    },
+  },
+};
+
 const STATS_QUERY = `
   query DashboardStats($salesFilter: orders_bool_exp!, $ordersFilter: orders_bool_exp!, $outstandingFilter: orders_bool_exp!) {
     total_sales: orders_aggregate(where: $salesFilter) {
@@ -99,7 +107,20 @@ const RECENT_PAYMENTS_QUERY = `
 const TOP_PRODUCTS_QUERY = `
   query TopSellingProducts($filter: orders_bool_exp!) {
     orders(where: $filter) {
-      order_items {
+      order_items(
+        where: {
+          _and: [
+            { is_deleted: { _eq: false } }
+            { product: { is_deleted: { _eq: false } } }
+            {
+              _or: [
+                { stock_id: { _is_null: true } }
+                { stock: { is_deleted: { _eq: false } } }
+              ]
+            }
+          ]
+        }
+      ) {
         product_id quantity line_total unit
         product { id name default_unit }
       }
@@ -181,18 +202,27 @@ export async function fetchStats(
     _and: [
       { created_by: { _eq: merchantId } },
       { status: { _neq: "cancelled" } },
+      { is_deleted: { _eq: false } },
+      ORDER_WITHOUT_DELETED_PRODUCT_FILTER,
       ...dateConds,
     ],
   };
 
   const ordersFilter = {
-    _and: [{ created_by: { _eq: merchantId } }, ...dateConds],
+    _and: [
+      { created_by: { _eq: merchantId } },
+      { is_deleted: { _eq: false } },
+      ORDER_WITHOUT_DELETED_PRODUCT_FILTER,
+      ...dateConds,
+    ],
   };
 
   const outstandingFilter: { _and: Record<string, unknown>[] } = {
     _and: [
       { created_by: { _eq: merchantId } },
       { status: { _in: ["unpaid", "partially_paid"] } },
+      { is_deleted: { _eq: false } },
+      ORDER_WITHOUT_DELETED_PRODUCT_FILTER,
       ...dateConds,
     ],
   };
@@ -231,6 +261,8 @@ export async function fetchOutstandingCredit(
       { created_by: { _eq: merchantId } },
       { status: { _neq: "cancelled" } },
       { outstanding_amount: { _gt: 0 } },
+      { is_deleted: { _eq: false } },
+      ORDER_WITHOUT_DELETED_PRODUCT_FILTER,
       ...buildDateConditions(from, to),
     ],
   };
@@ -310,6 +342,7 @@ export async function fetchTopSellingProducts(
     _and: [
       { created_by: { _eq: merchantId } },
       { status: { _neq: "cancelled" } },
+      { is_deleted: { _eq: false } },
       ...buildDateConditions(from, to),
     ],
   };
@@ -381,7 +414,13 @@ export async function fetchRecentStocks(
 ): Promise<StockRecord[]> {
   if (branchIds.length === 0) return [];
 
-  const filter = { branch: { _in: branchIds } };
+  const filter = {
+    _and: [
+      { branch: { _in: branchIds } },
+      { is_deleted: { _eq: false } },
+      { product: { is_deleted: { _eq: false } } },
+    ],
+  };
 
   try {
     const data = await gql<{
@@ -433,10 +472,18 @@ const LOW_STOCK_QUERY = `
           {
             _or: [
               { branch_id: { _eq: $branchId } }
-              { stock_movements: { branch_id: { _eq: $branchId } } }
+              {
+                stock_movements: {
+                  _and: [
+                    { branch_id: { _eq: $branchId } }
+                    { is_deleted: { _eq: false } }
+                  ]
+                }
+              }
             ]
           }
           { treshold_quantity: { _gt: 0 } }
+          { is_deleted: { _eq: false } }
         ]
       }
       order_by: [{ name: asc }]
@@ -445,7 +492,14 @@ const LOW_STOCK_QUERY = `
       name
       default_unit
       treshold_quantity
-      stock_movements_aggregate(where: { branch_id: { _eq: $branchId } }) {
+      stock_movements_aggregate(
+        where: {
+          _and: [
+            { branch_id: { _eq: $branchId } }
+            { is_deleted: { _eq: false } }
+          ]
+        }
+      ) {
         aggregate {
           sum {
             quantity_delta
@@ -534,6 +588,7 @@ export async function fetchTopCustomers(
       { status: { _neq: "cancelled" } },
       { customer_name: { _neq: "" } },
       { customer_name: { _is_null: false } },
+      { is_deleted: { _eq: false } },
       ...buildDateConditions(from, to),
     ],
   };
@@ -622,6 +677,7 @@ export async function fetchUnpaidOrders(
     _and: [
       { created_by: { _eq: merchantId } },
       { status: { _in: ["unpaid", "partially_paid"] } },
+      { is_deleted: { _eq: false } },
       ...buildDateConditions(from, to),
     ],
   };
