@@ -20,6 +20,7 @@ import {
   resolveCatalogProductName,
 } from "$lib/inventory/parseForm";
 import { subscriptionWriteActionBlockedForRequest } from "$lib/subscription/server";
+import { setProductSoftDeleted } from "$lib/inventory/products.server";
 
 const FETCH_PRODUCTS_QUERY = `
   query CompanyProducts($filter: products_bool_exp, $order: [products_order_by!], $limit: Int, $offset: Int, $branchId: uuid!) {
@@ -44,7 +45,14 @@ const FETCH_PRODUCTS_QUERY = `
         id
         name
       }
-      stock_movements_aggregate(where: { branch_id: { _eq: $branchId } }) {
+      stock_movements_aggregate(
+        where: {
+          _and: [
+            { branch_id: { _eq: $branchId } }
+            { is_deleted: { _eq: false } }
+          ]
+        }
+      ) {
         aggregate {
           sum {
             quantity_delta
@@ -111,6 +119,7 @@ async function fetchProducts(
   search: string,
   page: number,
   pageSize: number,
+  deleted: boolean,
 ) {
   if (!companyId || !branchId) return { products: [], totalCount: 0 };
 
@@ -118,6 +127,7 @@ async function fetchProducts(
 
   const conditions: Record<string, unknown>[] = [
     { company_id: { _eq: companyId } },
+    { is_deleted: { _eq: deleted } },
     {
       _or: [
         { branch_id: { _eq: branchId } },
@@ -199,10 +209,18 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
   const search = url.searchParams.get("search") ?? "";
   const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
   const pageSize = Math.max(1, Number(url.searchParams.get("pageSize")) || 10);
+  const tab = url.searchParams.get("tab") === "archived" ? "archived" : "active";
 
   const [{ products: productsRaw, totalCount }, investors, productTypes] =
     await Promise.all([
-      fetchProducts(companyId, merchantBranchId, search, page, pageSize),
+      fetchProducts(
+        companyId,
+        merchantBranchId,
+        search,
+        page,
+        pageSize,
+        tab === "archived",
+      ),
       fetchInvestorsForCompany(companyId),
       fetchProductTypes(merchantId),
     ]);
@@ -379,6 +397,56 @@ export const actions: Actions = {
       return {
         success: false,
         message: `Failed to update product: ${err instanceof Error ? err.message : "Unknown error"}`,
+      };
+    }
+  },
+
+  deleteProduct: async ({ request }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
+    const userId = getMerchantIdFromRequest(request);
+    if (!userId) return { success: false, message: "Authentication required" };
+
+    const formData = await request.formData();
+    const id = String(formData.get("id") ?? "").trim();
+    if (!id) return { success: false, message: "Product ID is required" };
+
+    try {
+      await setProductSoftDeleted(id, true);
+      return {
+        success: true,
+        message: "Product archived with its related stock, movements, orders and transfers",
+      };
+    } catch (err) {
+      return {
+        success: false,
+        message: `Failed to archive product: ${err instanceof Error ? err.message : "Unknown error"}`,
+      };
+    }
+  },
+
+  restoreProduct: async ({ request }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
+    const userId = getMerchantIdFromRequest(request);
+    if (!userId) return { success: false, message: "Authentication required" };
+
+    const formData = await request.formData();
+    const id = String(formData.get("id") ?? "").trim();
+    if (!id) return { success: false, message: "Product ID is required" };
+
+    try {
+      await setProductSoftDeleted(id, false);
+      return {
+        success: true,
+        message: "Product restored with its related stock, movements, orders and transfers",
+      };
+    } catch (err) {
+      return {
+        success: false,
+        message: `Failed to restore product: ${err instanceof Error ? err.message : "Unknown error"}`,
       };
     }
   },

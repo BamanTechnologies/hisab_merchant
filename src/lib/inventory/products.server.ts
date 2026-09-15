@@ -156,3 +156,97 @@ export async function searchProducts(
     return [];
   }
 }
+
+const SET_PRODUCT_SOFT_DELETED_MUTATION = `
+  mutation SetProductSoftDeleted($id: uuid!, $isDeleted: Boolean!) {
+    update_products(where: { id: { _eq: $id } }, _set: { is_deleted: $isDeleted }) {
+      affected_rows
+    }
+    update_stock(where: { product_id: { _eq: $id } }, _set: { is_deleted: $isDeleted }) {
+      affected_rows
+    }
+    update_stock_movements(
+      where: {
+        _or: [
+          { product_id: { _eq: $id } }
+          { stock: { product_id: { _eq: $id } } }
+        ]
+      }
+      _set: { is_deleted: $isDeleted }
+    ) {
+      affected_rows
+    }
+    update_order_items(
+      where: {
+        _or: [
+          { product_id: { _eq: $id } }
+          { stock: { product_id: { _eq: $id } } }
+        ]
+      }
+      _set: { is_deleted: $isDeleted }
+    ) {
+      affected_rows
+    }
+    update_order_item_batches(
+      where: {
+        _or: [
+          { order_item: { product_id: { _eq: $id } } }
+          { stock: { product_id: { _eq: $id } } }
+        ]
+      }
+      _set: { is_deleted: $isDeleted }
+    ) {
+      affected_rows
+    }
+    update_orders(
+      where: {
+        _or: [
+          { order_items: { product_id: { _eq: $id } } }
+          { stock: { product_id: { _eq: $id } } }
+        ]
+      }
+      _set: { is_deleted: $isDeleted }
+    ) {
+      affected_rows
+    }
+    update_stock_transfer_batches(
+      where: {
+        _or: [
+          { stockByStock: { product_id: { _eq: $id } } }
+          { stockByDestinationStock: { product_id: { _eq: $id } } }
+        ]
+      }
+      _set: { is_deleted: $isDeleted }
+    ) {
+      affected_rows
+    }
+    update_stock_transfers(
+      where: {
+        stock_transfer_batches: {
+          _or: [
+            { stockByStock: { product_id: { _eq: $id } } }
+            { stockByDestinationStock: { product_id: { _eq: $id } } }
+          ]
+        }
+      }
+      _set: { is_deleted: $isDeleted }
+    ) {
+      affected_rows
+    }
+  }
+`;
+
+export async function setProductSoftDeleted(
+  productId: string,
+  isDeleted: boolean,
+): Promise<void> {
+  const data = await gql<{
+    update_products: { affected_rows: number } | null;
+  }>(SET_PRODUCT_SOFT_DELETED_MUTATION, {
+    id: productId,
+    isDeleted,
+  });
+  if (!data.update_products || data.update_products.affected_rows === 0) {
+    throw new Error("Product was not found");
+  }
+}
