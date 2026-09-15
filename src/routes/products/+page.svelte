@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { enhance } from "$app/forms";
-  import { goto } from "$app/navigation";
+  import { deserialize, enhance } from "$app/forms";
+  import { goto, invalidateAll } from "$app/navigation";
   import { navigating } from "$app/state";
   import { page } from "$app/stores";
-  import { Pencil } from "@lucide/svelte";
+  import { ArchiveRestore, Pencil, Trash2, X } from "@lucide/svelte";
   import { tick } from "svelte";
   import TableLoading from "$lib/components/TableLoading.svelte";
   import TablePagination from "$lib/components/TablePagination.svelte";
@@ -58,6 +58,17 @@
   let formPending = $state(false);
   let errorMessage = $state("");
 
+  const initialTab = $page.url.searchParams.get("tab") === "archived"
+    ? "archived"
+    : "active";
+  let activeTab = $state<"active" | "archived">(initialTab);
+  let showArchiveModal = $state(false);
+  let productToArchive = $state<Product | null>(null);
+  let showRestoreModal = $state(false);
+  let productToRestore = $state<Product | null>(null);
+  let actionPending = $state(false);
+  let actionError = $state("");
+
   const subscriptionLocked = $derived($subscriptionBlocksMutations);
   const investors = data.investors as Investor[];
   const productTypes = (data.productTypes ?? []) as ProductType[];
@@ -91,6 +102,9 @@
   $effect(() => {
     products = data.products as Product[];
     totalCount = (data as { totalCount: number }).totalCount ?? 0;
+    const urlTab =
+      $page.url.searchParams.get("tab") === "archived" ? "archived" : "active";
+    activeTab = urlTab;
   });
 
   function typeFromProduct(p: Product): string {
@@ -142,11 +156,113 @@
 
   function navigateWithState() {
     const params = new URLSearchParams();
+    if (activeTab === "archived") params.set("tab", "archived");
     if (searchQuery) params.set("search", searchQuery);
     if (tablePage > 1) params.set("page", String(tablePage));
     if (tablePageSize !== 10) params.set("pageSize", String(tablePageSize));
     const qs = params.toString();
     goto(qs ? `/products?${qs}` : "/products", { replaceState: true, keepFocus: true });
+  }
+
+  function selectTab(tab: "active" | "archived") {
+    if (activeTab === tab) return;
+    suppressPageNav = true;
+    activeTab = tab;
+    tablePage = 1;
+    navigateWithState();
+    suppressPageNav = false;
+  }
+
+  function openArchiveModal(product: Product, event: Event) {
+    if (subscriptionLocked) return;
+    event.stopPropagation();
+    actionError = "";
+    productToArchive = product;
+    showArchiveModal = true;
+  }
+
+  function closeArchiveModal(force = false) {
+    if (!force && actionPending) return;
+    showArchiveModal = false;
+    productToArchive = null;
+  }
+
+  function openRestoreModal(product: Product, event: Event) {
+    if (subscriptionLocked) return;
+    event.stopPropagation();
+    actionError = "";
+    productToRestore = product;
+    showRestoreModal = true;
+  }
+
+  function closeRestoreModal(force = false) {
+    if (!force && actionPending) return;
+    showRestoreModal = false;
+    productToRestore = null;
+  }
+
+  async function confirmArchive() {
+    if (!productToArchive || actionPending) return;
+    actionPending = true;
+    actionError = "";
+    try {
+      const formData = new FormData();
+      formData.append("id", productToArchive.id);
+      const response = await fetch("?/deleteProduct", {
+        method: "POST",
+        body: formData,
+      });
+      const result = deserialize(await response.text());
+      const t = toastFromActionResult(result);
+      if (t) showToast(t.message, t.variant);
+      const payload =
+        result.type === "success" && "data" in result
+          ? (result.data as { success?: boolean } | undefined)
+          : undefined;
+      if (result.type === "success" && payload?.success) {
+        closeArchiveModal(true);
+        await invalidateAll();
+      } else if (t?.variant === "error") {
+        actionError = t.message;
+      }
+    } catch (err) {
+      actionError =
+        err instanceof Error ? err.message : "Failed to archive product";
+    } finally {
+      actionPending = false;
+    }
+  }
+
+  async function confirmRestore() {
+    if (!productToRestore || actionPending) return;
+    actionPending = true;
+    actionError = "";
+    try {
+      const formData = new FormData();
+      formData.append("id", productToRestore.id);
+      const response = await fetch("?/restoreProduct", {
+        method: "POST",
+        body: formData,
+      });
+      const result = deserialize(await response.text());
+      const t = toastFromActionResult(result);
+      if (t) showToast(t.message, t.variant);
+      const payload =
+        result.type === "success" && "data" in result
+          ? (result.data as { success?: boolean } | undefined)
+          : undefined;
+      if (result.type === "success" && payload?.success) {
+        closeRestoreModal(true);
+        await invalidateAll();
+      } else if (t?.variant === "error") {
+        actionError = t.message;
+      }
+    } catch (err) {
+      actionError =
+        err instanceof Error ? err.message : "Failed to restore product";
+    } finally {
+      actionPending = false;
+    }
   }
 
   $effect(() => {
@@ -370,6 +486,31 @@
     Create Product
   </button>
 </section>
+
+<div
+  class="mb-4 inline-flex gap-1 rounded-lg border border-[#e6eaed] bg-white p-1 shadow-sm dark:border-white/10 dark:bg-[#0f172a] dark:shadow-none"
+  role="tablist"
+  aria-label="Product list"
+>
+  <button
+    type="button"
+    role="tab"
+    class="product-tab {activeTab === 'active' ? 'product-tab-active' : ''}"
+    aria-selected={activeTab === "active"}
+    onclick={() => selectTab("active")}
+  >
+    Active
+  </button>
+  <button
+    type="button"
+    role="tab"
+    class="product-tab {activeTab === 'archived' ? 'product-tab-active' : ''}"
+    aria-selected={activeTab === "archived"}
+    onclick={() => selectTab("archived")}
+  >
+    Archived
+  </button>
+</div>
 
 {#if !data.companyId}
   <p class="mb-4 text-sm text-red-700 dark:text-red-300">
@@ -627,6 +768,126 @@
   {/if}
 {/if}
 
+{#if showArchiveModal && productToArchive}
+  <div
+    class="modal-overlay"
+    role="button"
+    tabindex="0"
+    onclick={() => !actionPending && closeArchiveModal()}
+    onkeydown={(e) =>
+      !actionPending && (e.key === "Enter" || e.key === " ") && closeArchiveModal()}
+  ></div>
+  <dialog
+    open
+    class="modal modal-sm"
+    onclick={(e) => e.stopPropagation()}
+    oncancel={(e) => actionPending && e.preventDefault()}
+  >
+    <header>
+      <h2>Archive product</h2>
+      <button
+        type="button"
+        class="icon-btn"
+        aria-label="Close"
+        disabled={actionPending}
+        onclick={() => closeArchiveModal()}
+      >
+        <X size={18} />
+      </button>
+    </header>
+    <div class="modal-body">
+      <p>
+        Archive this product? This hides the product and its related stock,
+        movements, orders and transfers from the app.
+      </p>
+      <p class="detail">
+        {productToArchive.displayName || productToArchive.name || "—"}
+      </p>
+      {#if actionError}
+        <p class="modal-error">{actionError}</p>
+      {/if}
+    </div>
+    <footer>
+      <button
+        type="button"
+        class={mc.tableBtn}
+        onclick={() => closeArchiveModal()}
+        disabled={actionPending}
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="danger-btn"
+        onclick={confirmArchive}
+        disabled={actionPending}
+      >
+        {actionPending ? "Archiving…" : "Archive"}
+      </button>
+    </footer>
+  </dialog>
+{/if}
+
+{#if showRestoreModal && productToRestore}
+  <div
+    class="modal-overlay"
+    role="button"
+    tabindex="0"
+    onclick={() => !actionPending && closeRestoreModal()}
+    onkeydown={(e) =>
+      !actionPending && (e.key === "Enter" || e.key === " ") && closeRestoreModal()}
+  ></div>
+  <dialog
+    open
+    class="modal modal-sm"
+    onclick={(e) => e.stopPropagation()}
+    oncancel={(e) => actionPending && e.preventDefault()}
+  >
+    <header>
+      <h2>Restore product</h2>
+      <button
+        type="button"
+        class="icon-btn"
+        aria-label="Close"
+        disabled={actionPending}
+        onclick={() => closeRestoreModal()}
+      >
+        <X size={18} />
+      </button>
+    </header>
+    <div class="modal-body">
+      <p>
+        Restore this product? This brings back the product and its related stock,
+        movements, orders and transfers.
+      </p>
+      <p class="detail">
+        {productToRestore.displayName || productToRestore.name || "—"}
+      </p>
+      {#if actionError}
+        <p class="modal-error">{actionError}</p>
+      {/if}
+    </div>
+    <footer>
+      <button
+        type="button"
+        class={mc.tableBtn}
+        onclick={() => closeRestoreModal()}
+        disabled={actionPending}
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="primary"
+        onclick={confirmRestore}
+        disabled={actionPending}
+      >
+        {actionPending ? "Restoring…" : "Restore"}
+      </button>
+    </footer>
+  </dialog>
+{/if}
+
 <section class={mc.tableSection}>
   <div class={mc.tableToolbar}>
     <TableSearchInput
@@ -691,18 +952,47 @@
                 {/if}
               </td>
               <td class={mc.tdCenter}>
-                <button
-                  type="button"
-                  class={mc.actionBtn}
-                  onclick={(e) => openEditModal(p, e)}
-                  disabled={subscriptionLocked}
-                  aria-label="Edit product"
-                  title={subscriptionLocked
-                    ? SUBSCRIPTION_BLOCKED_MESSAGE
-                    : "Edit product"}
-                >
-                  <Pencil size={14} strokeWidth={2} />
-                </button>
+                <div class="flex items-center justify-center gap-2">
+                  {#if activeTab === "active"}
+                    <button
+                      type="button"
+                      class={mc.actionBtn}
+                      onclick={(e) => openEditModal(p, e)}
+                      disabled={subscriptionLocked}
+                      aria-label="Edit product"
+                      title={subscriptionLocked
+                        ? SUBSCRIPTION_BLOCKED_MESSAGE
+                        : "Edit product"}
+                    >
+                      <Pencil size={14} strokeWidth={2} />
+                    </button>
+                    <button
+                      type="button"
+                      class={mc.actionBtnDanger}
+                      onclick={(e) => openArchiveModal(p, e)}
+                      disabled={subscriptionLocked}
+                      aria-label="Archive product"
+                      title={subscriptionLocked
+                        ? SUBSCRIPTION_BLOCKED_MESSAGE
+                        : "Archive product"}
+                    >
+                      <Trash2 size={14} strokeWidth={2} />
+                    </button>
+                  {:else}
+                    <button
+                      type="button"
+                      class={mc.actionBtn}
+                      onclick={(e) => openRestoreModal(p, e)}
+                      disabled={subscriptionLocked}
+                      aria-label="Restore product"
+                      title={subscriptionLocked
+                        ? SUBSCRIPTION_BLOCKED_MESSAGE
+                        : "Restore product"}
+                    >
+                      <ArchiveRestore size={14} strokeWidth={2} />
+                    </button>
+                  {/if}
+                </div>
               </td>
             </tr>
           {/each}
@@ -711,6 +1001,8 @@
               <td colspan="7" class={mc.emptyCell}>
                 {#if searchQuery.trim()}
                   No products match your search.
+                {:else if activeTab === "archived"}
+                  No archived products.
                 {:else}
                   No products found. Create your first product to get started.
                 {/if}
@@ -729,6 +1021,120 @@
 </section>
 
 <style>
+  .product-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    border: none;
+    padding: 0.375rem 1.25rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #6b7280;
+    background: transparent;
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s;
+    white-space: nowrap;
+  }
+
+  .product-tab:hover {
+    background: #f3f4f6;
+  }
+
+  :global(.dark) .product-tab {
+    color: #d1d5db;
+  }
+
+  :global(.dark) .product-tab:hover {
+    background: rgb(255 255 255 / 0.08);
+  }
+
+  .product-tab-active {
+    background: #4da0e6;
+    color: white;
+  }
+
+  .product-tab-active:hover {
+    background: #3d8fd4;
+    color: white;
+  }
+
+  .modal-sm {
+    max-width: 440px;
+  }
+
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 0.375rem;
+  }
+
+  .icon-btn:hover:not(:disabled) {
+    background: #f1f5f9;
+    color: #334155;
+  }
+
+  .icon-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  :global(.dark) .icon-btn:hover:not(:disabled) {
+    background: rgb(255 255 255 / 0.08);
+    color: #e2e8f0;
+  }
+
+  .detail {
+    font-size: 0.8125rem;
+    color: #64748b;
+  }
+
+  :global(.dark) .detail {
+    color: #94a3b8;
+  }
+
+  .modal-error {
+    margin-top: 0.5rem;
+    border-radius: 0.375rem;
+    border: 1px solid #fecaca;
+    background: #fef2f2;
+    padding: 0.5rem 0.625rem;
+    font-size: 0.8125rem;
+    color: #b91c1c;
+  }
+
+  :global(.dark) .modal-error {
+    border-color: rgb(248 113 113 / 0.3);
+    background: rgb(239 68 68 / 0.1);
+    color: #fca5a5;
+  }
+
+  .danger-btn {
+    display: inline-flex;
+    height: 30px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 5px;
+    border: 1px solid #fca5a5;
+    background: #ef4444;
+    color: white;
+    padding: 0 0.85rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .danger-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
   fieldset.product-form-fields {
     border: none;
     padding: 0;
