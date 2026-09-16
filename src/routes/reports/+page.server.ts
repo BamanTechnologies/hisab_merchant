@@ -30,7 +30,7 @@ const FETCH_REPORTS_QUERY = `
 // GraphQL query to generate investor report
 const GENERATE_INVESTOR_REPORT_QUERY = `
   query GenerateInvestorReport($merchant_id: uuid!, $investor_phone: String!, $investor_id: uuid!) {
-    stocks: stock(where: {_and: {created_by: {_eq: $merchant_id}, investors: {_contains: [$investor_id]}}}) {
+    stocks: stock(where: {_and: [{created_by: {_eq: $merchant_id}}, {investors: {_contains: [$investor_id]}}, {is_deleted: {_eq: false}}]}) {
       id
       product_type
       attributes
@@ -117,6 +117,25 @@ const FETCH_ORDER_ITEMS_BY_ORDER_IDS_QUERY = `
   }
 `;
 
+/** Archived (soft-deleted) orders, and payments belonging to archived orders. */
+const FETCH_ARCHIVED_FOR_REPORT_QUERY = `
+  query ReportArchivedFlags($orderIds: [uuid!]!, $paymentIds: [uuid!]!) {
+    orders(where: { id: { _in: $orderIds }, is_deleted: { _eq: true } }) {
+      id
+    }
+    payment(
+      where: {
+        _and: [
+          { id: { _in: $paymentIds } }
+          { order: { is_deleted: { _eq: true } } }
+        ]
+      }
+    ) {
+      id
+    }
+  }
+`;
+
 // GraphQL mutation to send report via SMS
 const SEND_REPORT_MUTATION = `
   mutation SendReport($data: String!) {
@@ -186,6 +205,15 @@ async function fetchReports(
 }
 
 // Function to generate investor report
+function toReportNumber(v: unknown): number {
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  if (typeof v === "string") {
+    const n = Number(String(v).replace(/[^0-9.-]/g, ""));
+    return Number.isFinite(n) ? n : 0;
+  }
+  return 0;
+}
+
 async function generateInvestorReport(
   investorId: string,
   investorPhone: string,
@@ -225,14 +253,96 @@ async function generateInvestorReport(
         Boolean(o && typeof o === "object"),
       )
     : [];
-  const orderIds = [
-    ...new Set(
-      ordersRaw
-        .map((o) => (typeof o.id === "string" ? o.id : ""))
-        .filter((id) => id.length > 0),
-    ),
+  const paymentsRaw = Array.isArray(reportData.payments)
+    ? reportData.payments.filter((p): p is Record<string, unknown> =>
+        Boolean(p && typeof p === "object"),
+      )
+    : [];
+
+  // Archived (soft-deleted) orders must be excluded from the report, and so
+  // must payments that belong to archived orders.
+  const allOrderIds = [
+    ...new Set(ordersRaw.map((o) => (typeof o.id === "string" ? o.id : "")).filter((id) => id.length > 0)),
   ];
-  if (orderIds.length === 0) return reportData;
+  const allPaymentIds = [
+    ...new Set(paymentsRaw.map((p) => (typeof p.id === "string" ? p.id : "")).filter((id) => id.length > 0)),
+  ];
+
+  let archivedOrderIds = new Set<string>();
+  let archivedPaymentIds = new Set<string>();
+  try {
+    const flagsResp = await fetch(config.graphql.endpoint, {
+      method: "POST",
+      headers: getGraphQLHeaders(),
+      body: JSON.stringify({
+        query: FETCH_ARCHIVED_FOR_REPORT_QUERY,
+        variables: { orderIds: allOrderIds, paymentIds: allPaymentIds },
+      }),
+    });
+    if (flagsResp.ok) {
+      const flagsResult = await flagsResp.json();
+      if (!flagsResult.errors) {
+        archivedOrderIds = new Set(
+          (Array.isArray(flagsResult.data?.orders)
+            ? (flagsResult.data.orders as Array<{ id?: string }>)
+            : []
+          )
+            .map((o) => o.id ?? "")
+            .filter((id) => id.length > 0),
+        );
+        archivedPaymentIds = new Set(
+          (Array.isArray(flagsResult.data?.payment)
+            ? (flagsResult.data.payment as Array<{ id?: string }>)
+            : []
+          )
+            .map((p) => p.id ?? "")
+            .filter((id) => id.length > 0),
+        );
+      }
+    }
+  } catch {
+    // Fall back to the unfiltered view rows when flag lookup fails.
+  }
+
+  const orders = ordersRaw.filter((o) => {
+    const oid = typeof o.id === "string" ? o.id : "";
+    return !archivedOrderIds.has(oid);
+  });
+  const payments = paymentsRaw.filter((p) => {
+    const pid = typeof p.id === "string" ? p.id : "";
+    return !archivedPaymentIds.has(pid);
+  });
+
+  const filteredReportData = {
+    ...reportData,
+    orders,
+    payments,
+    orders_aggregate: {
+      aggregate: {
+        sum: {
+          total_amount: orders.reduce(
+            (sum, o) => sum + toReportNumber(o.total_amount),
+            0,
+          ),
+        },
+      },
+    },
+    payments_aggregate: {
+      aggregate: {
+        sum: {
+          amount: payments.reduce(
+            (sum, p) => sum + toReportNumber(p.amount),
+            0,
+          ),
+        },
+      },
+    },
+  };
+  if (orders.length === 0) {
+    return { ...filteredReportData, investor_id: investorId };
+  }
+
+  const orderIds = orders.map((o) => (typeof o.id === "string" ? o.id : "")).filter((id) => id.length > 0);
 
   let itemsByOrderId = new Map<string, Array<Record<string, unknown>>>();
   try {
@@ -276,7 +386,7 @@ async function generateInvestorReport(
   );
 
   const expandedOrders: Record<string, unknown>[] = [];
-  for (const order of ordersRaw) {
+  for (const order of orders) {
     const oid = typeof order.id === "string" ? order.id : "";
     const orderItems = (itemsByOrderId.get(oid) ?? []).filter((it) => {
       const sid = typeof it.stock_id === "string" ? it.stock_id : "";
@@ -300,7 +410,11 @@ async function generateInvestorReport(
     }
   }
 
-  return { ...reportData, investor_id: investorId, orders: expandedOrders };
+  return {
+    ...filteredReportData,
+    investor_id: investorId,
+    orders: expandedOrders,
+  };
 }
 
 function withComputedSoldPrice(
