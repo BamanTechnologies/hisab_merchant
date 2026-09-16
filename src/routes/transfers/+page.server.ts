@@ -10,6 +10,7 @@ import {
   planTransfer,
 } from "$lib/inventory/stockTransfers.server";
 import { subscriptionWriteActionBlockedForRequest } from "$lib/subscription/server";
+import { setStockTransferSoftDeleted } from "$lib/inventory/stockTransfers.server";
 
 type TransferRow = {
   id: string;
@@ -176,6 +177,7 @@ async function gqlRequest<T>(
 
 type StockTransferRow = {
   id: string;
+  is_deleted?: boolean | null;
   from?: string | null;
   to?: string | null;
   destination_merchant?: string | null;
@@ -215,6 +217,7 @@ async function fetchStockTransfers(
   branchId: string | null,
   page: number,
   pageSize: number,
+  deleted: boolean,
   filters?: { from?: string; to?: string; destination_merchant?: string; created_by?: string; product_name?: string },
 ): Promise<{ transfers: StockTransferRow[]; totalCount: number }> {
   const conditions: Record<string, unknown>[] = [
@@ -224,6 +227,7 @@ async function fetchStockTransfers(
         { destination_merchant: { _eq: merchantId } },
       ],
     },
+    { is_deleted: { _eq: deleted } },
   ];
 
   if (branchId) {
@@ -384,6 +388,7 @@ export const load: PageServerLoad = async ({ request, url, parent }) => {
   const offset = (page - 1) * pageSize;
   const stPage = Math.max(1, Number(url.searchParams.get("st_page")) || 1);
   const stPageSize = Math.max(1, Number(url.searchParams.get("st_pageSize")) || 10);
+  const tab = url.searchParams.get("tab") === "archived" ? "archived" : "active";
 
   const conditions: Record<string, unknown>[] = [
     {
@@ -474,7 +479,7 @@ export const load: PageServerLoad = async ({ request, url, parent }) => {
     }
 
     const stFilters = { from, to, destination_merchant: destinationMerchant, created_by: createdBy, product_name: productName };
-    const stockTransfersResult = await fetchStockTransfers(merchantId, companyId, merchantBranchId, stPage, stPageSize, stFilters);
+    const stockTransfersResult = await fetchStockTransfers(merchantId, companyId, merchantBranchId, stPage, stPageSize, tab === "archived", stFilters);
 
     return {
       transfers: transfersEnriched,
@@ -490,7 +495,7 @@ export const load: PageServerLoad = async ({ request, url, parent }) => {
   } catch (_error) {
     const stFilters = { from, to, destination_merchant: destinationMerchant, created_by: createdBy, product_name: productName };
     const stockTransfersFallback = merchantId
-      ? await fetchStockTransfers(merchantId, companyId, merchantBranchId, stPage, stPageSize, stFilters).catch(() => ({
+      ? await fetchStockTransfers(merchantId, companyId, merchantBranchId, stPage, stPageSize, tab === "archived", stFilters).catch(() => ({
           transfers: [],
           totalCount: 0,
         }))
@@ -578,5 +583,59 @@ export const actions: Actions = {
       success: true,
       message: `Transferred ${quantity} units via FIFO.`,
     };
+  },
+
+  archiveStockTransfer: async ({ request }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
+    const transferId = String(
+      (await request.formData()).get("transferId") ?? "",
+    ).trim();
+    if (!transferId) {
+      return { success: false, message: "Transfer ID is required" };
+    }
+
+    try {
+      await setStockTransferSoftDeleted(transferId, true);
+      return {
+        success: true,
+        message: "Transfer archived with its batch slices",
+      };
+    } catch (err) {
+      return {
+        success: false,
+        message: `Failed to archive transfer: ${
+          err instanceof Error ? err.message : "Unknown error"
+        }`,
+      };
+    }
+  },
+
+  restoreStockTransfer: async ({ request }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
+    const transferId = String(
+      (await request.formData()).get("transferId") ?? "",
+    ).trim();
+    if (!transferId) {
+      return { success: false, message: "Transfer ID is required" };
+    }
+
+    try {
+      await setStockTransferSoftDeleted(transferId, false);
+      return {
+        success: true,
+        message: "Transfer restored with its batch slices",
+      };
+    } catch (err) {
+      return {
+        success: false,
+        message: `Failed to restore transfer: ${
+          err instanceof Error ? err.message : "Unknown error"
+        }`,
+      };
+    }
   },
 };

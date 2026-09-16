@@ -10,6 +10,7 @@ import { config, getGraphQLHeaders } from "$lib/config";
 import { createPaymentRecord } from "$lib/payments.server";
 import { insertCustomerTransaction } from "$lib/customerTransactions.server";
 import { subscriptionWriteActionBlockedForRequest } from "$lib/subscription/server";
+import { setOrderSoftDeleted } from "$lib/inventory/orders.server";
 
 const FETCH_ORDER_FOR_MERCHANT_QUERY = `
   query GetOrderForMerchant($id: uuid!, $merchantId: uuid!) {
@@ -23,6 +24,7 @@ const FETCH_ORDER_FOR_MERCHANT_QUERY = `
       customer_phone
       customer_id
       id
+      is_deleted
       order_quantity
       status
       stock_id
@@ -256,6 +258,36 @@ export const actions: Actions = {
       return {
         success: false,
         message: `Failed to create payment: ${error instanceof Error ? error.message : "Unknown error"}`,
+      };
+    }
+  },
+
+  restoreOrder: async ({ request, params }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
+    try {
+      const merchantId = getMerchantIdFromRequest(request);
+      if (!merchantId) {
+        return { success: false, message: "Authentication required" };
+      }
+
+      const order = await fetchOrderForMerchant(params.id, merchantId);
+      if (!order) {
+        return { success: false, message: "Order not found" };
+      }
+
+      await setOrderSoftDeleted(params.id, false);
+      return {
+        success: true,
+        message: "Order restored with its items",
+      };
+    } catch (err) {
+      return {
+        success: false,
+        message: `Failed to restore order: ${
+          err instanceof Error ? err.message : "Unknown error"
+        }`,
       };
     }
   },

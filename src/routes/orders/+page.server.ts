@@ -22,6 +22,7 @@ import {
 } from "$lib/inventory/orders.server";
 import { buildStockLabel } from "$lib/stockLabel";
 import { subscriptionWriteActionBlockedForRequest } from "$lib/subscription/server";
+import { setOrderSoftDeleted } from "$lib/inventory/orders.server";
 
 const FETCH_BRANCH_BY_PK_QUERY = `
   query OrdersBranchByPk($id: uuid!) {
@@ -161,6 +162,7 @@ const FETCH_ORDERS_QUERY = `
       customer_name
       customer_phone
       id
+      is_deleted
       order_quantity
       status
       stock_id
@@ -957,9 +959,11 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
   const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
   const pageSize = Math.max(1, Number(url.searchParams.get("pageSize")) || 10);
   const offset = (page - 1) * pageSize;
+  const tab = url.searchParams.get("tab") === "archived" ? "archived" : "active";
 
   const conditions: Record<string, unknown>[] = [
     { created_by: { _eq: merchantId } },
+    { is_deleted: { _eq: tab === "archived" } },
   ];
 
   if (customerName) {
@@ -1014,6 +1018,7 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
 
   const paymentFilter: Record<string, unknown> = {
     created_by: { _eq: merchantId },
+    order: { is_deleted: { _eq: false } },
   };
   const paymentOrder = [{ created_at: "desc" }];
 
@@ -1605,6 +1610,60 @@ export const actions: Actions = {
       return {
         success: false,
         message: `Failed to cancel order: ${error instanceof Error ? error.message : "Unknown error"}`,
+      };
+    }
+  },
+
+  archiveOrder: async ({ request }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
+    const orderId = String(
+      (await request.formData()).get("orderId") ?? "",
+    ).trim();
+    if (!orderId) {
+      return { success: false, message: "Order ID is required" };
+    }
+
+    try {
+      await setOrderSoftDeleted(orderId, true);
+      return {
+        success: true,
+        message: "Order archived with its items",
+      };
+    } catch (err) {
+      return {
+        success: false,
+        message: `Failed to archive order: ${
+          err instanceof Error ? err.message : "Unknown error"
+        }`,
+      };
+    }
+  },
+
+  restoreOrder: async ({ request }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
+    const orderId = String(
+      (await request.formData()).get("orderId") ?? "",
+    ).trim();
+    if (!orderId) {
+      return { success: false, message: "Order ID is required" };
+    }
+
+    try {
+      await setOrderSoftDeleted(orderId, false);
+      return {
+        success: true,
+        message: "Order restored with its items",
+      };
+    } catch (err) {
+      return {
+        success: false,
+        message: `Failed to restore order: ${
+          err instanceof Error ? err.message : "Unknown error"
+        }`,
       };
     }
   },

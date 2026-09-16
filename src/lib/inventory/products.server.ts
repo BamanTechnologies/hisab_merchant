@@ -52,6 +52,7 @@ const SEARCH_PRODUCTS_QUERY = `
             ]
           }
           { is_active: { _eq: true } }
+          { is_deleted: { _eq: false } }
           { name: { _ilike: $search } }
         ]
       }
@@ -91,6 +92,7 @@ const SEARCH_PRODUCTS_WITH_STOCKS_QUERY = `
             ]
           }
           { is_active: { _eq: true } }
+          { is_deleted: { _eq: false } }
           { name: { _ilike: $search } }
         ]
       }
@@ -114,7 +116,13 @@ const SEARCH_PRODUCTS_WITH_STOCKS_QUERY = `
         }
       }
       stocks(
-        where: { _and: [{ branch: { _eq: $branchId } }, { quantity: { _gt: 0 } }] }
+        where: {
+          _and: [
+            { branch: { _eq: $branchId } }
+            { quantity: { _gt: 0 } }
+            { is_deleted: { _eq: false } }
+          ]
+        }
         order_by: [{ created_at: asc }, { id: asc }]
       ) {
         id
@@ -248,5 +256,79 @@ export async function setProductSoftDeleted(
   });
   if (!data.update_products || data.update_products.affected_rows === 0) {
     throw new Error("Product was not found");
+  }
+}
+
+const SET_STOCK_SOFT_DELETED_MUTATION = `
+  mutation SetStockSoftDeleted($id: uuid!, $isDeleted: Boolean!) {
+    update_stock(where: { id: { _eq: $id } }, _set: { is_deleted: $isDeleted }) {
+      affected_rows
+    }
+    update_stock_movements(
+      where: { stock_id: { _eq: $id } }
+      _set: { is_deleted: $isDeleted }
+    ) {
+      affected_rows
+    }
+    update_order_items(
+      where: { stock_id: { _eq: $id } }
+      _set: { is_deleted: $isDeleted }
+    ) {
+      affected_rows
+    }
+    update_order_item_batches(
+      where: { stock_id: { _eq: $id } }
+      _set: { is_deleted: $isDeleted }
+    ) {
+      affected_rows
+    }
+    update_orders(
+      where: {
+        _or: [
+          { stock: { id: { _eq: $id } } }
+          { order_items: { stock_id: { _eq: $id } } }
+        ]
+      }
+      _set: { is_deleted: $isDeleted }
+    ) {
+      affected_rows
+    }
+    update_stock_transfer_batches(
+      where: {
+        _or: [
+          { stock_id: { _eq: $id } }
+          { destination_stock: { _eq: $id } }
+        ]
+      }
+      _set: { is_deleted: $isDeleted }
+    ) {
+      affected_rows
+    }
+    update_stock_transfers(
+      where: {
+        stock_transfer_batches: {
+          _or: [
+            { stock_id: { _eq: $id } }
+            { destination_stock: { _eq: $id } }
+          ]
+        }
+      }
+      _set: { is_deleted: $isDeleted }
+    ) {
+      affected_rows
+    }
+  }
+`;
+
+export async function setStockSoftDeleted(
+  stockId: string,
+  isDeleted: boolean,
+): Promise<void> {
+  const data = await gql<{ update_stock: { affected_rows: number } | null }>(
+    SET_STOCK_SOFT_DELETED_MUTATION,
+    { id: stockId, isDeleted },
+  );
+  if (!data.update_stock || data.update_stock.affected_rows === 0) {
+    throw new Error("Stock was not found");
   }
 }

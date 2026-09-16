@@ -1,8 +1,9 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
-  import { enhance } from "$app/forms";
+  import { deserialize, enhance } from "$app/forms";
   import { invalidateAll } from "$app/navigation";
+  import { ArchiveRestore, Trash2 } from "@lucide/svelte";
   import TablePagination from "$lib/components/TablePagination.svelte";
     import TableLoading from "$lib/components/TableLoading.svelte";
   import { mc } from "$lib/merchant-styles.js";
@@ -43,6 +44,7 @@
 
   type StockTransfer = {
     id: string;
+    is_deleted?: boolean | null;
     from?: string | null;
     to?: string | null;
     destination_merchant?: string | null;
@@ -86,6 +88,17 @@
   const merchantBranchId = (data as any).merchantBranchId as string | null;
 
   let expandedTransferId = $state<string | null>(null);
+
+  const initialTab = $page.url.searchParams.get("tab") === "archived"
+    ? "archived"
+    : "active";
+  let activeTab = $state<"active" | "archived">(initialTab);
+  let showArchiveModal = $state(false);
+  let transferToArchive = $state<StockTransfer | null>(null);
+  let showRestoreModal = $state(false);
+  let transferToRestore = $state<StockTransfer | null>(null);
+  let actionPending = $state(false);
+  let actionError = $state("");
 
   function toggleExpand(id: string) {
     expandedTransferId = expandedTransferId === id ? null : id;
@@ -185,6 +198,107 @@
     }
   }
 
+  function openArchiveModal(transfer: StockTransfer, e?: Event) {
+    if (subscriptionLocked) return;
+    e?.stopPropagation();
+    transferToArchive = transfer;
+    actionError = "";
+    showArchiveModal = true;
+  }
+
+  function closeArchiveModal(force = false) {
+    if (!force && actionPending) return;
+    showArchiveModal = false;
+    transferToArchive = null;
+    actionError = "";
+  }
+
+  async function confirmArchive() {
+    if (!transferToArchive || actionPending) return;
+    actionPending = true;
+    actionError = "";
+    try {
+      const formData = new FormData();
+      formData.append("transferId", transferToArchive.id);
+      const response = await fetch("?/archiveStockTransfer", {
+        method: "POST",
+        body: formData,
+      });
+      const result = deserialize(await response.text());
+      const t = toastFromActionResult(result);
+      if (t) showToast(t.message, t.variant);
+      const payload =
+        result.type === "success" && "data" in result
+          ? (result.data as { success?: boolean } | undefined)
+          : undefined;
+      if (result.type === "success" && payload?.success) {
+        closeArchiveModal(true);
+        await invalidateAll();
+      } else if (t?.variant === "error") {
+        actionError = t.message;
+      }
+    } catch {
+      actionError = "Failed to archive transfer. Please try again.";
+    } finally {
+      actionPending = false;
+    }
+  }
+
+  function openRestoreModal(transfer: StockTransfer, e?: Event) {
+    if (subscriptionLocked) return;
+    e?.stopPropagation();
+    transferToRestore = transfer;
+    actionError = "";
+    showRestoreModal = true;
+  }
+
+  function closeRestoreModal(force = false) {
+    if (!force && actionPending) return;
+    showRestoreModal = false;
+    transferToRestore = null;
+    actionError = "";
+  }
+
+  async function confirmRestore() {
+    if (!transferToRestore || actionPending) return;
+    actionPending = true;
+    actionError = "";
+    try {
+      const formData = new FormData();
+      formData.append("transferId", transferToRestore.id);
+      const response = await fetch("?/restoreStockTransfer", {
+        method: "POST",
+        body: formData,
+      });
+      const result = deserialize(await response.text());
+      const t = toastFromActionResult(result);
+      if (t) showToast(t.message, t.variant);
+      const payload =
+        result.type === "success" && "data" in result
+          ? (result.data as { success?: boolean } | undefined)
+          : undefined;
+      if (result.type === "success" && payload?.success) {
+        closeRestoreModal(true);
+        await invalidateAll();
+      } else if (t?.variant === "error") {
+        actionError = t.message;
+      }
+    } catch {
+      actionError = "Failed to restore transfer. Please try again.";
+    } finally {
+      actionPending = false;
+    }
+  }
+
+  function switchTab(tab: "active" | "archived") {
+    if (tab === activeTab) return;
+    suppressPageNav = true;
+    activeTab = tab;
+    stPage = 1;
+    navigateWithState();
+    suppressPageNav = false;
+  }
+
 	let fromFilter = $state($page.url.searchParams.get("from") ?? "");
 	let toFilter = $state($page.url.searchParams.get("to") ?? "");
 	let destinationMerchantFilter = $state($page.url.searchParams.get("destination_merchant") ?? "");
@@ -239,6 +353,7 @@
 
 	function navigateWithState() {
 		const params = new URLSearchParams();
+		if (activeTab === "archived") params.set("tab", "archived");
 		if (fromFilter) params.set("from", fromFilter);
 		if (toFilter) params.set("to", toFilter);
 		if (destinationMerchantFilter) params.set("destination_merchant", destinationMerchantFilter);
@@ -341,6 +456,30 @@
     {/if}
 	</div>
 </section>
+  <div
+    class="mb-4 inline-flex gap-1 rounded-lg border border-[#e6eaed] bg-white p-1 shadow-sm dark:border-white/10 dark:bg-[#0f172a] dark:shadow-none"
+    role="tablist"
+    aria-label="Transfers"
+  >
+    <button
+      type="button"
+      role="tab"
+      class="transfer-tab {activeTab === 'active' ? 'transfer-tab-active' : ''}"
+      aria-selected={activeTab === "active"}
+      onclick={() => switchTab("active")}
+    >
+      Active
+    </button>
+    <button
+      type="button"
+      role="tab"
+      class="transfer-tab {activeTab === 'archived' ? 'transfer-tab-active' : ''}"
+      aria-selected={activeTab === "archived"}
+      onclick={() => switchTab("archived")}
+    >
+      Archived
+    </button>
+  </div>
 
 <section class={mc.filterSection} aria-label={$_('pageTransfersTitle')}>
 	<label>
@@ -393,6 +532,7 @@
 	</div>
 </section>
 <section class="mt-8">
+
   <div class={mc.tableSection}>
     <div class="overflow-x-auto">
       <table class={mc.table}>
@@ -407,15 +547,22 @@
             <th class={mc.th}>Batches</th>
             <th class={mc.th}>Date</th>
             <th class={mc.th}>Product</th>
+            <th class={mc.th}>Action</th>
           </tr>
         </thead>
         <tbody>
         {#if navigating.to}
-          <TableLoading rows={1} cols={9} />
+          <TableLoading rows={1} cols={10} />
         {:else}
           {#if stockTransfers.length === 0}
             <tr>
-              <td colspan="9" class={mc.emptyCell}>No product-level transfers yet.</td>
+              <td colspan="10" class={mc.emptyCell}>
+                {#if activeTab === "archived"}
+                  No archived transfers yet.
+                {:else}
+                  No product-level transfers yet.
+                {/if}
+              </td>
             </tr>
           {:else}
             {#each stockTransfers as st, i}
@@ -454,10 +601,39 @@
                     <span class="text-gray-400">-- N/A --</span>
                   {/if}
                 </td>
+                <td class={mc.tdCenter}>
+                  {#if activeTab === "active"}
+                    <button
+                      type="button"
+                      class={mc.actionBtnDanger}
+                      onclick={(e) => openArchiveModal(st, e)}
+                      disabled={subscriptionLocked}
+                      aria-label="Archive transfer"
+                      title={subscriptionLocked
+                        ? SUBSCRIPTION_BLOCKED_MESSAGE
+                        : "Archive transfer"}
+                    >
+                      <Trash2 size={14} strokeWidth={2} />
+                    </button>
+                  {:else}
+                    <button
+                      type="button"
+                      class={mc.actionBtn}
+                      onclick={(e) => openRestoreModal(st, e)}
+                      disabled={subscriptionLocked}
+                      aria-label="Restore transfer"
+                      title={subscriptionLocked
+                        ? SUBSCRIPTION_BLOCKED_MESSAGE
+                        : "Restore transfer"}
+                    >
+                      <ArchiveRestore size={14} strokeWidth={2} />
+                    </button>
+                  {/if}
+                </td>
               </tr>
               {#if expandedTransferId === st.id}
                 <tr>
-                  <td colspan="9" class="p-0">
+                  <td colspan="10" class="p-0">
                     <div class="bg-gray-50 px-6 py-3 dark:bg-[#111827]">
                       <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                         Batch slices
@@ -758,11 +934,175 @@
           >{fifoFormPending ? "Transferring\u2026" : "Transfer"}</button
         >
       </footer>
-    </form>
+</form>
+    </dialog>
+  {/if}
+
+{#if showArchiveModal && transferToArchive}
+  <div
+    class="modal-overlay"
+    role="button"
+    tabindex="0"
+    onclick={() => !actionPending && closeArchiveModal()}
+    onkeydown={(e) =>
+      !actionPending && (e.key === "Enter" || e.key === " ") && closeArchiveModal()}
+  ></div>
+  <dialog
+    open
+    class="modal modal-compact"
+    onclick={(e) => e.stopPropagation()}
+    oncancel={(e) => actionPending && e.preventDefault()}
+  >
+    <header>
+      <h2>Archive transfer</h2>
+      <button
+        class="icon"
+        aria-label="Close"
+        disabled={actionPending}
+        onclick={() => closeArchiveModal()}>✕</button
+      >
+    </header>
+    <div class="modal-body">
+      <p>
+        Move this transfer to the archive? It will be hidden from the active
+        transfers list with its batch slices.
+      </p>
+      <p class="detail">
+        {transferToArchive.product_name?.trim() ||
+          `Transfer ${transferToArchive.id.slice(0, 8)}…`}
+      </p>
+      {#if actionError}
+        <p class="modal-error">{actionError}</p>
+      {/if}
+    </div>
+    <footer>
+      <button
+        type="button"
+        class="ghost"
+        onclick={() => closeArchiveModal()}
+        disabled={actionPending}>
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="primary"
+        onclick={confirmArchive}
+        disabled={actionPending}>
+        {actionPending ? "Archiving…" : "Archive"}
+      </button>
+    </footer>
+  </dialog>
+{/if}
+
+{#if showRestoreModal && transferToRestore}
+  <div
+    class="modal-overlay"
+    role="button"
+    tabindex="0"
+    onclick={() => !actionPending && closeRestoreModal()}
+    onkeydown={(e) =>
+      !actionPending && (e.key === "Enter" || e.key === " ") && closeRestoreModal()}
+  ></div>
+  <dialog
+    open
+    class="modal modal-compact"
+    onclick={(e) => e.stopPropagation()}
+    oncancel={(e) => actionPending && e.preventDefault()}
+  >
+    <header>
+      <h2>Restore transfer</h2>
+      <button
+        class="icon"
+        aria-label="Close"
+        disabled={actionPending}
+        onclick={() => closeRestoreModal()}>✕</button
+      >
+    </header>
+    <div class="modal-body">
+      <p>
+        Restore this transfer? It will be returned to the active transfers
+        list with its batch slices.
+      </p>
+      <p class="detail">
+        {transferToRestore.product_name?.trim() ||
+          `Transfer ${transferToRestore.id.slice(0, 8)}…`}
+      </p>
+      {#if actionError}
+        <p class="modal-error">{actionError}</p>
+      {/if}
+    </div>
+    <footer>
+      <button
+        type="button"
+        class="ghost"
+        onclick={() => closeRestoreModal()}
+        disabled={actionPending}>
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="primary"
+        onclick={confirmRestore}
+        disabled={actionPending}>
+        {actionPending ? "Restoring…" : "Restore"}
+      </button>
+    </footer>
   </dialog>
 {/if}
 
 <style>
+
+  .transfer-tab {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.4rem 1rem;
+    border-radius: 0.375rem;
+    border: none;
+    background: transparent;
+    color: #64748b;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .transfer-tab:hover:not(.transfer-tab-active) {
+    background: #f8fafc;
+    color: #334155;
+  }
+
+  .transfer-tab-active {
+    background: #4da0e6;
+    color: #ffffff;
+  }
+
+  :global(.dark) .transfer-tab-active {
+    background: #4da0e6;
+  }
+
+  .detail {
+    font-size: 0.8125rem;
+    color: #64748b;
+  }
+
+  :global(.dark) .detail {
+    color: #94a3b8;
+  }
+
+  .modal-error {
+    margin-top: 0.5rem;
+    border-radius: 0.375rem;
+    border: 1px solid #fecaca;
+    background: #fef2f2;
+    padding: 0.5rem 0.625rem;
+    font-size: 0.8125rem;
+    color: #b91c1c;
+  }
+
+  :global(.dark) .modal-error {
+    border-color: rgb(248 113 113 / 0.3);
+    background: rgb(239 68 68 / 0.1);
+    color: #fca5a5;
+  }
 
   .fifo-preview {
     padding: 0.65rem;

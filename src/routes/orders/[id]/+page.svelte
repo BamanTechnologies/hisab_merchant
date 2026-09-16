@@ -1,5 +1,8 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import { invalidateAll } from "$app/navigation";
+  import { deserialize } from "$app/forms";
+  import { ArchiveRestore } from "@lucide/svelte";
   import TablePagination from "$lib/components/TablePagination.svelte";
   import { mc, statusChipClass } from "$lib/merchant-styles.js";
   import {
@@ -83,6 +86,7 @@
     customer_address: string;
     customer_name: string;
     customer_phone: string;
+    is_deleted?: boolean | null;
     order_quantity: number;
     status: string;
     stock_id: string;
@@ -177,9 +181,58 @@
   }
 
   let { data }: { data: PageData } = $props();
-  const order = data.order as Order | undefined;
+  const order = $derived(data.order as Order | undefined);
   const investors = (data.investors ?? []) as InvestorRow[];
   const merchantId = data.merchantId as string | undefined;
+
+  const isArchived = $derived((order?.is_deleted ?? false) === true);
+
+  let showRestoreModal = $state(false);
+  let restorePending = $state(false);
+  let restoreError = $state("");
+
+  function openRestoreModal() {
+    if (subscriptionLocked) return;
+    restoreError = "";
+    showRestoreModal = true;
+  }
+
+  function closeRestoreModal(force = false) {
+    if (!force && restorePending) return;
+    showRestoreModal = false;
+  }
+
+  async function confirmRestore() {
+    if (restorePending) return;
+    restorePending = true;
+    restoreError = "";
+    try {
+      const formData = new FormData();
+      formData.append("id", String(order?.id ?? ""));
+      const response = await fetch("?/restoreOrder", {
+        method: "POST",
+        body: formData,
+      });
+      const result = deserialize(await response.text());
+      const t = toastFromActionResult(result);
+      if (t) showToast(t.message, t.variant);
+      const payload =
+        result.type === "success" && "data" in result
+          ? (result.data as { success?: boolean } | undefined)
+          : undefined;
+      if (result.type === "success" && payload?.success) {
+        closeRestoreModal(true);
+        await invalidateAll();
+      } else if (t?.variant === "error") {
+        restoreError = t.message;
+      }
+    } catch (err) {
+      restoreError =
+        err instanceof Error ? err.message : "Failed to restore order";
+    } finally {
+      restorePending = false;
+    }
+  }
 
   const orderItems = $derived.by(() => {
     const fromItems = (order?.order_items ?? []).filter(
@@ -303,20 +356,55 @@ const remainingAfterPay = $derived.by(() => {
 <section class={mc.pageHeader}>
   <div>
     <h1 class={mc.pageTitle}>Order Details</h1>
+    {#if order}
+      <p class={mc.pageSubtitle}>
+        {#if isArchived}
+          <span class="rounded px-1.5 py-0.5 text-xs font-semibold bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-400">Archived</span>
+        {/if}
+        {order.customer_name}
+      </p>
+    {/if}
   </div>
   {#if order}
-    <button
-      type="button"
-      class={mc.primaryBtn}
-      disabled={order.status === "paid" || order.status === "cancelled" || subscriptionLocked}
-      title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : undefined}
-      onclick={() => {
-        if (subscriptionLocked) return;
-        showPay = true;
-      }}>Pay</button
-    >
+    <div class="flex flex-wrap gap-2">
+      {#if isArchived}
+        <button
+          type="button"
+          class={mc.primaryBtn}
+          onclick={openRestoreModal}
+          disabled={subscriptionLocked}
+          title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : "Restore this order"}
+        >
+          <ArchiveRestore size={14} strokeWidth={2} />
+          Restore order
+        </button>
+      {:else}
+        <button
+          type="button"
+          class={mc.primaryBtn}
+          disabled={order.status === "paid" || order.status === "cancelled" || subscriptionLocked}
+          title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : undefined}
+          onclick={() => {
+            if (subscriptionLocked) return;
+            showPay = true;
+          }}>Pay</button
+        >
+      {/if}
+    </div>
   {/if}
 </section>
+
+{#if isArchived}
+  <div
+    class="mb-4 flex items-center gap-2 rounded-lg border border-[#d15b5b] bg-rose-50 px-5 py-3 dark:border-rose-500/30 dark:bg-rose-950/30"
+    role="status"
+  >
+    <ArchiveRestore size={16} strokeWidth={2} class="shrink-0 text-rose-700 dark:text-rose-400" />
+    <span class="text-sm font-semibold text-rose-700 dark:text-rose-400">
+      This order is archived and hidden from the active orders list.
+    </span>
+  </div>
+{/if}
 
 {#if errorMessage}
   <div class={mc.alertError}>
@@ -599,6 +687,61 @@ const remainingAfterPay = $derived.by(() => {
     </dialog>
   {/if}
 
+  {#if showRestoreModal && order}
+    <div
+      class="modal-overlay"
+      role="button"
+      tabindex="0"
+      onclick={() => !restorePending && closeRestoreModal()}
+      onkeydown={(e) =>
+        !restorePending && (e.key === "Enter" || e.key === " ") && closeRestoreModal()}
+    ></div>
+    <dialog
+      open
+      class="modal"
+      onclick={(e) => e.stopPropagation()}
+      oncancel={(e) => restorePending && e.preventDefault()}
+    >
+      <header>
+        <h2>Restore order</h2>
+        <button
+          class="icon"
+          aria-label="Close"
+          disabled={restorePending}
+          onclick={() => closeRestoreModal()}>✕</button
+        >
+      </header>
+      <div class="modal-body">
+        <p>
+          Restore this order? It will be returned to the active orders list with
+          its items.
+        </p>
+        <p class="restore-detail">
+          {order.customer_name} — {formatMoney(order.total_amount)}
+        </p>
+        {#if restoreError}
+          <p class="restore-modal-error">{restoreError}</p>
+        {/if}
+      </div>
+      <footer>
+        <button
+          type="button"
+          class="ghost"
+          onclick={() => closeRestoreModal()}
+          disabled={restorePending}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="primary"
+          onclick={confirmRestore}
+          disabled={restorePending}>
+          {restorePending ? "Restoring…" : "Restore"}
+        </button>
+      </footer>
+    </dialog>
+  {/if}
+
 <style>
   fieldset.pay-form-fields {
     border: none;
@@ -819,5 +962,19 @@ const remainingAfterPay = $derived.by(() => {
     .data-table table {
       min-width: 720px;
     }
+  }
+.restore-detail {
+    font-size: 0.8125rem;
+    color: #94a3b8;
+  }
+
+  .restore-modal-error {
+    margin-top: 0.5rem;
+    border-radius: 0.375rem;
+    border: 1px solid #fecaca;
+    background: #fef2f2;
+    padding: 0.5rem 0.625rem;
+    font-size: 0.8125rem;
+    color: #b91c1c;
   }
 </style>
