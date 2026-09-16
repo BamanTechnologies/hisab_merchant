@@ -1,8 +1,8 @@
 <script lang="ts">
   import { deserialize } from "$app/forms";
-  import { goto } from "$app/navigation";
+  import { goto, invalidateAll } from "$app/navigation";
   import { page } from "$app/stores";
-  import { afterToast, showToast, TOAST_MS } from "$lib/toast";
+  import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
   import { tick } from "svelte";
   import TablePagination from "$lib/components/TablePagination.svelte";
   import TableSortHeader from "$lib/components/TableSortHeader.svelte";
@@ -22,7 +22,7 @@
   import { buildProductLabel } from "$lib/inventory/productLabel";
   import type { FifoBatchRow, FifoSlice, ProductRecord } from "$lib/inventory/types";
   import { buildStockLabel } from "$lib/stockLabel";
-  import { Trash2 } from "@lucide/svelte";
+  import { Trash2, ArchiveRestore } from "@lucide/svelte";
   import SearchSelect from "$lib/components/ui/search-select/search-select.svelte";
   import type { PageData } from "./$types";
 
@@ -62,6 +62,7 @@
     customer_address: string;
     customer_name: string;
     customer_phone: string;
+    is_deleted?: boolean | null;
     order_quantity: number;
     status: string;
     stock_id: string;
@@ -119,6 +120,17 @@
 
   let showCancelModal = $state(false);
   let orderToCancel = $state<OrderSummary | null>(null);
+
+  const initialTab = $page.url.searchParams.get("tab") === "archived"
+    ? "archived"
+    : "active";
+  let activeTab = $state<"active" | "archived">(initialTab);
+  let showArchiveModal = $state(false);
+  let orderToArchive = $state<OrderSummary | null>(null);
+  let showRestoreModal = $state(false);
+  let orderToRestore = $state<OrderSummary | null>(null);
+  let archiveActionPending = $state(false);
+  let archiveActionError = $state("");
   let orders = $state(data.orders as OrderSummary[]);
   let payments = $state((data.payments ?? []) as PaymentRow[]);
   let totalOrders = $state((data as { totalOrders: number }).totalOrders ?? 0);
@@ -203,6 +215,7 @@
 
   function allParamsFromState(): URLSearchParams {
     const p = new URLSearchParams();
+    if (activeTab === "archived") p.set("tab", "archived");
     if (dateRangePreset && dateRangePreset !== "all")
       p.set("dateRange", dateRangePreset);
     if (customerFilterName) p.set("customer", customerFilterName);
@@ -222,6 +235,7 @@
   function stateMatchesUrl(): boolean {
     const sp = $page.url.searchParams;
     return (
+      ((sp.get("tab") ?? "active") === "archived" ? "archived" : "active") === activeTab &&
       (sp.get("dateRange") ?? "all") === dateRangePreset &&
       (sp.get("customer") ?? "") === customerFilterName &&
       (sp.get("from") ?? "") === customDateFrom &&
@@ -238,6 +252,7 @@
     void customerFilterName;
     void customDateFrom;
     void customDateTo;
+    void activeTab;
     if (filterDebounceTimer) clearTimeout(filterDebounceTimer);
     filterDebounceTimer = setTimeout(() => {
       if (stateMatchesUrl()) return;
@@ -752,6 +767,107 @@
       cancelSubmitting = false;
     }
   }
+
+  function switchTab(tab: "active" | "archived") {
+    if (tab === activeTab) return;
+    activeTab = tab;
+    tablePage = 1;
+    const params = allParamsFromState();
+    const qs = params.toString();
+    goto(qs ? `?${qs}` : "?", { replaceState: true, keepFocus: true });
+  }
+
+  function openArchiveModal(order: OrderSummary, e?: Event) {
+    if (subscriptionLocked) return;
+    e?.stopPropagation();
+    orderToArchive = order;
+    archiveActionError = "";
+    showArchiveModal = true;
+  }
+
+  function closeArchiveModal(force = false) {
+    if (!force && archiveActionPending) return;
+    showArchiveModal = false;
+    orderToArchive = null;
+    archiveActionError = "";
+  }
+
+  async function confirmArchive() {
+    if (!orderToArchive || archiveActionPending) return;
+    archiveActionPending = true;
+    archiveActionError = "";
+    try {
+      const formData = new FormData();
+      formData.append("orderId", orderToArchive.id);
+      const response = await fetch("?/archiveOrder", {
+        method: "POST",
+        body: formData,
+      });
+      const result = deserialize(await response.text());
+      const t = toastFromActionResult(result);
+      if (t) showToast(t.message, t.variant);
+      const payload =
+        result.type === "success" && "data" in result
+          ? (result.data as { success?: boolean } | undefined)
+          : undefined;
+      if (result.type === "success" && payload?.success) {
+        closeArchiveModal(true);
+        await invalidateAll();
+      } else if (t?.variant === "error") {
+        archiveActionError = t.message;
+      }
+    } catch {
+      archiveActionError = "Failed to archive order. Please try again.";
+    } finally {
+      archiveActionPending = false;
+    }
+  }
+
+  function openRestoreModal(order: OrderSummary, e?: Event) {
+    if (subscriptionLocked) return;
+    e?.stopPropagation();
+    orderToRestore = order;
+    archiveActionError = "";
+    showRestoreModal = true;
+  }
+
+  function closeRestoreModal(force = false) {
+    if (!force && archiveActionPending) return;
+    showRestoreModal = false;
+    orderToRestore = null;
+    archiveActionError = "";
+  }
+
+  async function confirmRestore() {
+    if (!orderToRestore || archiveActionPending) return;
+    archiveActionPending = true;
+    archiveActionError = "";
+    try {
+      const formData = new FormData();
+      formData.append("orderId", orderToRestore.id);
+      const response = await fetch("?/restoreOrder", {
+        method: "POST",
+        body: formData,
+      });
+      const result = deserialize(await response.text());
+      const t = toastFromActionResult(result);
+      if (t) showToast(t.message, t.variant);
+      const payload =
+        result.type === "success" && "data" in result
+          ? (result.data as { success?: boolean } | undefined)
+          : undefined;
+      if (result.type === "success" && payload?.success) {
+        closeRestoreModal(true);
+        await invalidateAll();
+      } else if (t?.variant === "error") {
+        archiveActionError = t.message;
+      }
+    } catch {
+      archiveActionError = "Failed to restore order. Please try again.";
+    } finally {
+      archiveActionPending = false;
+    }
+  }
 </script>
 
 <section class={mc.pageHeader}>
@@ -769,6 +885,32 @@
     Create Order
   </button>
 </section>
+
+
+<div
+  class="mb-4 inline-flex gap-1 rounded-lg border border-[#e6eaed] bg-white p-1 shadow-sm dark:border-white/10 dark:bg-[#0f172a] dark:shadow-none"
+  role="tablist"
+  aria-label="Orders"
+>
+  <button
+    type="button"
+    role="tab"
+    class="orders-tab {activeTab === 'active' ? 'orders-tab-active' : ''}"
+    aria-selected={activeTab === "active"}
+    onclick={() => switchTab("active")}
+  >
+    Active
+  </button>
+  <button
+    type="button"
+    role="tab"
+    class="orders-tab {activeTab === 'archived' ? 'orders-tab-active' : ''}"
+    aria-selected={activeTab === "archived"}
+    onclick={() => switchTab("archived")}
+  >
+    Archived
+  </button>
+</div>
 
 <section class={mc.filterSection} aria-label="Filter orders">
   <label>
@@ -891,6 +1033,7 @@
       >
     </header>
     <div class="modal-body" data-create-order-scroll>
+    
       {#if createError}
         <p class="inline-error">{createError}</p>
       {/if}
@@ -1316,6 +1459,7 @@
   </dialog>
 {/if}
 
+
 <section class={mc.tableSection}>
   <div class="overflow-x-auto">
     <table class={mc.table}>
@@ -1404,19 +1548,41 @@
             >
             <td class="{mc.td} font-semibold">{formatMoney(o.total_amount)}</td>
             <td class={mc.tdCenter}>
-              {#if o.status !== "cancelled" && o.status !== "paid"}
+              {#if activeTab === "archived"}
                 <button
                   type="button"
                   class="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
-                  onclick={(e) => openCancelModal(o, e)}
+                  onclick={(e) => openRestoreModal(o, e)}
                   disabled={subscriptionLocked}
-                  aria-label="Cancel order"
-                  title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : "Cancel order"}
+                  aria-label="Restore order"
+                  title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : "Restore order"}
                 >
-                  Cancel
+                  <ArchiveRestore size={14} strokeWidth={2} class="inline -mt-0.5" />
+                  Restore
                 </button>
               {:else}
-                <span class="text-gray-400">—</span>
+                {#if o.status !== "cancelled" && o.status !== "paid"}
+                  <button
+                    type="button"
+                    class="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
+                    onclick={(e) => openCancelModal(o, e)}
+                    disabled={subscriptionLocked}
+                    aria-label="Cancel order"
+                    title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : "Cancel order"}
+                  >
+                    Cancel
+                  </button>
+                {/if}
+                <button
+                  type="button"
+                  class={mc.actionBtnDanger}
+                  onclick={(e) => openArchiveModal(o, e)}
+                  disabled={subscriptionLocked}
+                  aria-label="Archive order"
+                  title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : "Archive order"}
+                >
+                  <Trash2 size={14} strokeWidth={2} />
+                </button>
               {/if}
             </td>
           </tr>
@@ -1424,9 +1590,13 @@
         {#if orders.length === 0}
           <tr>
             <td colspan="8" class={mc.emptyCell}>
-              No orders found. {data.orders.length > 0
-                ? "Try adjusting your filters."
-                : "Create your first order to get started."}
+              {#if activeTab === "archived"}
+                No archived orders.
+              {:else}
+                No orders found. {data.orders.length > 0
+                  ? "Try adjusting your filters."
+                  : "Create your first order to get started."}
+              {/if}
             </td>
           </tr>
         {/if}
@@ -1441,7 +1611,163 @@
   />
 </section>
 
+{#if showArchiveModal && orderToArchive}
+  <div
+    class="modal-overlay"
+    role="button"
+    tabindex="0"
+    onclick={() => !archiveActionPending && closeArchiveModal()}
+    onkeydown={(e) =>
+      !archiveActionPending && (e.key === "Enter" || e.key === " ") && closeArchiveModal()}
+  ></div>
+  <dialog
+    open
+    class="modal modal-nested"
+    onclick={(e) => e.stopPropagation()}
+    oncancel={(e) => archiveActionPending && e.preventDefault()}
+  >
+    <header>
+      <h2>Archive order</h2>
+      <button
+        class="icon"
+        aria-label="Close"
+        disabled={archiveActionPending}
+        onclick={() => closeArchiveModal()}>✕</button
+      >
+    </header>
+    <div class="modal-body">
+      <p>
+        Move this order to the archive? It will be hidden from the active orders
+        list with its items.
+      </p>
+      <p class="archive-detail">
+        {orderToArchive.customer_name?.trim() ||
+          `Order ${orderToArchive.id.slice(0, 8)}…`}{" "}
+        — {formatMoney(orderToArchive.total_amount)}
+      </p>
+      {#if archiveActionError}
+        <p class="modal-error">{archiveActionError}</p>
+      {/if}
+    </div>
+    <footer>
+      <button
+        type="button"
+        class="ghost"
+        onclick={() => closeArchiveModal()}
+        disabled={archiveActionPending}>
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="primary"
+        onclick={confirmArchive}
+        disabled={archiveActionPending}>
+        {archiveActionPending ? "Archiving…" : "Archive"}
+      </button>
+    </footer>
+  </dialog>
+{/if}
+
+{#if showRestoreModal && orderToRestore}
+  <div
+    class="modal-overlay"
+    role="button"
+    tabindex="0"
+    onclick={() => !archiveActionPending && closeRestoreModal()}
+    onkeydown={(e) =>
+      !archiveActionPending && (e.key === "Enter" || e.key === " ") && closeRestoreModal()}
+  ></div>
+  <dialog
+    open
+    class="modal modal-nested"
+    onclick={(e) => e.stopPropagation()}
+    oncancel={(e) => archiveActionPending && e.preventDefault()}
+  >
+    <header>
+      <h2>Restore order</h2>
+      <button
+        class="icon"
+        aria-label="Close"
+        disabled={archiveActionPending}
+        onclick={() => closeRestoreModal()}>✕</button
+      >
+    </header>
+    <div class="modal-body">
+      <p>
+        Restore this order? It will be returned to the active orders list with
+        its items.
+      </p>
+      <p class="archive-detail">
+        {orderToRestore.customer_name?.trim() ||
+          `Order ${orderToRestore.id.slice(0, 8)}…`}{" "}
+        — {formatMoney(orderToRestore.total_amount)}
+      </p>
+      {#if archiveActionError}
+        <p class="modal-error">{archiveActionError}</p>
+      {/if}
+    </div>
+    <footer>
+      <button
+        type="button"
+        class="ghost"
+        onclick={() => closeRestoreModal()}
+        disabled={archiveActionPending}>
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="primary"
+        onclick={confirmRestore}
+        disabled={archiveActionPending}>
+        {archiveActionPending ? "Restoring…" : "Restore"}
+      </button>
+    </footer>
+  </dialog>
+{/if}
+
 <style>
+  .orders-tab {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.4rem 1rem;
+    border-radius: 0.375rem;
+    border: none;
+    background: transparent;
+    color: #64748b;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .orders-tab:hover:not(.orders-tab-active) {
+    background: #f8fafc;
+    color: #334155;
+  }
+
+  .orders-tab-active {
+    background: #4da0e6;
+    color: #ffffff;
+  }
+
+  :global(.dark) .orders-tab-active {
+    background: #4da0e6;
+  }
+
+  .archive-detail {
+    font-size: 0.8125rem;
+    color: #94a3b8;
+  }
+
+  .modal-error {
+    margin-top: 0.5rem;
+    border-radius: 0.375rem;
+    border: 1px solid #fecaca;
+    background: #fef2f2;
+    padding: 0.5rem 0.625rem;
+    font-size: 0.8125rem;
+    color: #b91c1c;
+  }
+
   /* Modal */
   .modal-overlay {
     position: fixed;

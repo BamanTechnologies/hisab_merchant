@@ -1,6 +1,13 @@
 <script lang="ts">
-  import { goto } from "$app/navigation";
+  import { goto, invalidateAll } from "$app/navigation";
+  import { deserialize } from "$app/forms";
   import { mc } from "$lib/merchant-styles.js";
+  import { ArchiveRestore, X } from "@lucide/svelte";
+  import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
+  import {
+    SUBSCRIPTION_BLOCKED_MESSAGE,
+    subscriptionBlocksMutations,
+  } from "$lib/subscription/client";
   import type { PageData } from "./$types";
 
   type StockTransferBatch = {
@@ -29,14 +36,68 @@
 
   let { data }: { data: PageData } = $props();
 
-  const transfer = data.transfer as Record<string, unknown> | null;
+  const transfer = $derived(data.transfer as Record<string, unknown> | null);
   const fromName = data.fromName as string | null;
   const toName = data.toName as string | null;
   const creatorName = data.creatorName as string | null;
   const destMerchantName = data.destMerchantName as string | null;
-  const batches = (transfer?.stock_transfer_batches ?? []) as StockTransferBatch[];
+  const batches = $derived(
+    (transfer?.stock_transfer_batches ?? []) as StockTransferBatch[],
+  );
 
-  const totalQty = batches.reduce((sum, b) => sum + Number(b.quantity ?? 0), 0);
+  const totalQty = $derived(
+    batches.reduce((sum, b) => sum + Number(b.quantity ?? 0), 0),
+  );
+
+  const subscriptionLocked = $derived($subscriptionBlocksMutations);
+  const isArchived = $derived((transfer?.is_deleted ?? false) === true);
+
+  let showRestoreModal = $state(false);
+  let restorePending = $state(false);
+  let restoreError = $state("");
+
+  function openRestoreModal() {
+    if (subscriptionLocked) return;
+    restoreError = "";
+    showRestoreModal = true;
+  }
+
+  function closeRestoreModal(force = false) {
+    if (!force && restorePending) return;
+    showRestoreModal = false;
+  }
+
+  async function confirmRestore() {
+    if (restorePending) return;
+    restorePending = true;
+    restoreError = "";
+    try {
+      const formData = new FormData();
+      formData.append("id", String(transfer?.id ?? ""));
+      const response = await fetch("?/restoreStockTransfer", {
+        method: "POST",
+        body: formData,
+      });
+      const result = deserialize(await response.text());
+      const t = toastFromActionResult(result);
+      if (t) showToast(t.message, t.variant);
+      const payload =
+        result.type === "success" && "data" in result
+          ? (result.data as { success?: boolean } | undefined)
+          : undefined;
+      if (result.type === "success" && payload?.success) {
+        closeRestoreModal(true);
+        await invalidateAll();
+      } else if (t?.variant === "error") {
+        restoreError = t.message;
+      }
+    } catch (err) {
+      restoreError =
+        err instanceof Error ? err.message : "Failed to restore transfer";
+    } finally {
+      restorePending = false;
+    }
+  }
 
   function formatDate(v: string | null | undefined) {
     if (!v) return "\u2014";
@@ -77,14 +138,42 @@
       <span class="capitalize">{displayName(fromName)}</span> &rarr; <span class="capitalize">{displayName(toName)}</span>
     </p>
   </div>
-  <button
-    type="button"
-    class={mc.tableBtn}
-    onclick={() => goto("/transfers")}
-  >
-    &larr; Back to transfers
-  </button>
+  <div class="flex flex-wrap gap-2">
+    {#if isArchived}
+      <button
+        type="button"
+        class={mc.primaryBtn}
+        onclick={openRestoreModal}
+        disabled={subscriptionLocked}
+        title={subscriptionLocked
+          ? SUBSCRIPTION_BLOCKED_MESSAGE
+          : "Restore this transfer and its batch slices"}
+      >
+        <ArchiveRestore size={14} strokeWidth={2} />
+        Restore transfer
+      </button>
+    {/if}
+    <button
+      type="button"
+      class={mc.tableBtn}
+      onclick={() => goto("/transfers")}
+    >
+      &larr; Back to transfers
+    </button>
+  </div>
 </section>
+
+{#if isArchived}
+  <div
+    class="mb-4 flex items-center gap-2 rounded-lg border border-[#d15b5b] bg-rose-50 px-5 py-3 dark:border-rose-500/30 dark:bg-rose-950/30"
+    role="status"
+  >
+    <ArchiveRestore size={16} strokeWidth={2} class="shrink-0 text-rose-700 dark:text-rose-400" />
+    <span class="text-sm font-semibold text-rose-700 dark:text-rose-400">
+      This transfer is archived and hidden from the active transfers list.
+    </span>
+  </div>
+{/if}
 
 {#if transfer}
   <div class="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -190,3 +279,73 @@
 {:else}
   <p class="text-sm text-gray-500 dark:text-gray-400">Stock transfer not found.</p>
 {/if}
+
+{#if showRestoreModal && transfer}
+  <div
+    class="modal-overlay"
+    role="button"
+    tabindex="0"
+    onclick={() => !restorePending && closeRestoreModal()}
+    onkeydown={(e) =>
+      !restorePending && (e.key === "Enter" || e.key === " ") && closeRestoreModal()}
+  ></div>
+  <dialog
+    open
+    class="modal modal-compact"
+    onclick={(e) => e.stopPropagation()}
+    oncancel={(e) => restorePending && e.preventDefault()}
+  >
+    <header>
+      <h2>Restore transfer</h2>
+      <button
+        class="icon"
+        aria-label="Close"
+        disabled={restorePending}
+        onclick={() => closeRestoreModal()}>✕</button
+      >
+    </header>
+    <div class="modal-body">
+      <p>
+        Restore this transfer? It will be returned to the active transfers list
+        with its batch slices.
+      </p>
+      {#if restoreError}
+        <p class="modal-error">{restoreError}</p>
+      {/if}
+    </div>
+    <footer>
+      <button
+        type="button"
+        class="ghost"
+        onclick={() => closeRestoreModal()}
+        disabled={restorePending}>
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="primary"
+        onclick={confirmRestore}
+        disabled={restorePending}>
+        {restorePending ? "Restoring…" : "Restore"}
+      </button>
+    </footer>
+  </dialog>
+{/if}
+
+<style>
+  .modal-error {
+    margin-top: 0.5rem;
+    border-radius: 0.375rem;
+    border: 1px solid #fecaca;
+    background: #fef2f2;
+    padding: 0.5rem 0.625rem;
+    font-size: 0.8125rem;
+    color: #b91c1c;
+  }
+
+  :global(.dark) .modal-error {
+    border-color: rgb(248 113 113 / 0.3);
+    background: rgb(239 68 68 / 0.1);
+    color: #fca5a5;
+  }
+</style>

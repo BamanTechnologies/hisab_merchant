@@ -6,7 +6,7 @@
   import { invalidateAll } from "$app/navigation";
   import { onMount, tick } from "svelte";
   import { browser } from "$app/environment";
-  import { Eye, Pencil, Plus, RefreshCw, Trash2, X } from "@lucide/svelte";
+  import { ArchiveRestore, Eye, Pencil, Plus, RefreshCw, Trash2, X } from "@lucide/svelte";
   import InvestorMultiSelect from "$lib/components/InvestorMultiSelect.svelte";
   import TableLoading from "$lib/components/TableLoading.svelte";
   import TablePagination from "$lib/components/TablePagination.svelte";
@@ -112,6 +112,17 @@
   const existingBatchNumbers = (data.existingBatchNumbers ?? []) as string[];
   const branches = (data.branches ?? []) as Branch[];
 
+  const initialTab = $page.url.searchParams.get("tab") === "archived"
+    ? "archived"
+    : "active";
+  let activeTab = $state<"active" | "archived">(initialTab);
+  let showArchiveModal = $state(false);
+  let stockToArchive = $state<StockBatch | null>(null);
+  let showRestoreModal = $state(false);
+  let stockToRestore = $state<StockBatch | null>(null);
+  let actionPending = $state(false);
+  let actionError = $state("");
+
   let searchQuery = $state($page.url.searchParams.get("search") ?? "");
   let typeFilter = $state($page.url.searchParams.get("type") ?? "all");
   let tablePage = $state(Number($page.url.searchParams.get("page")) || 1);
@@ -123,10 +134,8 @@
 
   let showReceiveModal = $state(false);
   let showEditModal = $state(false);
-  let showDeleteModal = $state(false);
   let receivePending = $state(false);
   let editPending = $state(false);
-  let deletePending = $state(false);
   let receiveError = $state("");
   let editError = $state("");
 
@@ -138,8 +147,6 @@
   let editingBatch = $state<StockBatch | null>(null);
   let editQuantity = $state("");
   let editBatchNumber = $state("");
-
-  let batchToDelete = $state<StockBatch | null>(null);
 
   let showRestockModal = $state(false);
   let restockRows = $state<RestockRow[]>([]);
@@ -210,6 +217,7 @@
 
   function navigateWithState() {
     const params = new URLSearchParams();
+    if (activeTab === "archived") params.set("tab", "archived");
     if (searchQuery) params.set("search", searchQuery);
     if (typeFilter !== "all") params.set("type", typeFilter);
     if (sortColumn !== "none") {
@@ -505,27 +513,29 @@
     editError = "";
   }
 
-  function openDeleteModal(batch: StockBatch, e?: Event) {
+  function openArchiveModal(batch: StockBatch, e?: Event) {
     if (subscriptionLocked) return;
     e?.stopPropagation();
-    if (parseQty(batch.quantity) !== 0) return;
-    batchToDelete = batch;
-    showDeleteModal = true;
+    stockToArchive = batch;
+    actionError = "";
+    showArchiveModal = true;
   }
 
-  function closeDeleteModal(force = false) {
-    if (!force && deletePending) return;
-    showDeleteModal = false;
-    batchToDelete = null;
+  function closeArchiveModal(force = false) {
+    if (!force && actionPending) return;
+    showArchiveModal = false;
+    stockToArchive = null;
+    actionError = "";
   }
 
-  async function confirmDelete() {
-    if (!batchToDelete || deletePending) return;
-    deletePending = true;
+  async function confirmArchive() {
+    if (!stockToArchive || actionPending) return;
+    actionPending = true;
+    actionError = "";
     try {
       const formData = new FormData();
-      formData.append("stockId", batchToDelete.id);
-      const response = await fetch("?/deleteStock", { method: "POST", body: formData });
+      formData.append("stockId", stockToArchive.id);
+      const response = await fetch("?/archiveStock", { method: "POST", body: formData });
       const result = deserialize(await response.text());
       const t = toastFromActionResult(result);
       if (t) showToast(t.message, t.variant);
@@ -534,18 +544,68 @@
           ? (result.data as { success?: boolean } | undefined)
           : undefined;
       if (result.type === "success" && payload?.success) {
-        closeDeleteModal(true);
-        afterToast(TOAST_MS, () => void invalidateAll());
+        closeArchiveModal(true);
+        await invalidateAll();
+      } else if (t?.variant === "error") {
+        actionError = t.message;
       }
     } catch {
-      showToast("Failed to delete batch. Please try again.", "error");
+      actionError = "Failed to archive batch. Please try again.";
     } finally {
-      deletePending = false;
+      actionPending = false;
     }
   }
 
-  function canDelete(batch: StockBatch): boolean {
-    return parseQty(batch.quantity) === 0;
+  function openRestoreModal(batch: StockBatch, e?: Event) {
+    if (subscriptionLocked) return;
+    e?.stopPropagation();
+    stockToRestore = batch;
+    actionError = "";
+    showRestoreModal = true;
+  }
+
+  function closeRestoreModal(force = false) {
+    if (!force && actionPending) return;
+    showRestoreModal = false;
+    stockToRestore = null;
+    actionError = "";
+  }
+
+  async function confirmRestore() {
+    if (!stockToRestore || actionPending) return;
+    actionPending = true;
+    actionError = "";
+    try {
+      const formData = new FormData();
+      formData.append("stockId", stockToRestore.id);
+      const response = await fetch("?/restoreStock", { method: "POST", body: formData });
+      const result = deserialize(await response.text());
+      const t = toastFromActionResult(result);
+      if (t) showToast(t.message, t.variant);
+      const payload =
+        result.type === "success" && "data" in result
+          ? (result.data as { success?: boolean } | undefined)
+          : undefined;
+      if (result.type === "success" && payload?.success) {
+        closeRestoreModal(true);
+        await invalidateAll();
+      } else if (t?.variant === "error") {
+        actionError = t.message;
+      }
+    } catch {
+      actionError = "Failed to restore batch. Please try again.";
+    } finally {
+      actionPending = false;
+    }
+  }
+
+  function switchTab(tab: "active" | "archived") {
+    if (tab === activeTab) return;
+    suppressPageNav = true;
+    activeTab = tab;
+    tablePage = 1;
+    navigateWithState();
+    suppressPageNav = false;
   }
 
   function getToken(): string | null {
@@ -673,6 +733,31 @@
   </button>
 </section>
 
+<div
+  class="mb-4 inline-flex gap-1 rounded-lg border border-[#e6eaed] bg-white p-1 shadow-sm dark:border-white/10 dark:bg-[#0f172a] dark:shadow-none"
+  role="tablist"
+  aria-label="Stock list"
+>
+  <button
+    type="button"
+    role="tab"
+    class="stock-tab {activeTab === 'active' ? 'stock-tab-active' : ''}"
+    aria-selected={activeTab === "active"}
+    onclick={() => switchTab("active")}
+  >
+    Active
+  </button>
+  <button
+    type="button"
+    role="tab"
+    class="stock-tab {activeTab === 'archived' ? 'stock-tab-active' : ''}"
+    aria-selected={activeTab === "archived"}
+    onclick={() => switchTab("archived")}
+  >
+    Archived
+  </button>
+</div>
+
 {#if stocksLoadError}
   <div class="mx-auto mb-4 max-w-5xl rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100" role="alert">
     Could not load stock from the server: {stocksLoadError}
@@ -789,30 +874,43 @@
                   >
                     <Eye size={14} strokeWidth={2} />
                   </a>
-                  <button
-                    type="button"
-                    class={mc.actionBtn}
-                    onclick={(e) => openEditModal(batch, e)}
-                    disabled={subscriptionLocked}
-                    aria-label="Edit batch"
-                    title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : "Edit batch"}
-                  >
-                    <Pencil size={14} strokeWidth={2} />
-                  </button>
-                  <button
-                    type="button"
-                    class={mc.actionBtnDanger}
-                    onclick={(e) => openDeleteModal(batch, e)}
-                    disabled={subscriptionLocked || !canDelete(batch)}
-                    aria-label="Delete batch"
-                    title={!canDelete(batch)
-                      ? "Only zero-quantity batches can be deleted"
-                      : subscriptionLocked
+                  {#if activeTab === "active"}
+                    <button
+                      type="button"
+                      class={mc.actionBtn}
+                      onclick={(e) => openEditModal(batch, e)}
+                      disabled={subscriptionLocked}
+                      aria-label="Edit batch"
+                      title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : "Edit batch"}
+                    >
+                      <Pencil size={14} strokeWidth={2} />
+                    </button>
+                    <button
+                      type="button"
+                      class={mc.actionBtnDanger}
+                      onclick={(e) => openArchiveModal(batch, e)}
+                      disabled={subscriptionLocked}
+                      aria-label="Archive batch"
+                      title={subscriptionLocked
                         ? SUBSCRIPTION_BLOCKED_MESSAGE
-                        : "Delete batch"}
-                  >
-                    <Trash2 size={14} strokeWidth={2} />
-                  </button>
+                        : "Archive batch"}
+                    >
+                      <Trash2 size={14} strokeWidth={2} />
+                    </button>
+                  {:else}
+                    <button
+                      type="button"
+                      class={mc.actionBtn}
+                      onclick={(e) => openRestoreModal(batch, e)}
+                      disabled={subscriptionLocked}
+                      aria-label="Restore batch"
+                      title={subscriptionLocked
+                        ? SUBSCRIPTION_BLOCKED_MESSAGE
+                        : "Restore batch"}
+                    >
+                      <ArchiveRestore size={14} strokeWidth={2} />
+                    </button>
+                  {/if}
                 </div>
               </td>
             </tr>
@@ -825,6 +923,8 @@
                     Stock could not be loaded — see the error above.
                   {:else if typeFilter !== "all"}
                     No batches match this type filter.
+                  {:else if activeTab === "archived"}
+                    No archived batches yet.
                   {:else}
                     No stock batches yet. Use Receive stock to add inventory.
                   {/if}
@@ -1279,48 +1379,107 @@
   </dialog>
 {/if}
 
-{#if showDeleteModal && batchToDelete}
+{#if showArchiveModal && stockToArchive}
   <div
     class="modal-overlay"
     role="button"
     tabindex="0"
-    onclick={() => !deletePending && closeDeleteModal()}
+    onclick={() => !actionPending && closeArchiveModal()}
     onkeydown={(e) =>
-      !deletePending && (e.key === "Enter" || e.key === " ") && closeDeleteModal()}
+      !actionPending && (e.key === "Enter" || e.key === " ") && closeArchiveModal()}
   ></div>
   <dialog
     open
     class="modal modal-sm"
     onclick={(e) => e.stopPropagation()}
-    oncancel={(e) => deletePending && e.preventDefault()}
+    oncancel={(e) => actionPending && e.preventDefault()}
   >
     <header>
-      <h2>Delete batch</h2>
+      <h2>Archive batch</h2>
       <button
         type="button"
         class="icon-btn"
         aria-label="Close"
-        disabled={deletePending}
-        onclick={() => closeDeleteModal()}
+        disabled={actionPending}
+        onclick={() => closeArchiveModal()}
       >
         <X size={18} />
       </button>
     </header>
     <div class="modal-body">
-      <p>Delete this zero-quantity batch? This cannot be undone.</p>
+      <p>
+        Move this batch to the archive? It will be hidden from the active
+        stock list along with its related movements, orders and transfers.
+      </p>
       <p class="detail">
-        Batch {batchToDelete.batch_number?.trim() || "—"}
-        {#if batchToDelete.product}
-          · {buildProductLabel(batchToDelete.product)}
+        Batch {stockToArchive.batch_number?.trim() || "—"}
+        {#if stockToArchive.product}
+          · {buildProductLabel(stockToArchive.product)}
         {/if}
       </p>
+      {#if actionError}
+        <p class="modal-error">{actionError}</p>
+      {/if}
     </div>
     <footer>
-      <button type="button" class={mc.tableBtn} onclick={() => closeDeleteModal()} disabled={deletePending}>
+      <button type="button" class={mc.tableBtn} onclick={() => closeArchiveModal()} disabled={actionPending}>
         Cancel
       </button>
-      <button type="button" class="danger-btn" onclick={confirmDelete} disabled={deletePending}>
-        {deletePending ? "Deleting…" : "Delete"}
+      <button type="button" class="primary" onclick={confirmArchive} disabled={actionPending}>
+        {actionPending ? "Archiving…" : "Archive"}
+      </button>
+    </footer>
+  </dialog>
+{/if}
+
+{#if showRestoreModal && stockToRestore}
+  <div
+    class="modal-overlay"
+    role="button"
+    tabindex="0"
+    onclick={() => !actionPending && closeRestoreModal()}
+    onkeydown={(e) =>
+      !actionPending && (e.key === "Enter" || e.key === " ") && closeRestoreModal()}
+  ></div>
+  <dialog
+    open
+    class="modal modal-sm"
+    onclick={(e) => e.stopPropagation()}
+    oncancel={(e) => actionPending && e.preventDefault()}
+  >
+    <header>
+      <h2>Restore batch</h2>
+      <button
+        type="button"
+        class="icon-btn"
+        aria-label="Close"
+        disabled={actionPending}
+        onclick={() => closeRestoreModal()}
+      >
+        <X size={18} />
+      </button>
+    </header>
+    <div class="modal-body">
+      <p>
+        Restore this batch? It will be returned to the active stock list along
+        with its related movements, orders and transfers.
+      </p>
+      <p class="detail">
+        Batch {stockToRestore.batch_number?.trim() || "—"}
+        {#if stockToRestore.product}
+          · {buildProductLabel(stockToRestore.product)}
+        {/if}
+      </p>
+      {#if actionError}
+        <p class="modal-error">{actionError}</p>
+      {/if}
+    </div>
+    <footer>
+      <button type="button" class={mc.tableBtn} onclick={() => closeRestoreModal()} disabled={actionPending}>
+        Cancel
+      </button>
+      <button type="button" class="primary" onclick={confirmRestore} disabled={actionPending}>
+        {actionPending ? "Restoring…" : "Restore"}
       </button>
     </footer>
   </dialog>
@@ -1887,6 +2046,22 @@
     color: #94a3b8;
   }
 
+  .modal-error {
+    margin-top: 0.5rem;
+    border-radius: 0.375rem;
+    border: 1px solid #fecaca;
+    background: #fef2f2;
+    padding: 0.5rem 0.625rem;
+    font-size: 0.8125rem;
+    color: #b91c1c;
+  }
+
+  :global(.dark) .modal-error {
+    border-color: rgb(248 113 113 / 0.3);
+    background: rgb(239 68 68 / 0.1);
+    color: #fca5a5;
+  }
+
   footer {
     display: flex;
     justify-content: flex-end;
@@ -1899,24 +2074,31 @@
     border-top-color: rgb(255 255 255 / 0.1);
   }
 
-  .danger-btn {
+  .stock-tab {
     display: inline-flex;
-    height: 30px;
     align-items: center;
-    justify-content: center;
-    border-radius: 5px;
-    border: 1px solid #fca5a5;
-    background: #ef4444;
-    color: white;
-    padding: 0 0.85rem;
+    padding: 0.4rem 1rem;
+    border-radius: 0.375rem;
+    border: none;
+    background: transparent;
+    color: #64748b;
     font-size: 0.875rem;
-    font-weight: 600;
+    font-weight: 500;
     cursor: pointer;
   }
 
-  .danger-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+  .stock-tab:hover:not(.stock-tab-active) {
+    background: #f8fafc;
+    color: #334155;
+  }
+
+  .stock-tab-active {
+    background: #4da0e6;
+    color: #ffffff;
+  }
+
+  :global(.dark) .stock-tab-active {
+    background: #4da0e6;
   }
 
   .attr-row {

@@ -1,10 +1,12 @@
-import type { PageServerLoad } from './$types';
+import type { PageServerLoad, Actions } from './$types';
 import { error, redirect } from '@sveltejs/kit';
 import { getMerchantIdFromRequest } from '$lib/auth';
 import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
 import { fetchBranchCompanyId } from '$lib/companyInvestors.server';
 import { config, getGraphQLHeaders } from '$lib/config';
 import { buildProductLabel } from '$lib/inventory/productLabel';
+import { setProductSoftDeleted } from '$lib/inventory/products.server';
+import { subscriptionWriteActionBlockedForRequest } from '$lib/subscription/server';
 
 const FETCH_PRODUCT_DETAIL_QUERY = `
   query ProductDetail($id: uuid!, $companyId: uuid!, $branchId: uuid!) {
@@ -30,6 +32,7 @@ const FETCH_PRODUCT_DETAIL_QUERY = `
       attributes
       investors
       is_active
+      is_deleted
       barcode
       qr_code
       treshold_quantity
@@ -140,4 +143,34 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
 		companyId,
 		merchantBranchId,
 	};
+};
+
+export const actions: Actions = {
+	restoreProduct: async ({ request }) => {
+		const blocked = await subscriptionWriteActionBlockedForRequest(request);
+		if (blocked) return blocked;
+
+		const userId = getMerchantIdFromRequest(request);
+		if (!userId) return { success: false, message: "Authentication required" };
+
+		const formData = await request.formData();
+		const id = String(formData.get("id") ?? "").trim();
+		if (!id) return { success: false, message: "Product ID is required" };
+
+		try {
+			await setProductSoftDeleted(id, false);
+			return {
+				success: true,
+				message:
+					"Product restored with its related stock, movements, orders and transfers",
+			};
+		} catch (err) {
+			return {
+				success: false,
+				message: `Failed to restore product: ${
+					err instanceof Error ? err.message : "Unknown error"
+				}`,
+			};
+		}
+	},
 };

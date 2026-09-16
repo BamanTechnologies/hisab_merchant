@@ -24,6 +24,7 @@ const FETCH_PRODUCT_BATCHES_QUERY = `
           { product_id: { _in: $productIds } }
           { branch: { _eq: $branchId } }
           { quantity: { _gt: 0 } }
+          { is_deleted: { _eq: false } }
         ]
       }
       order_by: [{ created_at: asc }, { id: asc }]
@@ -35,7 +36,7 @@ const FETCH_PRODUCT_BATCHES_QUERY = `
       created_at
       batch_number
     }
-    products(where: { id: { _in: $productIds } }) {
+    products(where: { _and: [{ id: { _in: $productIds } }, { is_deleted: { _eq: false } }] }) {
       id
       default_unit
       factor
@@ -350,10 +351,46 @@ export async function fetchCancelRestoreSlices(orderId: string): Promise<{
 	return { slices, unit };
 }
 
+const SET_ORDER_SOFT_DELETED_MUTATION = `
+  mutation SetOrderSoftDeleted($id: uuid!, $isDeleted: Boolean!) {
+    update_orders(where: { id: { _eq: $id } }, _set: { is_deleted: $isDeleted }) {
+      affected_rows
+    }
+    update_order_items(where: { order_id: { _eq: $id } }, _set: { is_deleted: $isDeleted }) {
+      affected_rows
+    }
+    update_order_item_batches(
+      where: { order_item: { order_id: { _eq: $id } } }
+      _set: { is_deleted: $isDeleted }
+    ) {
+      affected_rows
+    }
+  }
+`;
+
+export async function setOrderSoftDeleted(
+  orderId: string,
+  isDeleted: boolean,
+): Promise<void> {
+  const data = await gql<{ update_orders: { affected_rows: number } | null }>(
+    SET_ORDER_SOFT_DELETED_MUTATION,
+    { id: orderId, isDeleted },
+  );
+  if (!data.update_orders || data.update_orders.affected_rows === 0) {
+    throw new Error("Order was not found");
+  }
+}
+
 export const FETCH_PRODUCTS_FOR_ORDERS_QUERY = `
   query ProductsForOrders($companyId: uuid!, $branchId: uuid!) {
     products(
-      where: { _and: [{ company_id: { _eq: $companyId } }, { is_active: { _eq: true } }] }
+      where: {
+        _and: [
+          { company_id: { _eq: $companyId } }
+          { is_active: { _eq: true } }
+          { is_deleted: { _eq: false } }
+        ]
+      }
       order_by: [{ name: asc }]
     ) {
       id
@@ -366,7 +403,12 @@ export const FETCH_PRODUCTS_FOR_ORDERS_QUERY = `
         name
       }
       stocks(
-        where: { _and: [{ branch: { _eq: $branchId } }] }
+        where: {
+          _and: [
+            { branch: { _eq: $branchId } }
+            { is_deleted: { _eq: false } }
+          ]
+        }
         order_by: [{ created_at: asc }, { id: asc }]
       ) {
         id

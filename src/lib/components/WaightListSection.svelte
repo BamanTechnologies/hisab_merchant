@@ -37,6 +37,7 @@
     companyId: string;
     merchantBranchId: string;
     title?: string;
+    disabled?: boolean;
   };
 
   let {
@@ -45,6 +46,7 @@
     companyId,
     merchantBranchId,
     title = "Waight List",
+    disabled = false,
   }: Props = $props();
 
   let rows = $state<WaightListItem[]>([]);
@@ -342,19 +344,28 @@
       </span>
     </div>
     <div class="flex flex-wrap items-center gap-2">
-      {#if selectedIds.length > 0}
-        <button
-          type="button"
-          class={mc.primaryBtn}
-          onclick={requestReminder}
-          disabled={sendingReminder}
+      {#if disabled}
+        <p
+          class="px-3 py-2 text-sm font-medium text-amber-700 dark:text-amber-400"
+          role="status"
         >
-          Send reminder sms ({selectedIds.length})
+          This record is archived. Adding / editing waight list is disabled.
+        </p>
+      {:else}
+        {#if selectedIds.length > 0}
+          <button
+            type="button"
+            class={mc.primaryBtn}
+            onclick={requestReminder}
+            disabled={sendingReminder}
+          >
+            Send reminder sms ({selectedIds.length})
+          </button>
+        {/if}
+        <button type="button" class={mc.primaryBtn} onclick={openAdd}>
+          Add waight list
         </button>
       {/if}
-      <button type="button" class={mc.primaryBtn} onclick={openAdd}>
-        Add waight list
-      </button>
     </div>
   </div>
 
@@ -367,7 +378,7 @@
       <thead>
         <tr>
           <th class={mc.colNumHead}>
-            {#if selectableRows.length > 0}
+            {#if selectableRows.length > 0 && !disabled}
               <input
                 type="checkbox"
                 class="size-4 accent-[#4DA0E6]"
@@ -394,7 +405,7 @@
         {#each rows as r, i}
           <tr class="hover:bg-gray-50 dark:hover:bg-white/5">
             <td class={mc.colNum}>
-              {#if r.allow_for_reminder === true}
+              {#if r.allow_for_reminder === true && !disabled}
                 <input
                   type="checkbox"
                   class="size-4 accent-[#4DA0E6]"
@@ -434,6 +445,7 @@
                   type="button"
                   class={mc.actionBtn}
                   title="Edit"
+                  disabled={disabled}
                   onclick={() => openEdit(r)}
                 >
                   ✎
@@ -442,6 +454,7 @@
                   type="button"
                   class={mc.actionBtnDanger}
                   title="Delete"
+                  disabled={disabled}
                   onclick={() => requestDelete(r)}
                 >
                   🗑

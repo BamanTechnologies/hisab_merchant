@@ -36,7 +36,9 @@ const FETCH_MERCHANTS_BY_IDS_QUERY = `
 
 const FETCH_CUSTOMER_NAMES_QUERY = `
   query PaymentCustomerNames($merchantId: uuid!) {
-    payment(where: { created_by: { _eq: $merchantId } }) {
+    payment(
+      where: { created_by: { _eq: $merchantId } }
+    ) {
       order {
         customer_name
       }
@@ -74,11 +76,13 @@ async function fetchPayments(
   sortDirection: string,
   page: number,
   pageSize: number,
+  deleted: boolean,
 ) {
   const offset = (page - 1) * pageSize;
 
   const conditions: Record<string, unknown>[] = [
     { created_by: { _eq: merchantId } },
+    { order: { is_deleted: { _eq: deleted } } },
   ];
 
   if (customerName) {
@@ -229,6 +233,7 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
   const sortDirection = (url.searchParams.get('dir') as 'asc' | 'desc') ?? 'desc';
   const page = Math.max(1, Number(url.searchParams.get('page')) || 1);
   const pageSize = Math.max(1, Number(url.searchParams.get('pageSize')) || 10);
+  const tab = url.searchParams.get('tab') === 'archived' ? 'archived' : 'active';
 
   const [paymentsResult, customerNames] = await Promise.all([
     merchantId
@@ -243,6 +248,7 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
           sortDirection,
           page,
           pageSize,
+          tab === "archived",
         )
       : Promise.resolve({ payments: [], totalCount: 0 }),
     merchantId ? fetchCustomerNames(merchantId) : Promise.resolve([]),

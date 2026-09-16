@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { enhance } from "$app/forms";
+  import { deserialize, enhance } from "$app/forms";
   import { invalidateAll } from "$app/navigation";
   import { mc } from "$lib/merchant-styles.js";
+  import { ArchiveRestore, X } from "@lucide/svelte";
   import {
     SUBSCRIPTION_BLOCKED_MESSAGE,
     subscriptionBlocksMutations,
@@ -51,6 +52,7 @@
     thickness?: number | string | null;
     unit?: string | null;
     product?: ProductRef | null;
+    is_deleted?: boolean | null;
   };
 
   type TransferBranch = { id: string; name?: string | null };
@@ -80,7 +82,7 @@
   };
 
   let { data }: { data: PageData } = $props();
-  const stock = data.stock as Stock | null;
+  const stock = $derived(data.stock as Stock | null);
   const stockHeldAtBranch = data.stockHeldAtBranch as
     | { id: string; name: string }
     | null
@@ -275,6 +277,55 @@
 
   const subscriptionLocked = $derived($subscriptionBlocksMutations);
 
+  const isArchived = $derived(stock?.is_deleted === true);
+
+  let showRestoreModal = $state(false);
+  let restorePending = $state(false);
+  let restoreError = $state("");
+
+  function openRestoreModal() {
+    if (subscriptionLocked) return;
+    restoreError = "";
+    showRestoreModal = true;
+  }
+
+  function closeRestoreModal(force = false) {
+    if (!force && restorePending) return;
+    showRestoreModal = false;
+  }
+
+  async function confirmRestore() {
+    if (restorePending) return;
+    restorePending = true;
+    restoreError = "";
+    try {
+      const formData = new FormData();
+      formData.append("id", stock?.id ?? "");
+      const response = await fetch("?/restoreStock", {
+        method: "POST",
+        body: formData,
+      });
+      const result = deserialize(await response.text());
+      const t = toastFromActionResult(result);
+      if (t) showToast(t.message, t.variant);
+      const payload =
+        result.type === "success" && "data" in result
+          ? (result.data as { success?: boolean } | undefined)
+          : undefined;
+      if (result.type === "success" && payload?.success) {
+        closeRestoreModal(true);
+        await invalidateAll();
+      } else if (t?.variant === "error") {
+        restoreError = t.message;
+      }
+    } catch (err) {
+      restoreError =
+        err instanceof Error ? err.message : "Failed to restore stock";
+    } finally {
+      restorePending = false;
+    }
+  }
+
   function merchantOptionLabel(m: TransferMerchant) {
     const name = [m.first_name, m.last_name].filter(Boolean).join(" ").trim();
     return name || m.id;
@@ -428,39 +479,56 @@
       <p class={mc.pageSubtitle}>{typeDisplay(productTypeName())}</p>
     {/if}
   </div>
-  {#if stock}
+{#if stock}
     <div class="flex flex-wrap gap-2">
-      <button
-        type="button"
-        class={mc.primaryBtn}
-       onclick={openFifoTransferModal}
-        disabled={!canTransferStock || subscriptionLocked}
-        title={subscriptionLocked
-          ? SUBSCRIPTION_BLOCKED_MESSAGE
-          : !canTransferStock
-          ? !stock?.branch
-            ? "Stock has no branch"
-            : transferTargetBranches.length === 0
-              ? "No other branches in the same company"
-              : Number(stock?.quantity) <= 0
-                ? "No quantity to transfer"
-                : "Cannot transfer"
-          : "Move this stock to another branch in the same company"}
-      >
-        Transfer stock
-      </button>
-      <!-- <button
-        type="button"
-        class={mc.tableBtn}
-        onclick={openFifoTransferModal}
-        disabled={!stock.branch || transferTargetBranches.length === 0 || subscriptionLocked}
-        title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : "Transfer product stock via FIFO across all batches"}
-      >
-        Transfer (FIFO)
-      </button> -->
+      {#if isArchived}
+        <button
+          type="button"
+          class={mc.primaryBtn}
+          onclick={openRestoreModal}
+          disabled={subscriptionLocked}
+          title={subscriptionLocked ? SUBSCRIPTION_BLOCKED_MESSAGE : "Restore this stock and its related records"}
+        >
+          <ArchiveRestore size={14} strokeWidth={2} />
+          Restore stock
+        </button>
+      {:else}
+        <button
+          type="button"
+          class={mc.primaryBtn}
+          onclick={openFifoTransferModal}
+          disabled={!canTransferStock || subscriptionLocked}
+          title={subscriptionLocked
+            ? SUBSCRIPTION_BLOCKED_MESSAGE
+            : !canTransferStock
+              ? !stock?.branch
+                ? "Stock has no branch"
+                : transferTargetBranches.length === 0
+                  ? "No other branches in the same company"
+                  : Number(stock?.quantity) <= 0
+                    ? "No quantity to transfer"
+                    : "Cannot transfer"
+              : "Move this stock to another branch in the same company"}
+        >
+          Transfer stock
+        </button>
+      {/if}
     </div>
   {/if}
 </section>
+
+{#if isArchived}
+  <div
+    class="mb-4 flex items-center gap-2 rounded-lg border border-[#d15b5b] bg-rose-50 px-5 py-3 dark:border-rose-500/30 dark:bg-rose-950/30"
+    role="status"
+  >
+    <ArchiveRestore size={16} strokeWidth={2} class="shrink-0 text-rose-700 dark:text-rose-400" />
+    <span class="text-sm font-semibold text-rose-700 dark:text-rose-400">
+      This stock is archived and hidden from active views. Transferring is
+      disabled until you restore it.
+    </span>
+  </div>
+{/if}
 
 {#if errorMessage}
   <div class={mc.alertError}>
@@ -869,6 +937,58 @@
     </dialog>
   {/if}
 
+  {#if showRestoreModal && stock}
+    <div
+      class="modal-overlay"
+      role="button"
+      tabindex="0"
+      onclick={() => !restorePending && closeRestoreModal()}
+      onkeydown={(e) =>
+        !restorePending && (e.key === "Enter" || e.key === " ") && closeRestoreModal()}
+    ></div>
+    <dialog
+      open
+      class="modal modal-compact"
+      onclick={(e) => e.stopPropagation()}
+      oncancel={(e) => restorePending && e.preventDefault()}
+    >
+      <header>
+        <h2>Restore stock</h2>
+        <button
+          class="icon"
+          aria-label="Close"
+          disabled={restorePending}
+          onclick={() => closeRestoreModal()}>✕</button
+        >
+      </header>
+      <div class="modal-body">
+        <p>
+          Restore this stock? It will be returned to the active stock list along
+          with its related movements, orders and transfers.
+        </p>
+        {#if restoreError}
+          <p class="modal-error">{restoreError}</p>
+        {/if}
+      </div>
+      <footer>
+        <button
+          type="button"
+          class="ghost"
+          onclick={() => closeRestoreModal()}
+          disabled={restorePending}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="primary"
+          onclick={confirmRestore}
+          disabled={restorePending}>
+          {restorePending ? "Restoring…" : "Restore"}
+        </button>
+      </footer>
+    </dialog>
+  {/if}
+
 <style>
   fieldset.transfer-form-fields {
     border: none;
@@ -900,6 +1020,22 @@
     font-size: 0.8125rem;
     color: #6b7280;
     line-height: 1.45;
+  }
+
+  .modal-error {
+    margin-top: 0.5rem;
+    border-radius: 0.375rem;
+    border: 1px solid #fecaca;
+    background: #fef2f2;
+    padding: 0.5rem 0.625rem;
+    font-size: 0.8125rem;
+    color: #b91c1c;
+  }
+
+  :global(.dark) .modal-error {
+    border-color: rgb(248 113 113 / 0.3);
+    background: rgb(239 68 68 / 0.1);
+    color: #fca5a5;
   }
 
   .fifo-preview {

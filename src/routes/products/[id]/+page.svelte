@@ -1,10 +1,15 @@
 <script lang="ts">
+  import { deserialize } from "$app/forms";
+  import { invalidateAll } from "$app/navigation";
+  import { ArchiveRestore, X } from "@lucide/svelte";
   import TablePagination from "$lib/components/TablePagination.svelte";
   import { mc } from "$lib/merchant-styles.js";
   import { paginateSlice } from "$lib/pagination.js";
   import { formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
   import { parseQty } from "$lib/inventory/fifo";
   import WaightListSection from "$lib/components/WaightListSection.svelte";
+  import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
+  import { SUBSCRIPTION_BLOCKED_MESSAGE, subscriptionBlocksMutations } from "$lib/subscription/client";
   import type { StockMovementRecord } from "$lib/inventory/types";
   import type { PageData } from "./$types";
 
@@ -26,6 +31,7 @@
     attributes?: Record<string, unknown> | null;
     investors?: string[] | null;
     is_active?: boolean | null;
+    is_deleted?: boolean | null;
     barcode?: string | null;
     qr_code?: string | null;
     treshold_quantity?: number | string | null;
@@ -36,10 +42,60 @@
 
   let { data }: { data: PageData } = $props();
 
-  const product = data.product as Product;
-  const movements = (data.movements ?? []) as StockMovementRecord[];
-  const batches = (data.batches ?? []) as StockBatch[];
+  const product = $derived(data.product as Product);
+  const movements = $derived((data.movements ?? []) as StockMovementRecord[]);
+  const batches = $derived((data.batches ?? []) as StockBatch[]);
   const canViewPurchasePrice = data.canViewPurchasePrice !== false;
+
+  const subscriptionLocked = $derived($subscriptionBlocksMutations);
+  const isArchived = $derived(product?.is_deleted === true);
+
+  let restorePending = $state(false);
+  let showRestoreModal = $state(false);
+  let restoreError = $state("");
+
+  function openRestoreModal() {
+    if (subscriptionLocked) return;
+    restoreError = "";
+    showRestoreModal = true;
+  }
+
+  function closeRestoreModal(force = false) {
+    if (!force && restorePending) return;
+    showRestoreModal = false;
+  }
+
+  async function confirmRestore() {
+    if (restorePending) return;
+    restorePending = true;
+    restoreError = "";
+    try {
+      const formData = new FormData();
+      formData.append("id", product.id);
+      const response = await fetch("?/restoreProduct", {
+        method: "POST",
+        body: formData,
+      });
+      const result = deserialize(await response.text());
+      const t = toastFromActionResult(result);
+      if (t) showToast(t.message, t.variant);
+      const payload =
+        result.type === "success" && "data" in result
+          ? (result.data as { success?: boolean } | undefined)
+          : undefined;
+      if (result.type === "success" && payload?.success) {
+        closeRestoreModal(true);
+        afterToast(TOAST_MS, () => void invalidateAll());
+      } else if (t?.variant === "error") {
+        restoreError = t.message;
+      }
+    } catch (err) {
+      restoreError =
+        err instanceof Error ? err.message : "Failed to restore product";
+    } finally {
+      restorePending = false;
+    }
+  }
 
   let batchPage = $state(1);
   let batchPageSize = $state(10);
@@ -140,7 +196,11 @@
       { label: "Default unit", value: dash(product.default_unit) },
       {
         label: "Status",
-        value: product.is_active === false ? "Inactive" : "Active",
+        value: isArchived
+          ? "Archived"
+          : product.is_active === false
+            ? "Inactive"
+            : "Active",
       },
       { label: "Barcode", value: dash(product.barcode) },
       { label: "QR code", value: dash(product.qr_code) },
@@ -208,7 +268,36 @@
     <h1 class={mc.pageTitle}>{product.displayName || product.name}</h1>
     <p class={mc.pageSubtitle}>{typeDisplay(typeFromProduct())}</p>
   </div>
+  {#if isArchived}
+    <div class="flex flex-wrap gap-2">
+      <button
+        type="button"
+        class={mc.primaryBtn}
+        onclick={openRestoreModal}
+        disabled={subscriptionLocked}
+        title={subscriptionLocked
+          ? SUBSCRIPTION_BLOCKED_MESSAGE
+          : "Restore this product and its related records"}
+      >
+        <ArchiveRestore size={14} strokeWidth={2} />
+        Restore product
+      </button>
+    </div>
+  {/if}
 </section>
+
+{#if isArchived}
+  <div
+    class="mb-4 flex items-center gap-2 rounded-lg border border-[#d15b5b] bg-rose-50 px-5 py-3 dark:border-rose-500/30 dark:bg-rose-950/30"
+    role="status"
+  >
+    <ArchiveRestore size={16} strokeWidth={2} class="shrink-0 text-rose-700 dark:text-rose-400" />
+    <span class="text-sm font-semibold text-rose-700 dark:text-rose-400">
+      This product is archived and hidden from active views. Add waight list and
+      related actions are disabled until you restore it.
+    </span>
+  </div>
+{/if}
 
 <div class={mc.tableSection}>
   <div
@@ -403,9 +492,124 @@
   {/if}
 </section>
 
+{#if showRestoreModal}
+  <div
+    class="modal-overlay"
+    role="button"
+    tabindex="0"
+    onclick={() => !restorePending && closeRestoreModal()}
+    onkeydown={(e) =>
+      !restorePending && (e.key === "Enter" || e.key === " ") && closeRestoreModal()}
+  ></div>
+  <dialog
+    open
+    class="modal modal-compact"
+    onclick={(e) => e.stopPropagation()}
+    oncancel={(e) => restorePending && e.preventDefault()}
+  >
+    <header>
+      <h2>Restore product</h2>
+      <button
+        type="button"
+        class="icon-btn"
+        aria-label="Close"
+        disabled={restorePending}
+        onclick={() => closeRestoreModal()}
+      >
+        <X size={18} />
+      </button>
+    </header>
+    <div class="modal-body">
+      <p>
+        Restore this product? This brings back the product and its related
+        stock, movements, orders and transfers.
+      </p>
+      <p class="detail">
+        {product.displayName || product.name || "—"}
+      </p>
+      {#if restoreError}
+        <p class="modal-error">{restoreError}</p>
+      {/if}
+    </div>
+    <footer>
+      <button
+        type="button"
+        class={mc.tableBtn}
+        onclick={() => closeRestoreModal()}
+        disabled={restorePending}
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="primary"
+        onclick={confirmRestore}
+        disabled={restorePending}
+      >
+        {restorePending ? "Restoring…" : "Restore"}
+      </button>
+    </footer>
+  </dialog>
+{/if}
+
 <WaightListSection
   productId={product.id}
   companyId={data.companyId ?? ""}
   merchantBranchId={data.merchantBranchId ?? ""}
   title="Waight List"
+  disabled={isArchived}
 />
+
+<style>
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 0.375rem;
+  }
+
+  .icon-btn:hover:not(:disabled) {
+    background: #f1f5f9;
+    color: #334155;
+  }
+
+  .icon-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  :global(.dark) .icon-btn:hover:not(:disabled) {
+    background: rgb(255 255 255 / 0.08);
+    color: #e2e8f0;
+  }
+
+  .detail {
+    font-size: 0.8125rem;
+    color: #64748b;
+  }
+
+  :global(.dark) .detail {
+    color: #94a3b8;
+  }
+
+  .modal-error {
+    margin-top: 0.5rem;
+    border-radius: 0.375rem;
+    border: 1px solid #fecaca;
+    background: #fef2f2;
+    padding: 0.5rem 0.625rem;
+    font-size: 0.8125rem;
+    color: #b91c1c;
+  }
+
+  :global(.dark) .modal-error {
+    border-color: rgb(248 113 113 / 0.3);
+    background: rgb(239 68 68 / 0.1);
+    color: #fca5a5;
+  }
+</style>
