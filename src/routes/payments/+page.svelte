@@ -46,6 +46,10 @@
   let searchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
   let filterDebounceTimer: ReturnType<typeof setTimeout> | undefined;
   let suppressPageNav = $state(false);
+  const initialTab = $page.url.searchParams.get("tab") === "archived"
+    ? "archived"
+    : "active";
+  let activeTab = $state<"active" | "archived">(initialTab);
 
   const customerFilterOptions = $derived(
     ((data as { customerNames?: string[] }).customerNames ?? []) as string[],
@@ -58,6 +62,7 @@
 
   function allParamsFromState(): URLSearchParams {
     const p = new URLSearchParams();
+    if (activeTab === "archived") p.set("tab", "archived");
     if (searchQuery) p.set("search", searchQuery);
     if (customerFilterName) p.set("customer", customerFilterName);
     if (dateRangePreset && dateRangePreset !== "all")
@@ -79,6 +84,15 @@
     const params = allParamsFromState();
     const qs = params.toString();
     goto(qs ? `/payments?${qs}` : "/payments", { replaceState: true, keepFocus: true });
+  }
+
+  function switchTab(tab: "active" | "archived") {
+    if (tab === activeTab) return;
+    suppressPageNav = true;
+    activeTab = tab;
+    tablePage = 1;
+    navigateWithState();
+    suppressPageNav = false;
   }
 
   $effect(() => {
@@ -188,6 +202,30 @@
   </div>
   <TableSearchInput bind:value={searchQuery} placeholder={$_('searchDots')} />
 </section>
+<div
+  class="mb-4 inline-flex gap-1 rounded-lg border border-[#e6eaed] bg-white p-1 shadow-sm dark:border-white/10 dark:bg-[#0f172a] dark:shadow-none"
+  role="tablist"
+  aria-label="Payments"
+>
+  <button
+    type="button"
+    role="tab"
+    class="payments-tab {activeTab === 'active' ? 'payments-tab-active' : ''}"
+    aria-selected={activeTab === "active"}
+    onclick={() => switchTab("active")}
+  >
+    Active
+  </button>
+  <button
+    type="button"
+    role="tab"
+    class="payments-tab {activeTab === 'archived' ? 'payments-tab-active' : ''}"
+    aria-selected={activeTab === "archived"}
+    onclick={() => switchTab("archived")}
+  >
+    Archived
+  </button>
+</div>
 
 <section class={mc.filterSection} aria-label="Filter payments">
   <label>
@@ -237,6 +275,7 @@
   </label>
 </section>
 
+
 <section class={mc.tableSection}>
   <div class="overflow-x-auto">
   <table class={mc.table}>
@@ -271,7 +310,11 @@
         {#if totalCount === 0}
           <tr>
             <td colspan="7" class={mc.emptyCell}>
-              {searchQuery || dateRangePreset !== "all" || customerFilterName ? $_('noPaymentsFiltered') : $_('noPaymentsEmpty')}
+              {#if activeTab === "archived"}
+                No archived payments.
+              {:else}
+                {searchQuery || dateRangePreset !== "all" || customerFilterName ? $_('noPaymentsFiltered') : $_('noPaymentsEmpty')}
+              {/if}
             </td>
           </tr>
         {/if}
@@ -286,3 +329,32 @@
     resetKey={totalCount}
   />
 </section>
+
+<style>
+  .payments-tab {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.4rem 1rem;
+    border-radius: 0.375rem;
+    border: none;
+    background: transparent;
+    color: #64748b;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .payments-tab:hover:not(.payments-tab-active) {
+    background: #f8fafc;
+    color: #334155;
+  }
+
+  .payments-tab-active {
+    background: #4da0e6;
+    color: #ffffff;
+  }
+
+  :global(.dark) .payments-tab-active {
+    background: #4da0e6;
+  }
+</style>

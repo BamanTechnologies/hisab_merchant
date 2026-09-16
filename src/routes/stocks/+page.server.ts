@@ -16,6 +16,7 @@ import { subscriptionWriteActionBlockedForRequest } from "$lib/subscription/serv
 import { resolveUniqueBatchNumber } from "$lib/inventory/batchNumber";
 import { resolveReceiveExpiryDate } from "$lib/inventory/companyStockFields";
 import { normalizeProductTypeName } from "$lib/inventory/parseForm";
+import { setStockSoftDeleted } from "$lib/inventory/products.server";
 
 const FETCH_COMPANY_NAME_QUERY = `
   query CompanyNameForStocks($id: uuid!) {
@@ -61,6 +62,7 @@ const STOCK_FIELDS = `
       color
       figure
       thickness
+      is_deleted
       product {
         id
         name
@@ -248,9 +250,12 @@ async function fetchStocksList(
   sortDirection: string,
   page: number,
   pageSize: number,
+  deleted: boolean,
 ): Promise<{ rows: Record<string, unknown>[]; totalCount: number; error: string | null }> {
   const conditions: Record<string, unknown>[] = [];
   const offset = (page - 1) * pageSize;
+
+  conditions.push({ is_deleted: { _eq: deleted } });
 
   if (merchantBranchId) {
     conditions.push({ branch: { _eq: merchantBranchId } });
@@ -353,6 +358,7 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
   const sortDirection = (url.searchParams.get("dir") as "asc" | "desc") ?? "desc";
   const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
   const pageSize = Math.max(1, Number(url.searchParams.get("pageSize")) || 10);
+  const tab = url.searchParams.get("tab") === "archived" ? "archived" : "active";
 
   const [
     stocksResult,
@@ -371,6 +377,7 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
       sortDirection,
       page,
       pageSize,
+      tab === "archived",
     ),
     fetchInvestorsForCompany(companyId),
     fetchProductTypes(merchantId),
@@ -672,7 +679,7 @@ export const actions: Actions = {
     }
   },
 
-  deleteStock: async ({ request }) => {
+  archiveStock: async ({ request }) => {
     const blocked = await subscriptionWriteActionBlockedForRequest(request);
     if (blocked) return blocked;
 
@@ -681,25 +688,44 @@ export const actions: Actions = {
     ).trim();
     if (!stockId) return { success: false, message: "Batch ID is required" };
 
-    const row = await gql<{ stock_by_pk: { quantity: unknown } | null }>(
-      `query ($id: uuid!) { stock_by_pk(id: $id) { quantity } }`,
-      { id: stockId },
-    );
-    const qty = Number(row.stock_by_pk?.quantity ?? 0);
-    if (!Number.isFinite(qty) || qty !== 0) {
-      return {
-        success: false,
-        message: "Only zero-quantity batches can be deleted",
-      };
-    }
-
     try {
-      await gql(DELETE_STOCK_MUTATION, { id: stockId });
-      return { success: true, message: "Batch deleted successfully" };
+      await setStockSoftDeleted(stockId, true);
+      return {
+        success: true,
+        message: "Stock archived with its related movements, orders and transfers",
+      };
     } catch (err) {
       return {
         success: false,
-        message: `Failed to delete batch: ${err instanceof Error ? err.message : "Unknown error"}`,
+        message: `Failed to archive stock: ${
+          err instanceof Error ? err.message : "Unknown error"
+        }`,
+      };
+    }
+  },
+
+  restoreStock: async ({ request }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
+    const stockId = String(
+      (await request.formData()).get("stockId") ?? "",
+    ).trim();
+    if (!stockId) return { success: false, message: "Batch ID is required" };
+
+    try {
+      await setStockSoftDeleted(stockId, false);
+      return {
+        success: true,
+        message:
+          "Stock restored with its related movements, orders and transfers",
+      };
+    } catch (err) {
+      return {
+        success: false,
+        message: `Failed to restore stock: ${
+          err instanceof Error ? err.message : "Unknown error"
+        }`,
       };
     }
   },

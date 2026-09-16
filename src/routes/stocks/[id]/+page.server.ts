@@ -8,6 +8,7 @@ import {
 } from "$lib/companyInvestors.server";
 import { config, getGraphQLHeaders } from "$lib/config";
 import { subscriptionWriteActionBlockedForRequest } from "$lib/subscription/server";
+import { setStockSoftDeleted } from "$lib/inventory/products.server";
 import {
   executeTransfer,
   FETCH_PRODUCTS_FOR_TRANSFER_QUERY,
@@ -25,6 +26,7 @@ const FETCH_STOCK_BY_PK_QUERY = `
       attributes
       created_by
       investors
+      is_deleted
       merchant {
         id
         first_name
@@ -760,6 +762,27 @@ async function transferStockPartial(input: {
 }
 
 export const actions: Actions = {
+  restoreStock: async ({ request, params }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
+    try {
+      await setStockSoftDeleted(params.id, false);
+      return {
+        success: true,
+        message:
+          "Stock restored with its related movements, orders and transfers",
+      };
+    } catch (err) {
+      return {
+        success: false,
+        message: `Failed to restore stock: ${
+          err instanceof Error ? err.message : "Unknown error"
+        }`,
+      };
+    }
+  },
+
   transferStock: async ({ request, params }) => {
     const blocked = await subscriptionWriteActionBlockedForRequest(request);
     if (blocked) return blocked;

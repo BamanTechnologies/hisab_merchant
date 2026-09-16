@@ -68,6 +68,7 @@ const FETCH_CUSTOMER_ACTIVITY_QUERY = `
       customer_address
       order_quantity
       status
+      is_deleted
       stock_id
       total_amount
       outstanding_amount
@@ -130,6 +131,9 @@ const FETCH_CUSTOMER_ACTIVITY_QUERY = `
       created_by
       order_id
       payment_method
+      order {
+        is_deleted
+      }
     }
     payments_received_aggregate: payment_aggregate(
       where: {
@@ -218,6 +222,7 @@ const FETCH_CUSTOMER_ORDERS_ONLY_QUERY = `
       customer_address
       order_quantity
       status
+      is_deleted
       stock_id
       total_amount
       outstanding_amount
@@ -324,6 +329,7 @@ export type CustomerDetailOrder = {
   customer_address: string;
   order_quantity: number;
   status: string;
+  is_deleted: boolean;
   stock_id: string;
   total_amount: number;
   outstanding_amount: number;
@@ -350,6 +356,7 @@ export type CustomerDetailPayment = {
   created_by_name?: string;
   order_id: string;
   payment_method: string;
+  order_is_deleted: boolean;
 };
 
 function normalizeOrderRow(raw: Record<string, unknown>): CustomerDetailOrder {
@@ -387,6 +394,7 @@ function normalizeOrderRow(raw: Record<string, unknown>): CustomerDetailOrder {
     customer_address: String(raw.customer_address ?? ''),
     order_quantity: Number(raw.order_quantity) || 0,
     status: String(raw.status ?? ''),
+    is_deleted: Boolean(raw.is_deleted),
     stock_id: stockId,
     total_amount: parseMoney(raw.total_amount),
     outstanding_amount: parseMoney(raw.outstanding_amount),
@@ -397,6 +405,10 @@ function normalizeOrderRow(raw: Record<string, unknown>): CustomerDetailOrder {
 }
 
 function normalizePaymentRow(raw: Record<string, unknown>): CustomerDetailPayment {
+  const order =
+    raw.order && typeof raw.order === 'object'
+      ? (raw.order as Record<string, unknown>)
+      : null;
   return {
     id: String(raw.id),
     amount: parseMoney(raw.amount),
@@ -404,6 +416,7 @@ function normalizePaymentRow(raw: Record<string, unknown>): CustomerDetailPaymen
     created_by: String(raw.created_by ?? ''),
     order_id: String(raw.order_id ?? ''),
     payment_method: String(raw.payment_method ?? ''),
+    order_is_deleted: Boolean(order?.is_deleted),
   };
 }
 
@@ -552,7 +565,14 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
             } | null;
           }>(FETCH_PAYMENTS_FOR_ORDERS_QUERY, { orderIds });
 
-          payments = (payBlock.payment ?? []).map((p) => normalizePaymentRow(p));
+          const deletedByOrderId = new Map(orders.map((o) => [o.id, o.is_deleted]));
+          payments = (payBlock.payment ?? []).map((p) => {
+            const row = normalizePaymentRow(p);
+            return {
+              ...row,
+              order_is_deleted: deletedByOrderId.get(row.order_id) ?? row.order_is_deleted,
+            };
+          });
           totalPaymentAmount = parseMoney(
             payBlock.payments_received_aggregate?.aggregate?.sum?.amount ?? 0,
           );

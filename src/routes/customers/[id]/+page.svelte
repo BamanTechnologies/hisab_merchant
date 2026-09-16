@@ -18,6 +18,7 @@
     payment_method: string;
     created_by_name?: string;
     order_id: string;
+    order_is_deleted: boolean;
   }>;
   let paymentSortColumn = $state<"none" | "date" | "amount" | "method">("none");
   let paymentSortDirection = $state<"asc" | "desc">("asc");
@@ -412,7 +413,7 @@
       <tbody>
         {#each pagedOrders as o, i}
           <tr
-            class={mc.rowClickable}
+            class="{mc.rowClickable}{o.is_deleted ? ' deleted-row' : ''}"
             onclick={() => goto(`/orders/${o.id}`)}
             tabindex="0"
             role="button"
@@ -427,7 +428,12 @@
             </td>
             <td class="{mc.tdCenter} whitespace-nowrap">{orderQtyCell(o)}</td>
             <td class={mc.td}><span class={statusChipClass(o.status)}>{o.status}</span></td>
-            <td class="{mc.td} font-semibold">{formatMoney(o.total_amount)}</td>
+            <td class="{mc.td} font-semibold{o.is_deleted ? ' deleted-cell' : ''}">
+              {#if o.is_deleted}
+                <span class="deleted-tag">Deleted</span>
+              {/if}
+              {formatMoney(o.total_amount)}
+            </td>
           </tr>
         {/each}
         {#if sortedOrders.length === 0}
@@ -465,13 +471,16 @@
       </thead>
       <tbody>
         {#each pagedPayments as p, i}
-          <tr class="hover:bg-gray-50 dark:hover:bg-white/5">
+          <tr class="hover:bg-gray-50 dark:hover:bg-white/5{p.order_is_deleted ? ' deleted-row' : ''}">
             <td class={mc.colNum}>{(paymentsTablePage - 1) * paymentsTablePageSize + i + 1}</td>
             <td class="{mc.td} whitespace-nowrap tabular-nums text-gray-500 dark:text-gray-400">{p.created_at ? formatOrderDate(p.created_at) : "—"}</td>
             <td class="{mc.td} font-semibold">{formatMoney(p.amount)}</td>
             <td class={mc.td}>{p.payment_method}</td>
             <td class="{mc.td} text-gray-500 dark:text-gray-400">{p.created_by_name || "—"}</td>
-            <td class={mc.td}>
+            <td class="{mc.td} relative{p.order_is_deleted ? ' deleted-cell' : ''}">
+              {#if p.order_is_deleted}
+                <span class="deleted-tag">Deleted</span>
+              {/if}
               <a class={mc.link} href={`/orders/${p.order_id}`}>View order</a>
             </td>
           </tr>
@@ -511,3 +520,41 @@
     oncomplete={() => (showSmsModal = false)}
   />
 {/if}
+
+<style>
+  .deleted-row {
+    background-color: rgba(239, 68, 68, 0.1);
+  }
+
+  .deleted-row:hover {
+    background-color: rgba(239, 68, 68, 0.16) !important;
+  }
+
+  .deleted-cell {
+    position: relative;
+  }
+
+  .deleted-tag {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 1;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #ffffff;
+    background-color: rgba(239, 68, 68, 0.9);
+    border-radius: 0 0 0 6px;
+    pointer-events: none;
+  }
+
+  :global(.dark) .deleted-row {
+    background-color: rgba(239, 68, 68, 0.18);
+  }
+
+  :global(.dark) .deleted-row:hover {
+    background-color: rgba(239, 68, 68, 0.24) !important;
+  }
+</style>

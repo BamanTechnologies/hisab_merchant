@@ -27,6 +27,7 @@ const FETCH_PRODUCT_BATCHES_FOR_TRANSFER_QUERY = `
           { product_id: { _eq: $productId } }
           { branch: { _eq: $branchId } }
           { quantity: { _gt: 0 } }
+          { is_deleted: { _eq: false } }
         ]
       }
       order_by: [{ created_at: asc }, { id: asc }]
@@ -374,6 +375,7 @@ export const FETCH_PRODUCTS_FOR_TRANSFER_QUERY = `
             ]
           }
           { is_active: { _eq: true } }
+          { is_deleted: { _eq: false } }
         ]
       }
       order_by: [{ name: asc }]
@@ -395,7 +397,13 @@ export const FETCH_PRODUCTS_FOR_TRANSFER_QUERY = `
         }
       }
       stocks(
-        where: { _and: [{ branch: { _eq: $branchId } }, { quantity: { _gt: 0 } }] }
+        where: {
+          _and: [
+            { branch: { _eq: $branchId } }
+            { quantity: { _gt: 0 } }
+            { is_deleted: { _eq: false } }
+          ]
+        }
         order_by: [{ created_at: asc }, { id: asc }]
       ) {
         id
@@ -412,6 +420,7 @@ export const FETCH_STOCK_TRANSFERS_QUERY = `
   query StockTransfers($filter: stock_transfers_bool_exp, $order: [stock_transfers_order_by!], $limit: Int, $offset: Int) {
     stock_transfers(where: $filter, order_by: $order, limit: $limit, offset: $offset) {
       id
+      is_deleted
       from
       to
       destination_merchant
@@ -447,6 +456,7 @@ export const FETCH_STOCK_TRANSFER_BY_PK_QUERY = `
   query StockTransferByPk($id: uuid!) {
     stock_transfers_by_pk(id: $id) {
       id
+      is_deleted
       from
       to
       destination_merchant
@@ -483,3 +493,38 @@ export const FETCH_STOCK_TRANSFER_BY_PK_QUERY = `
     }
   }
 `;
+
+const SET_STOCK_TRANSFER_SOFT_DELETED_MUTATION = `
+  mutation SetStockTransferSoftDeleted($id: uuid!, $isDeleted: Boolean!) {
+    update_stock_transfers(
+      where: { id: { _eq: $id } }
+      _set: { is_deleted: $isDeleted }
+    ) {
+      affected_rows
+    }
+    update_stock_transfer_batches(
+      where: { transfer_id: { _eq: $id } }
+      _set: { is_deleted: $isDeleted }
+    ) {
+      affected_rows
+    }
+  }
+`;
+
+export async function setStockTransferSoftDeleted(
+  transferId: string,
+  isDeleted: boolean,
+): Promise<void> {
+  const data = await gql<{
+    update_stock_transfers: { affected_rows: number } | null;
+  }>(SET_STOCK_TRANSFER_SOFT_DELETED_MUTATION, {
+    id: transferId,
+    isDeleted,
+  });
+  if (
+    !data.update_stock_transfers ||
+    data.update_stock_transfers.affected_rows === 0
+  ) {
+    throw new Error("Stock transfer was not found");
+  }
+}

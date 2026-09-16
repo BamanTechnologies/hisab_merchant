@@ -1,10 +1,14 @@
-import type { PageServerLoad } from './$types';
+import type { PageServerLoad, Actions } from './$types';
 import { error } from '@sveltejs/kit';
 import { getMerchantIdFromRequest } from '$lib/auth';
 import { fetchMerchantBranchId } from '$lib/merchantBranch.server';
 import { fetchBranchCompanyId } from '$lib/companyInvestors.server';
 import { config, getGraphQLHeaders } from '$lib/config';
-import { FETCH_STOCK_TRANSFER_BY_PK_QUERY } from '$lib/inventory/stockTransfers.server';
+import { subscriptionWriteActionBlockedForRequest } from '$lib/subscription/server';
+import {
+  FETCH_STOCK_TRANSFER_BY_PK_QUERY,
+  setStockTransferSoftDeleted,
+} from '$lib/inventory/stockTransfers.server';
 
 async function gql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
 	const response = await fetch(config.graphql.endpoint, {
@@ -109,4 +113,26 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
 		if ((err as { status?: number }).status === 404) throw err;
 		error(500, 'Failed to load stock transfer');
 	}
+};
+
+export const actions: Actions = {
+	restoreStockTransfer: async ({ request, params }) => {
+		const blocked = await subscriptionWriteActionBlockedForRequest(request);
+		if (blocked) return blocked;
+
+		try {
+			await setStockTransferSoftDeleted(params.id, false);
+			return {
+				success: true,
+				message: 'Transfer restored with its batch slices',
+			};
+		} catch (err) {
+			return {
+				success: false,
+				message: `Failed to restore transfer: ${
+					err instanceof Error ? err.message : 'Unknown error'
+				}`,
+			};
+		}
+	},
 };
