@@ -510,7 +510,7 @@
   customerId={data.customer.id}
   companyId={data.companyId ?? ""}
   merchantBranchId={data.merchantBranchId ?? ""}
-  title="Waight List"
+  title="Waitlist"
 />
 
 {#if showSmsModal}

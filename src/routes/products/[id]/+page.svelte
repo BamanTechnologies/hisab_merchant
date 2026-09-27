@@ -293,7 +293,7 @@
   >
     <ArchiveRestore size={16} strokeWidth={2} class="shrink-0 text-rose-700 dark:text-rose-400" />
     <span class="text-sm font-semibold text-rose-700 dark:text-rose-400">
-      This product is archived and hidden from active views. Add waight list and
+      This product is archived and hidden from active views. Add Waitlist and
       related actions are disabled until you restore it.
     </span>
   </div>
@@ -556,7 +556,7 @@
   productId={product.id}
   companyId={data.companyId ?? ""}
   merchantBranchId={data.merchantBranchId ?? ""}
-  title="Waight List"
+  title="Waitlist"
   disabled={isArchived}
 />
 
