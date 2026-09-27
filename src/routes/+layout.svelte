@@ -381,7 +381,7 @@
 		<div class="flex min-w-0 flex-1 flex-col">
 			<div class="sticky top-0 z-30 shrink-0">
 				<header
-					class="flex items-center gap-3 border-b border-gray-200 bg-white/95 px-4 py-2.5 backdrop-blur-sm dark:border-white/10 dark:bg-[#0f172a]/95"
+					class="relative z-20 flex items-center gap-3 border-b border-gray-200 bg-white/95 px-4 py-2.5 backdrop-blur-sm dark:border-white/10 dark:bg-[#0f172a]/95"
 				>
 				<button
 					type="button"

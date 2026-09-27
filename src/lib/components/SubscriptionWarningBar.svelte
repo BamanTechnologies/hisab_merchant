@@ -62,7 +62,7 @@
 				<p class="font-semibold leading-tight">{snapshot.warningMessage}</p>
 				{#if snapshot.planLabel}
 					<p
-						class="shrink-0 self-start rounded border border-white/25 bg-white/20 px-2 py-0.5 text-[0.65rem] font-bold uppercase leading-none tracking-wide text-white backdrop-blur-[1px] sm:self-auto"
+						class="shrink-0 z-10 self-start rounded border border-white/25 bg-white/20 px-2 py-0.5 text-[0.65rem] font-bold uppercase leading-none tracking-wide text-white backdrop-blur-[1px] sm:self-auto"
 					>
 						{snapshot.planLabel}
 					</p>

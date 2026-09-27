@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { browser } from "$app/environment";
   import { mc } from "$lib/merchant-styles.js";
   import { showToast } from "$lib/toast";
@@ -31,6 +32,14 @@
     } | null;
   };
 
+  type CustomerOption = {
+    id: string;
+    first_name?: string | null;
+    last_name?: string | null;
+    phone_number?: string | null;
+    address?: string | null;
+  };
+
   type Props = {
     customerId?: string;
     productId?: string;
@@ -45,7 +54,7 @@
     productId = "",
     companyId,
     merchantBranchId,
-    title = "Waight List",
+    title = "Waitlist",
     disabled = false,
   }: Props = $props();
 
@@ -61,10 +70,20 @@
 
   let formProductId = $state("");
   let formCustomerId = $state("");
+  let formCustomer = $state<CustomerOption | null>(null);
   let formQuantity = $state<string>("");
   let formStatus = $state("on_waight");
   let formAllowForReminder = $state(true);
   let formIsReminderSent = $state(false);
+  let quantityInputEl = $state<HTMLInputElement | null>(null);
+
+  let showCustomerModal = $state(false);
+  let newFirstName = $state("");
+  let newLastName = $state("");
+  let newAddress = $state("");
+  let newPhone = $state("");
+  let customerSubmitting = $state(false);
+  let customerError = $state("");
 
   let showDeleteModal = $state(false);
   let deleting: WaightListItem | null = $state(null);
@@ -115,7 +134,7 @@
       offset: 0,
     });
     if (!res.ok) {
-      error = res.error ?? "Failed to load waight list.";
+      error = res.error ?? "Failed to load Waitlist.";
       rows = [];
     } else {
       rows = res.data?.rows ?? [];
@@ -193,11 +212,18 @@
     }
   }
 
+  function customerOptionLabel(c: any): string {
+    const name = [c.first_name, c.last_name].filter(Boolean).join(" ").trim();
+    const phone = (c.phone ?? c.phone_number)?.trim() ?? "";
+    return phone ? `${name} - ${phone}` : name || c.id;
+  }
+
   // ---------- Add / Edit ----------
   function openAdd() {
     editing = null;
     formProductId = "";
     formCustomerId = "";
+    formCustomer = null;
     formQuantity = "";
     formStatus = "on_waight";
     formAllowForReminder = true;
@@ -210,6 +236,7 @@
     editing = row;
     formProductId = row.product_id;
     formCustomerId = row.customer_id;
+    formCustomer = row.customer ?? null;
     formQuantity = row.quantity != null ? String(row.quantity) : "";
     formStatus = String(row.status ?? "on_waight");
     formAllowForReminder = row.allow_for_reminder !== false;
@@ -222,6 +249,68 @@
     if (formSubmitting) return;
     showFormModal = false;
     editing = null;
+  }
+
+  // ---------- New customer (nested modal) ----------
+  function openCustomerModal() {
+    if (formSubmitting || customerSubmitting) return;
+    newFirstName = "";
+    newLastName = "";
+    newAddress = "";
+    newPhone = "";
+    customerError = "";
+    showCustomerModal = true;
+  }
+
+  function closeCustomerModal(force?: boolean) {
+    if (force !== true && customerSubmitting) return;
+    showCustomerModal = false;
+  }
+
+  async function submitNewCustomer() {
+    if (customerSubmitting) return;
+    customerError = "";
+    customerSubmitting = true;
+    try {
+      const token = getToken();
+      if (!token) throw new Error("No auth token found.");
+
+      const res = await fetch("/api/customers", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          first_name: newFirstName.trim(),
+          last_name: newLastName.trim(),
+          address: newAddress.trim(),
+          phone_number: newPhone.trim(),
+        }),
+      });
+
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(result?.error ?? "Could not add customer");
+      }
+
+      const created = (result?.customer ?? null) as CustomerOption | null;
+      if (!created?.id) {
+        throw new Error("Customer was not created");
+      }
+
+      formCustomer = created;
+      formCustomerId = created.id;
+      formError = "";
+      showCustomerModal = false;
+      showToast(result?.message ?? "Customer added", "success");
+      await tick();
+      quantityInputEl?.focus();
+    } catch (err) {
+      customerError = err instanceof Error ? err.message : String(err);
+    } finally {
+      customerSubmitting = false;
+    }
   }
 
   async function submitForm() {
@@ -265,7 +354,7 @@
         const res = await api({ action: "insert", object });
         if (!res.ok) throw new Error(res.error ?? "Insert failed");
       }
-      showToast(editing ? "Waight list updated" : "Waight list added", "success");
+      showToast(editing ? "Waitlist updated" : "Waitlist added", "success");
       showFormModal = false;
       editing = null;
       void load();
@@ -294,7 +383,7 @@
     try {
       const res = await api({ action: "delete", id: deleting.id });
       if (!res.ok) throw new Error(res.error ?? "Delete failed");
-      showToast("Waight list deleted", "success");
+      showToast("Waitlist deleted", "success");
       showDeleteModal = false;
       deleting = null;
       void load();
@@ -349,7 +438,7 @@
           class="px-3 py-2 text-sm font-medium text-amber-700 dark:text-amber-400"
           role="status"
         >
-          This record is archived. Adding / editing waight list is disabled.
+          This record is archived. Adding / editing Waitlist is disabled.
         </p>
       {:else}
         {#if selectedIds.length > 0}
@@ -363,7 +452,7 @@
           </button>
         {/if}
         <button type="button" class={mc.primaryBtn} onclick={openAdd}>
-          Add waight list
+          Add Waitlist
         </button>
       {/if}
     </div>
@@ -466,7 +555,7 @@
         {#if !loading && rows.length === 0}
           <tr>
             <td colspan="8" class={mc.emptyCell}>
-              No waight list records yet.
+              No Waitlist records yet.
             </td>
           </tr>
         {/if}
@@ -485,7 +574,7 @@
   ></div>
   <dialog open class="modal" onclick={(e) => e.stopPropagation()}>
     <header>
-      <h2>{editing ? "Edit Waight List" : "Add Waight List"}</h2>
+      <h2>{editing ? "Edit Waitlist" : "Add Waitlist"}</h2>
       <button
         class="icon"
         aria-label="Close"
@@ -529,21 +618,26 @@
           <div class="contents" data-search-container>
             <SearchSelect
               bind:value={formCustomerId}
-              selected={editing?.customer ?? undefined}
+              bind:selected={formCustomer}
               {companyId}
               branchId={merchantBranchId}
               endpoint="/api/customers/search"
               placeholder="Choose a customer"
               required
               disabled={formSubmitting}
-              itemLabel={(c: any) => {
-                const name = [c.first_name, c.last_name].filter(Boolean).join(" ").trim();
-                const phone = (c.phone ?? c.phone_number)?.trim() ?? "";
-                return phone ? `${name} - ${phone}` : name || c.id;
-              }}
+              itemLabel={customerOptionLabel}
             />
           </div>
         </label>
+
+        <button
+          type="button"
+          class="linkish"
+          onclick={openCustomerModal}
+          disabled={!companyId || formSubmitting || customerSubmitting}
+        >
+          + Add New Customer
+        </button>
       {/if}
 
       <label class="block-label">
@@ -553,6 +647,7 @@
           type="number"
           min="0.0001"
           step="any"
+          bind:this={quantityInputEl}
           bind:value={formQuantity}
           placeholder="0"
           required
@@ -620,6 +715,96 @@
   </dialog>
 {/if}
 
+{#if showCustomerModal}
+  <div
+    class="modal-overlay overlay-nested"
+    role="button"
+    tabindex="0"
+    onclick={() => !customerSubmitting && closeCustomerModal()}
+    onkeydown={(e) =>
+      !customerSubmitting &&
+      (e.key === "Enter" || e.key === " ") &&
+      closeCustomerModal()}
+  ></div>
+  <dialog
+    open
+    class="modal modal-nested"
+    onclick={(e) => e.stopPropagation()}
+    oncancel={(e) => customerSubmitting && e.preventDefault()}
+  >
+    <header>
+      <h2>New Customer</h2>
+      <button
+        class="icon"
+        aria-label="Close"
+        disabled={customerSubmitting}
+        onclick={() => closeCustomerModal()}>✕</button
+      >
+    </header>
+    <div class="modal-body">
+      {#if customerError}
+        <p class="inline-error">{customerError}</p>
+      {/if}
+      <div class="grid-compact">
+        <label>
+          <span>First name</span>
+          <input
+            type="text"
+            bind:value={newFirstName}
+            required
+            disabled={customerSubmitting}
+          />
+        </label>
+        <label>
+          <span>Last name</span>
+          <input
+            type="text"
+            bind:value={newLastName}
+            required
+            disabled={customerSubmitting}
+          />
+        </label>
+        <label class="full-row">
+          <span>Address</span>
+          <input
+            type="text"
+            bind:value={newAddress}
+            disabled={customerSubmitting}
+          />
+        </label>
+        <label class="full-row">
+          <span>Phone</span>
+          <input
+            type="tel"
+            bind:value={newPhone}
+            required
+            disabled={customerSubmitting}
+          />
+        </label>
+      </div>
+    </div>
+    <footer>
+      <button
+        type="button"
+        class="inline-flex h-[30px] shrink-0 items-center justify-center rounded-[5px] border border-[#e6eaed] bg-white px-3 text-sm font-medium text-[#1a1a1a] transition hover:bg-gray-50 dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
+        onclick={() => closeCustomerModal()}
+        disabled={customerSubmitting}>Cancel</button
+      >
+      <button
+        type="button"
+        class={mc.primaryBtn}
+        disabled={customerSubmitting ||
+          !newFirstName.trim() ||
+          !newLastName.trim() ||
+          !newPhone.trim()}
+        onclick={submitNewCustomer}
+      >
+        {customerSubmitting ? "Saving…" : "Save"}
+      </button>
+    </footer>
+  </dialog>
+{/if}
+
 {#if showDeleteModal && deleting}
   <div
     class="modal-overlay"
@@ -630,14 +815,14 @@
   ></div>
   <dialog open class="modal" onclick={(e) => e.stopPropagation()}>
     <header>
-      <h2>Delete Waight List</h2>
+      <h2>Delete Waitlist</h2>
       <button class="icon" aria-label="Close" disabled={deleteSubmitting} onclick={closeDelete}>
         ✕
       </button>
     </header>
     <div class="modal-body">
       <p class="text-sm text-gray-600 dark:text-gray-300">
-        Are you sure you want to delete this waight list record? This action cannot be undone.
+        Are you sure you want to delete this Waitlist record? This action cannot be undone.
       </p>
     </div>
     <footer>
@@ -679,7 +864,7 @@
     <div class="modal-body">
       <p class="text-sm text-gray-600 dark:text-gray-300">
         Send an SMS reminder to the selected customer{selectedIds.length > 1 ? "s" : ""} about
-        their waight list ({selectedIds.length}) record{selectedIds.length === 1 ? "" : "s"}?
+        their Waitlist ({selectedIds.length}) record{selectedIds.length === 1 ? "" : "s"}?
       </p>
     </div>
     <footer>
@@ -711,6 +896,9 @@
     backdrop-filter: blur(2px);
     z-index: 30;
   }
+  .overlay-nested {
+    z-index: 50;
+  }
   .modal {
     position: fixed;
     inset: 0;
@@ -725,6 +913,11 @@
     z-index: 40;
     display: flex;
     flex-direction: column;
+  }
+  .modal-nested {
+    z-index: 60;
+    max-width: 420px;
+    max-height: 85vh;
   }
   .modal header {
     display: flex;
@@ -771,6 +964,61 @@
     font-size: 0.9rem;
     font-weight: 600;
     color: #cbd5e1;
+  }
+  .linkish {
+    margin: 0.25rem 0 1rem;
+    background: none;
+    border: none;
+    color: #60a5fa;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.9rem;
+    padding: 0;
+    text-align: left;
+  }
+  .linkish:hover {
+    text-decoration: underline;
+  }
+  .linkish:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    text-decoration: none;
+  }
+  .inline-error {
+    color: #fca5a5;
+    font-size: 0.9rem;
+    margin: 0 0 0.75rem;
+  }
+  .grid-compact {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.65rem;
+  }
+  .grid-compact .full-row {
+    grid-column: 1 / -1;
+  }
+  .grid-compact label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.85rem;
+    color: #cbd5e1;
+  }
+  .grid-compact input {
+    padding: 0.5rem 0.6rem;
+    border-radius: 0.5rem;
+    border: 1px solid color-mix(in oklab, var(--surface-2), white 12%);
+    background: color-mix(in oklab, var(--surface-2), white 2%);
+    color: #e5e7eb;
+  }
+  .grid-compact input:focus {
+    outline: none;
+    border-color: #4da0e6;
+    box-shadow: 0 0 0 2px rgb(77 160 230 / 0.2);
+  }
+  .grid-compact input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
   .form-input,
   .form-select {
