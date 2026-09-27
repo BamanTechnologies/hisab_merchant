@@ -1517,7 +1517,7 @@
       <div class="modal-body">
         <p>
           Send an SMS reminder to the selected customer{restockSelectedIds.length > 1 ? "s" : ""}
-          about their waight list ({restockSelectedIds.length}) record{restockSelectedIds.length === 1
+          about their Waitlist ({restockSelectedIds.length}) record{restockSelectedIds.length === 1
             ? ""
             : "s"}?
         </p>
@@ -1533,7 +1533,7 @@
     {:else}
       <div class="modal-body">
         <p class="restock-intro">
-          These customers have waight list records you can now fulfill with the stock you just
+          These customers have Waitlist records you can now fulfill with the stock you just
           received. Select the records to notify them.
         </p>
         <div class="restock-table-wrap">

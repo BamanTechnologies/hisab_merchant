@@ -73,6 +73,14 @@
     return placeholder;
   }
 
+  // The parent can set `selected` directly (e.g. a customer created in a nested
+  // modal), so drop any earlier local pick — otherwise the trigger would keep
+  // showing the previously picked item while `value` points at the new one.
+  $effect(() => {
+    void selected;
+    selectedItem = null;
+  });
+
   function loadInitialProducts() {
     if (initialLoaded) return;
     initialLoaded = true;
