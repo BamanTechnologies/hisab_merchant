@@ -10,7 +10,8 @@
     subscriptionBlocksMutations,
   } from "$lib/subscription/client";
   import { paginateSlice } from "$lib/pagination.js";
-  import { formatCoffeeCapacityWithUnit } from "$lib/stockLabel";
+  import { formatCoffeeCapacityWithUnit, formatProductTypeLabel } from "$lib/stockLabel";
+  import { PRODUCT_TYPE_FIELDS, normalizeProductTypeName } from "$lib/inventory/parseForm";
   import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
   import type { PageData } from "./$types";
 
@@ -21,6 +22,7 @@
 
   type StockProduct={
     id:string
+    attributes?: Record<string, unknown> | null;
     product_type?: ProductType | null;
   }
 
@@ -109,13 +111,24 @@
     if (t === "coffee_tools") return "Coffee tools";
     return t && String(t).trim() !== "" ? String(t) : "—";
   }
-  const PRODUCT_TYPE_FIELDS: Record<string, string[]> = {
-    glass: ["thickness", "color", "figure", "factor"],
-    brake_lining: ["model_number", "country"],
-    coffee_tools: ["name", "capacity", "capacity_unit"],
-  };
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  /** Name of the type, lowercased. `product_type` may hold a uuid, so skip those. */
   function stockTypeKey(s: OrderStock): string {
-    return String(s.type ?? s.product_type ?? s.product?.product_type?.name ?? "").trim().toLowerCase();
+    const fromProduct = String(s.product?.product_type?.name ?? "").trim();
+    if (fromProduct) return fromProduct.toLowerCase();
+    const legacy = String(s.type ?? "").trim();
+    if (legacy && !UUID_RE.test(legacy)) return legacy.toLowerCase();
+    const ref = String(s.product_type ?? "").trim();
+    if (ref && !UUID_RE.test(ref)) return ref.toLowerCase();
+    return "";
+  }
+  function stockMatchesType(s: OrderStock, type: string): boolean {
+    const key = stockTypeKey(s);
+    if (!key) return false;
+    return (
+      key === type ||
+      normalizeProductTypeName(key) === normalizeProductTypeName(type)
+    );
   }
   function stockAttr(s: OrderStock, key: string): string {
     if (stockTypeKey(s) === "coffee_tools" && key === "capacity") {
@@ -183,6 +196,7 @@
   let { data }: { data: PageData } = $props();
   const order = $derived(data.order as Order | undefined);
   const investors = (data.investors ?? []) as InvestorRow[];
+  const productTypes = (data.productTypes ?? []) as ProductType[];
   const merchantId = data.merchantId as string | undefined;
 
   const isArchived = $derived((order?.is_deleted ?? false) === true);
@@ -255,8 +269,36 @@
       : [];
   });
   const orderStocks = $derived(orderItems.map((x) => x.stock).filter(Boolean) as OrderStock[]);
+
+  // Type options come from the backend (product_types), so newly added types
+  // show up here without a code change.
+  const typeOptions = $derived.by(() => {
+    const seen = new Map<string, string>();
+    for (const pt of productTypes) {
+      const name = String(pt?.name ?? "").trim();
+      if (!name) continue;
+      const value = name.toLowerCase();
+      if (!seen.has(value)) seen.set(value, name);
+    }
+    return [...seen.entries()]
+      .map(([value, name]) => ({ value, label: formatProductTypeLabel(name) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  });
+
+  let typeFilter = $state("all");
+
+  const filteredOrderItems = $derived.by(() => {
+    if (typeFilter === "all") return orderItems;
+    return orderItems.filter((x) => x.stock && stockMatchesType(x.stock, typeFilter));
+  });
+
+  // Column layout follows the filtered rows, so picking one type reveals that
+  // type's attribute columns instead of the generic "Attributes" column.
+  const filteredStocks = $derived(
+    filteredOrderItems.map((x) => x.stock).filter(Boolean) as OrderStock[],
+  );
   const singleType = $derived.by(() => {
-    const keys = new Set(orderStocks.map((s) => stockTypeKey(s)));
+    const keys = new Set(filteredStocks.map((s) => stockTypeKey(s)));
     return keys.size === 1 ? [...keys][0] : "";
   });
   const dynamicFields = $derived.by(() => {
@@ -285,7 +327,7 @@
   let lineItemsPage = $state(1);
   let lineItemsPageSize = $state(10);
   const pagedOrderItems = $derived(
-    paginateSlice(orderItems, lineItemsPage, lineItemsPageSize),
+    paginateSlice(filteredOrderItems, lineItemsPage, lineItemsPageSize),
   );
 
   let expandedRows = $state(new Set<number>());
@@ -454,9 +496,31 @@ const remainingAfterPay = $derived.by(() => {
     </div>
 
     <div class="mb-6">
-      <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Stocks ({orderStocks.length})</h2>
+      <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        Stocks ({typeFilter === "all"
+          ? orderStocks.length
+          : `${filteredStocks.length} of ${orderStocks.length}`})
+      </h2>
       {#if orderStocks.length > 0}
         <section class={mc.tableSection}>
+          {#if typeOptions.length > 0}
+            <div class={mc.tableToolbar}>
+              <div class={mc.tableToolbarFilter}>
+                <span class={mc.tableToolbarFilterLabel}>Type</span>
+                <select
+                  class={mc.filterSelectCompact}
+                  bind:value={typeFilter}
+                  onchange={() => (expandedRows = new Set())}
+                  aria-label="Filter by type"
+                >
+                  <option value="all">All</option>
+                  {#each typeOptions as opt (opt.value)}
+                    <option value={opt.value}>{opt.label}</option>
+                  {/each}
+                </select>
+              </div>
+            </div>
+          {/if}
           <div class="overflow-x-auto">
           <table class={mc.table}>
             <thead>
@@ -558,10 +622,16 @@ const remainingAfterPay = $derived.by(() => {
             </tbody>
           </table>
           </div>
+          {#if filteredOrderItems.length === 0}
+            <p class="px-4 py-6 text-sm text-gray-500 dark:text-gray-400">
+              No stocks match this type filter.
+            </p>
+          {/if}
           <TablePagination
             bind:page={lineItemsPage}
             bind:pageSize={lineItemsPageSize}
-            total={orderItems.length}
+            total={filteredOrderItems.length}
+            resetKey={typeFilter}
           />
         </section>
       {:else}
@@ -874,7 +944,9 @@ const remainingAfterPay = $derived.by(() => {
   .form {
     padding: 1rem;
   }
-  select {
+  /* Scoped to the payment form: a bare `select` rule outranks Tailwind's
+     single-class utilities and stripped the stock type filter's own styling. */
+  .pay-form-fields select {
     width: 100%;
     padding: 0.75rem;
     border: 1px solid color-mix(in oklab, var(--surface-2), white 10%);
@@ -885,12 +957,12 @@ const remainingAfterPay = $derived.by(() => {
     cursor: pointer;
   }
 
-  select:focus {
+  .pay-form-fields select:focus {
     outline: none;
     border-color: var(--brand);
   }
 
-  select option {
+  .pay-form-fields select option {
     background: var(--surface-1);
     color: var(--text-1);
   }

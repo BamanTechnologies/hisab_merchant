@@ -146,6 +146,46 @@ async function fetchOrderForMerchant(id: string, merchantId: string) {
   }
 }
 
+const FETCH_PRODUCT_TYPES_QUERY = `
+  query OrderProductTypes($merchantId: uuid!) {
+    product_types(
+      where: { merchant_id: { _eq: $merchantId } }
+      order_by: [{ name: asc }]
+    ) {
+      id
+      name
+    }
+  }
+`;
+
+async function fetchProductTypes(merchantId: string | null) {
+  if (!merchantId) return [];
+  try {
+    const response = await fetch(config.graphql.endpoint, {
+      method: "POST",
+      headers: getGraphQLHeaders(),
+      body: JSON.stringify({
+        query: FETCH_PRODUCT_TYPES_QUERY,
+        variables: { merchantId },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    if (result.errors) {
+      throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
+    }
+
+    return result.data.product_types ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export const load: PageServerLoad = async ({ params, request, parent }) => {
   const { merchantContext } = await parent();
   const merchantId =
@@ -163,9 +203,10 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
     companyId = await fetchBranchCompanyId(merchantBranchId);
   }
 
-  const [order, investors] = await Promise.all([
+  const [order, investors, productTypes] = await Promise.all([
     fetchOrderForMerchant(params.id, merchantId),
     fetchInvestorsForCompany(companyId),
+    fetchProductTypes(merchantId),
   ]);
 
   if (!order) {
@@ -175,6 +216,7 @@ export const load: PageServerLoad = async ({ params, request, parent }) => {
   return {
     order,
     investors,
+    productTypes,
     merchantId,
   };
 };
