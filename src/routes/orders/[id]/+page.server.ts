@@ -7,6 +7,7 @@ import {
   fetchInvestorsForCompany,
 } from "$lib/companyInvestors.server";
 import { config, getGraphQLHeaders } from "$lib/config";
+import { fetchProductTypes } from "$lib/inventory/productTypes.server";
 import { createPaymentRecord } from "$lib/payments.server";
 import { insertCustomerTransaction } from "$lib/customerTransactions.server";
 import { subscriptionWriteActionBlockedForRequest } from "$lib/subscription/server";
@@ -143,46 +144,6 @@ async function fetchOrderForMerchant(id: string, merchantId: string) {
     return orders[0] ?? null;
   } catch {
     return null;
-  }
-}
-
-const FETCH_PRODUCT_TYPES_QUERY = `
-  query OrderProductTypes($merchantId: uuid!) {
-    product_types(
-      where: { merchant_id: { _eq: $merchantId } }
-      order_by: [{ name: asc }]
-    ) {
-      id
-      name
-    }
-  }
-`;
-
-async function fetchProductTypes(merchantId: string | null) {
-  if (!merchantId) return [];
-  try {
-    const response = await fetch(config.graphql.endpoint, {
-      method: "POST",
-      headers: getGraphQLHeaders(),
-      body: JSON.stringify({
-        query: FETCH_PRODUCT_TYPES_QUERY,
-        variables: { merchantId },
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const result = await response.json();
-
-    if (result.errors) {
-      throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
-    }
-
-    return result.data.product_types ?? [];
-  } catch {
-    return [];
   }
 }
 
