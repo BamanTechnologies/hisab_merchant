@@ -11,6 +11,7 @@ import {
 } from "$lib/customerTransactions.server";
 import { config, getGraphQLHeaders } from "$lib/config";
 import { buildProductLabel } from "$lib/inventory/productLabel";
+import { fetchProductTypes } from "$lib/inventory/productTypes.server";
 import {
   applyOrderStockEffects,
   decrementStockSlices,
@@ -954,6 +955,7 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
 
   const dateRange = url.searchParams.get("dateRange") ?? "all";
   const customerName = url.searchParams.get("customer") ?? "";
+  const typeFilter = url.searchParams.get("type") ?? "all";
   const sort = url.searchParams.get("sort") ?? "none";
   const dir = url.searchParams.get("dir") ?? "desc";
   const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
@@ -968,6 +970,26 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
 
   if (customerName) {
     conditions.push({ customer_name: { _eq: customerName } });
+  }
+
+  // Keep an order when any of its lines belongs to the selected type. The
+  // product's type is the canonical source; the legacy `stock.type` column is
+  // OR-ed in so rows created before a product was linked still match.
+  if (typeFilter !== "all") {
+    conditions.push({
+      _or: [
+        {
+          order_items: {
+            product: { product_type: { name: { _ilike: typeFilter } } },
+          },
+        },
+        {
+          order_items: {
+            stock: { type: { _ilike: typeFilter } },
+          },
+        },
+      ],
+    });
   }
 
   if (dateRange === "today") {
@@ -1022,7 +1044,7 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
   };
   const paymentOrder = [{ created_at: "desc" }];
 
-  const [ordersBlock, branches] = await Promise.all([
+  const [ordersBlock, branches, productTypes] = await Promise.all([
     merchantId
       ? fetchOrders(
           merchantId,
@@ -1044,6 +1066,7 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
           totalPaymentsAmount: 0,
         }),
     fetchBranchesForCompany(companyId),
+    fetchProductTypes(merchantId),
   ]);
 
   return {
@@ -1055,6 +1078,7 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
     totalPaymentsAmount: ordersBlock.totalPaymentsAmount,
     customers: customerCtx.customers,
     branches,
+    productTypes,
     merchantId,
     merchantBranchId,
     companyId,

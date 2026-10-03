@@ -21,7 +21,7 @@
   } from "$lib/inventory/fifo";
   import { buildProductLabel } from "$lib/inventory/productLabel";
   import type { FifoBatchRow, FifoSlice, ProductRecord } from "$lib/inventory/types";
-  import { buildStockLabel } from "$lib/stockLabel";
+  import { buildStockLabel, formatProductTypeLabel } from "$lib/stockLabel";
   import { Trash2, ArchiveRestore } from "@lucide/svelte";
   import SearchSelect from "$lib/components/ui/search-select/search-select.svelte";
   import type { PageData } from "./$types";
@@ -33,6 +33,11 @@
     phone?: string | null;
     phone_number?: string | null;
     address?: string | null;
+  };
+
+  type ProductTypeRow = {
+    id: string;
+    name?: string | null;
   };
 
   let selectedCustomer = $state<CustomerRow | null>(null);
@@ -138,6 +143,7 @@
   let totalOrdersAmount = $state((data as { totalOrdersAmount: number }).totalOrdersAmount ?? 0);
   let totalPaymentsAmount = $state((data as { totalPaymentsAmount: number }).totalPaymentsAmount ?? 0);
   let customers = $state(data.customers as CustomerRow[]);
+  const productTypes = (data.productTypes ?? []) as ProductTypeRow[];
   let selectedProducts = $state(new Map<string, ProductRow>());
   let errorMessage = $state("");
   let successMessage = $state("");
@@ -172,6 +178,7 @@
     ($page.url.searchParams.get("dateRange") as "all" | "today" | "last7" | "last30" | "custom") ?? "all",
   );
   let customerFilterName = $state($page.url.searchParams.get("customer") ?? "");
+  let typeFilter = $state($page.url.searchParams.get("type") ?? "all");
   let customDateFrom = $state($page.url.searchParams.get("from") ?? "");
   let customDateTo = $state($page.url.searchParams.get("to") ?? "");
   let customDateFromInputEl = $state<HTMLInputElement | null>(null);
@@ -194,6 +201,19 @@
       if (n) names.add(n);
     }
     return [...names].sort((a, b) => a.localeCompare(b));
+  });
+  /** Type options come from the backend catalogue, so new types need no code change. */
+  const typeFilterOptions = $derived.by(() => {
+    const seen = new Map<string, string>();
+    for (const pt of productTypes) {
+      const name = String(pt?.name ?? "").trim();
+      if (!name) continue;
+      const value = name.toLowerCase();
+      if (!seen.has(value)) seen.set(value, name);
+    }
+    return [...seen.entries()]
+      .map(([value, name]) => ({ value, label: formatProductTypeLabel(name) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
   });
 
   function parseMoneyValue(v: unknown): number {
@@ -219,6 +239,7 @@
     if (dateRangePreset && dateRangePreset !== "all")
       p.set("dateRange", dateRangePreset);
     if (customerFilterName) p.set("customer", customerFilterName);
+    if (typeFilter && typeFilter !== "all") p.set("type", typeFilter);
     if (dateRangePreset === "custom") {
       if (customDateFrom) p.set("from", customDateFrom);
       if (customDateTo) p.set("to", customDateTo);
@@ -238,6 +259,7 @@
       ((sp.get("tab") ?? "active") === "archived" ? "archived" : "active") === activeTab &&
       (sp.get("dateRange") ?? "all") === dateRangePreset &&
       (sp.get("customer") ?? "") === customerFilterName &&
+      (sp.get("type") ?? "all") === typeFilter &&
       (sp.get("from") ?? "") === customDateFrom &&
       (sp.get("to") ?? "") === customDateTo &&
       (sp.get("sort") ?? "none") === sortColumn &&
@@ -250,6 +272,7 @@
   $effect(() => {
     void dateRangePreset;
     void customerFilterName;
+    void typeFilter;
     void customDateFrom;
     void customDateTo;
     void activeTab;
@@ -958,6 +981,22 @@
       {/each}
     </select>
   </label>
+
+  {#if typeFilterOptions.length > 0}
+    <label>
+      <span class={mc.filterLabel}>Type</span>
+      <select
+        class={mc.filterSelect}
+        bind:value={typeFilter}
+        onchange={() => (tablePage = 1)}
+      >
+        <option value="all">All types</option>
+        {#each typeFilterOptions as option (option.value)}
+          <option value={option.value}>{option.label}</option>
+        {/each}
+      </select>
+    </label>
+  {/if}
 </section>
 
 <section class={mc.summaryGrid} aria-label="Orders summary">

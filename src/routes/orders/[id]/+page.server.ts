@@ -7,6 +7,7 @@ import {
   fetchInvestorsForCompany,
 } from "$lib/companyInvestors.server";
 import { config, getGraphQLHeaders } from "$lib/config";
+import { fetchProductTypes } from "$lib/inventory/productTypes.server";
 import { createPaymentRecord } from "$lib/payments.server";
 import { insertCustomerTransaction } from "$lib/customerTransactions.server";
 import { subscriptionWriteActionBlockedForRequest } from "$lib/subscription/server";
