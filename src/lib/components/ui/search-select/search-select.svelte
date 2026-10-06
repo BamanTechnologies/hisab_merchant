@@ -76,8 +76,13 @@
   // The parent can set `selected` directly (e.g. a customer created in a nested
   // modal), so drop any earlier local pick — otherwise the trigger would keep
   // showing the previously picked item while `value` points at the new one.
+  // Drop the local pick only when the *parent* changes `selected`, not when we set
+  // it ourselves in selectItem — otherwise a pick is cleared before it renders.
+  let lastSelected = $state(selected);
   $effect(() => {
-    void selected;
+    const next = selected;
+    if (next === lastSelected) return;
+    lastSelected = next;
     selectedItem = null;
   });
 

@@ -1,4 +1,5 @@
 import { config, getGraphQLHeaders } from "$lib/config";
+import type { ProductTypeRow } from "$lib/inventory/productTypes.server";
 
 async function gql<T>(
   query: string,
@@ -70,6 +71,90 @@ const ORDER_WITHOUT_DELETED_PRODUCT_FILTER = {
   },
 };
 
+/** Optional product / product type scoping shared by every dashboard report. */
+export type DashboardProductFilter = {
+  productId: string | null;
+  productTypeId: string | null;
+  /**
+   * Resolved from `productTypeId` and matched by name, the same way the orders
+   * and stocks list pages filter. `product_types` rows are duplicated per
+   * merchant, so ids are per-merchant while the name is the shared identity.
+   */
+  productTypeName: string | null;
+};
+
+export const EMPTY_PRODUCT_FILTER: DashboardProductFilter = {
+  productId: null,
+  productTypeId: null,
+  productTypeName: null,
+};
+
+/**
+ * Stock / product rows scoped to the filtered product and product type.
+ *
+ * Mirrors the stocks list filter: the product's type is the canonical source and
+ * the legacy `stock.type` text column is OR-ed in, so rows created before a
+ * product was linked still match. Note this is the `type` text column, not the
+ * `stock.product_type` uuid, whose value is a different per-merchant row.
+ */
+function buildProductConditions(
+  filter: DashboardProductFilter,
+): Record<string, unknown>[] {
+  const conds: Record<string, unknown>[] = [];
+  if (filter.productId) {
+    conds.push({ product: { id: { _eq: filter.productId } } });
+  }
+  if (filter.productTypeName) {
+    const name = filter.productTypeName;
+    conds.push({
+      _or: [
+        { product: { product_type: { name: { _ilike: name } } } },
+        { type: { _ilike: name } },
+      ],
+    });
+  }
+  return conds;
+}
+
+/**
+ * Orders keep only the ones carrying at least one line of the filtered product,
+ * following the orders list page: a line's product type is canonical, with the
+ * legacy `stock.type` column OR-ed in for lines that predate the product link.
+ *
+ * A line also links to a product two ways — `order_items.product_id` and
+ * `order_items.stock.product_id` — so both are matched.
+ */
+function buildOrderProductConditions(
+  filter: DashboardProductFilter,
+): Record<string, unknown>[] {
+  const conds: Record<string, unknown>[] = [];
+  if (filter.productId) {
+    conds.push({
+      order_items: {
+        _and: [
+          { is_deleted: { _eq: false } },
+          {
+            _or: [
+              { product_id: { _eq: filter.productId } },
+              { stock: { product_id: { _eq: filter.productId } } },
+            ],
+          },
+        ],
+      },
+    });
+  }
+  if (filter.productTypeName) {
+    const name = filter.productTypeName;
+    conds.push({
+      _or: [
+        { order_items: { product: { product_type: { name: { _ilike: name } } } } },
+        { order_items: { stock: { type: { _ilike: name } } } },
+      ],
+    });
+  }
+  return conds;
+}
+
 const STATS_QUERY = `
   query DashboardStats($salesFilter: orders_bool_exp!, $ordersFilter: orders_bool_exp!, $outstandingFilter: orders_bool_exp!) {
     total_sales: orders_aggregate(where: $salesFilter) {
@@ -138,9 +223,16 @@ const RECENT_STOCKS_QUERY = `
 `;
 
 const WEEKLY_SALES_TREND_QUERY = `
-  query WeeklySalesTrend($startDate: date!, $endDate: date!, $merchantId: uuid!,$groupBy:String) {
+  query WeeklySalesTrend($startDate: date!, $endDate: date!, $merchantId: uuid!, $groupBy: String, $productId: uuid, $productTypeId: uuid) {
     sales_trend_for_merchant(
-      args: { group_period: $groupBy, start_date: $startDate, end_date: $endDate, merchant_id: $merchantId }
+      args: {
+        group_period: $groupBy
+        start_date: $startDate
+        end_date: $endDate
+        merchant_id: $merchantId
+        product_id: $productId
+        product_type_id: $productTypeId
+      }
       where: { total_sales: { _neq: 0 } }
     ) {
       sales_date
@@ -154,27 +246,72 @@ export type SalesTrend = {
   total_sales: number;
 };
 
+/**
+ * `sales_trend_for_merchant` treats `end_date` as exclusive at midnight, so an
+ * order on the last day of the range is only counted when the range is extended
+ * by one day. Verified: an order created 2026-10-05T22:47+03:00 appears with
+ * end_date 2026-10-06 but never with end_date 2026-10-05.
+ *
+ * Every other dashboard report uses `created_at <= <to> 23:59:59.999`, i.e. an
+ * inclusive end day. Without this bump the weekly chart silently drops the last
+ * day while the stat cards include it, so the two never reconcile.
+ */
+function toExclusiveEndDate(endDate: string): string {
+  const parsed = new Date(`${endDate}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return endDate;
+  parsed.setUTCDate(parsed.getUTCDate() + 1);
+  return parsed.toISOString().slice(0, 10);
+}
+
 export async function fetchWeeklySalesTrend(
   merchantId: string,
   startDate: string,
   endDate: string,
   groupBy: string = "per_week",
+  filter: DashboardProductFilter = EMPTY_PRODUCT_FILTER,
 ): Promise<SalesTrend[]> {
   const now = new Date();
   const yearStart = new Date(now.getFullYear(), 0, 1);
   const sd = startDate || yearStart.toISOString().slice(0, 10);
   const ed = endDate || now.toISOString().slice(0, 10);
+  const nativeEndDate = toExclusiveEndDate(ed);
+
+  const variables = {
+    startDate: sd,
+    endDate: nativeEndDate,
+    merchantId,
+    groupBy,
+    productId: filter.productId,
+    productTypeId: filter.productTypeId,
+  };
+
+  console.log("[dashboard.salesTrend] request", {
+    merchantId,
+    groupBy,
+    requestedRange: { from: sd, to: ed },
+    nativeRange: { start_date: sd, end_date: nativeEndDate },
+    productId: filter.productId,
+    productTypeId: filter.productTypeId,
+    productTypeName: filter.productTypeName,
+  });
+
   try {
     const data = await gql<{
       sales_trend_for_merchant: SalesTrend[];
-    }>(WEEKLY_SALES_TREND_QUERY, { startDate: sd, endDate: ed, merchantId, groupBy });
+    }>(WEEKLY_SALES_TREND_QUERY, variables);
 
-    return (data.sales_trend_for_merchant ?? []).map((s) => ({
+    const rows = data.sales_trend_for_merchant ?? [];
+    console.log(`[dashboard.salesTrend] response rows=${rows.length}`, rows);
+
+    return rows.map((s) => ({
       sales_date: s.sales_date,
       total_sales: parseMoney(s.total_sales),
     }));
   } catch (error) {
-    console.error("Error fetching weekly sales trend:", error);
+    console.error("[dashboard.salesTrend] failed", {
+      variables,
+      error: error instanceof Error ? error.message : error,
+    });
     return [];
   }
 }
@@ -191,12 +328,14 @@ export async function fetchStats(
   merchantId: string,
   from: string,
   to: string,
+  filter: DashboardProductFilter = EMPTY_PRODUCT_FILTER,
 ): Promise<{
   totalSales: number;
   totalOrders: number;
   pendingPayments: number;
 }> {
   const dateConds = buildDateConditions(from, to);
+  const productConds = buildOrderProductConditions(filter);
 
   const salesFilter = {
     _and: [
@@ -205,6 +344,7 @@ export async function fetchStats(
       { is_deleted: { _eq: false } },
       ORDER_WITHOUT_DELETED_PRODUCT_FILTER,
       ...dateConds,
+      ...productConds,
     ],
   };
 
@@ -214,6 +354,7 @@ export async function fetchStats(
       { is_deleted: { _eq: false } },
       ORDER_WITHOUT_DELETED_PRODUCT_FILTER,
       ...dateConds,
+      ...productConds,
     ],
   };
 
@@ -224,6 +365,7 @@ export async function fetchStats(
       { is_deleted: { _eq: false } },
       ORDER_WITHOUT_DELETED_PRODUCT_FILTER,
       ...dateConds,
+      ...productConds,
     ],
   };
 
@@ -255,6 +397,7 @@ export async function fetchOutstandingCredit(
   merchantId: string,
   from: string,
   to: string,
+  productFilter: DashboardProductFilter = EMPTY_PRODUCT_FILTER,
 ): Promise<number> {
   const filter = {
     _and: [
@@ -264,6 +407,7 @@ export async function fetchOutstandingCredit(
       { is_deleted: { _eq: false } },
       ORDER_WITHOUT_DELETED_PRODUCT_FILTER,
       ...buildDateConditions(from, to),
+      ...buildOrderProductConditions(productFilter),
     ],
   };
 
@@ -337,6 +481,7 @@ export async function fetchTopSellingProducts(
   merchantId: string,
   from: string,
   to: string,
+  productFilter: DashboardProductFilter = EMPTY_PRODUCT_FILTER,
 ): Promise<TopProduct[]> {
   const filter = {
     _and: [
@@ -344,6 +489,7 @@ export async function fetchTopSellingProducts(
       { status: { _neq: "cancelled" } },
       { is_deleted: { _eq: false } },
       ...buildDateConditions(from, to),
+      ...buildOrderProductConditions(productFilter),
     ],
   };
 
@@ -411,6 +557,7 @@ export type StockRecord = {
 
 export async function fetchRecentStocks(
   branchIds: string[],
+  productFilter: DashboardProductFilter = EMPTY_PRODUCT_FILTER,
 ): Promise<StockRecord[]> {
   if (branchIds.length === 0) return [];
 
@@ -419,6 +566,7 @@ export async function fetchRecentStocks(
       { branch: { _in: branchIds } },
       { is_deleted: { _eq: false } },
       { product: { is_deleted: { _eq: false } } },
+      ...buildProductConditions(productFilter),
     ],
   };
 
@@ -464,28 +612,9 @@ export async function fetchMerchantBranchId(
 }
 
 const LOW_STOCK_QUERY = `
-  query LowStockProducts($companyId: uuid!, $branchId: uuid!) {
+  query LowStockProducts($filter: products_bool_exp!, $branchId: uuid) {
     products(
-      where: {
-        _and: [
-          { company_id: { _eq: $companyId } }
-          {
-            _or: [
-              { branch_id: { _eq: $branchId } }
-              {
-                stock_movements: {
-                  _and: [
-                    { branch_id: { _eq: $branchId } }
-                    { is_deleted: { _eq: false } }
-                  ]
-                }
-              }
-            ]
-          }
-          { treshold_quantity: { _gt: 0 } }
-          { is_deleted: { _eq: false } }
-        ]
-      }
+      where: $filter
       order_by: [{ name: asc }]
     ) {
       id
@@ -521,7 +650,35 @@ export type LowStockProduct = {
 export async function fetchLowStockProducts(
   companyId: string,
   branchId: string | null,
+  filter: DashboardProductFilter = EMPTY_PRODUCT_FILTER,
 ): Promise<LowStockProduct[]> {
+  const conditions: Record<string, unknown>[] = [
+    { company_id: { _eq: companyId } },
+    { treshold_quantity: { _gt: 0 } },
+    { is_deleted: { _eq: false } },
+  ];
+
+  if (branchId) {
+    conditions.push({
+      _or: [
+        { branch_id: { _eq: branchId } },
+        {
+          stock_movements: {
+            _and: [{ branch_id: { _eq: branchId } }, { is_deleted: { _eq: false } }],
+          },
+        },
+      ],
+    });
+  }
+
+  // Low stock rows are products, so the product scope applies to the row itself.
+  if (filter.productId) conditions.push({ id: { _eq: filter.productId } });
+  if (filter.productTypeName) {
+    conditions.push({
+      product_type: { name: { _ilike: filter.productTypeName } },
+    });
+  }
+
   try {
     const data = await gql<{
       products: Array<{
@@ -533,7 +690,10 @@ export async function fetchLowStockProducts(
           aggregate: { sum: { quantity_delta: unknown } };
         };
       }>;
-    }>(LOW_STOCK_QUERY, { companyId, branchId });
+    }>(LOW_STOCK_QUERY, {
+      filter: { _and: conditions },
+      branchId: branchId ?? null,
+    });
 
     return (data.products ?? [])
       .map((p) => {
@@ -581,6 +741,7 @@ export async function fetchTopCustomers(
   merchantId: string,
   from: string,
   to: string,
+  productFilter: DashboardProductFilter = EMPTY_PRODUCT_FILTER,
 ): Promise<TopCustomerRecord[]> {
   const filter = {
     _and: [
@@ -590,6 +751,7 @@ export async function fetchTopCustomers(
       { customer_name: { _is_null: false } },
       { is_deleted: { _eq: false } },
       ...buildDateConditions(from, to),
+      ...buildOrderProductConditions(productFilter),
     ],
   };
 
@@ -672,6 +834,7 @@ export async function fetchUnpaidOrders(
   merchantId: string,
   from: string,
   to: string,
+  productFilter: DashboardProductFilter = EMPTY_PRODUCT_FILTER,
 ): Promise<UnpaidOrderRecord[]> {
   const filter = {
     _and: [
@@ -679,6 +842,7 @@ export async function fetchUnpaidOrders(
       { status: { _in: ["unpaid", "partially_paid"] } },
       { is_deleted: { _eq: false } },
       ...buildDateConditions(from, to),
+      ...buildOrderProductConditions(productFilter),
     ],
   };
 
@@ -705,6 +869,72 @@ export async function fetchUnpaidOrders(
   } catch (error) {
     console.error("Error fetching unpaid orders:", error);
     return [];
+  }
+}
+
+const PRODUCT_LABEL_QUERY = `
+  query DashboardProductLabel($productId: uuid!) {
+    products(where: { id: { _eq: $productId }, is_deleted: { _eq: false } }, limit: 1) {
+      id
+      name
+      default_unit
+    }
+  }
+`;
+
+export type ProductLabel = {
+  id: string;
+  name: string | null;
+  default_unit: string | null;
+};
+
+/**
+ * Resolves the label for a `product_id` that arrived from the URL, so the filter
+ * select shows the product name instead of a raw uuid on a fresh page load.
+ */
+export async function fetchProductLabel(
+  productId: string | null,
+): Promise<ProductLabel | null> {
+  if (!productId) return null;
+  try {
+    const data = await gql<{ products: ProductLabel[] }>(PRODUCT_LABEL_QUERY, {
+      productId,
+    });
+    return data.products?.[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+const PRODUCT_TYPE_NAME_QUERY = `
+  query ProductTypeName($id: uuid!) {
+    product_types(where: { id: { _eq: $id } }, limit: 1) {
+      id
+      name
+    }
+  }
+`;
+
+/**
+ * Turns a `product_type_id` from the url into the name the reports actually
+ * filter on. `product_types` rows are duplicated per merchant, so the id is
+ * only meaningful to the merchant that owns it — the name is what every
+ * merchant's rows agree on, which is why the orders and stocks pages filter on
+ * it directly.
+ */
+export async function fetchProductTypeName(
+  productTypeId: string | null,
+): Promise<string | null> {
+  if (!productTypeId) return null;
+  try {
+    const data = await gql<{ product_types: ProductTypeRow[] }>(
+      PRODUCT_TYPE_NAME_QUERY,
+      { id: productTypeId },
+    );
+    const name = data.product_types?.[0]?.name;
+    return typeof name === "string" && name.trim() ? name : null;
+  } catch {
+    return null;
   }
 }
 
