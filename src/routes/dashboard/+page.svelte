@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
+  import { untrack } from "svelte";
   import { _ } from "svelte-i18n";
   import { DollarSign, ShoppingCart, Wallet, CreditCard } from "@lucide/svelte";
   import StatCard from "$lib/components/dashboard/StatCard.svelte";
@@ -10,7 +11,12 @@
   import TopSellingProducts from "$lib/components/dashboard/TopSellingProducts.svelte";
   import RecentStocks from "$lib/components/dashboard/RecentStocks.svelte";
   import LowStockProducts from "$lib/components/dashboard/LowStockProducts.svelte";
+  import { SearchSelect } from "$lib/components/ui/search-select";
+  import { mc } from "$lib/merchant-styles";
+  import { formatProductTypeLabel } from "$lib/stockLabel";
   import type { PageData } from "./$types";
+
+  type SelectedProduct = { id: string; name?: string | null; default_unit?: string | null };
 
   let { data }: { data: PageData } = $props();
 
@@ -26,8 +32,60 @@
   const initialGroupBy = $page.url.searchParams.get("groupBy") ?? "per_week";
   let groupPeriod = $state(initialGroupBy);
 
+  // Seeded from the validated load, not the raw url, so a rejected param does not
+// briefly render as an active filter.
+  let productId = $state(data.productFilter.productId ?? "");
+  let productTypeId = $state(data.productFilter.productTypeId ?? "");
+  let selectedProduct = $state<SelectedProduct | null>(data.selectedProduct ?? null);
+
+  // The load is the source of truth for both the label and which params survived
+  // validation, so a shared link, a back/forward step, or a rejected param all land
+  // on the same state the reports were actually fetched with.
+  // Adopts a *new* load (shared link, back/forward, rejected param) so state lands
+  // on what the reports were fetched with. Reads only `data`, so a fresh user pick
+  // is never reverted by this effect racing the navigation it triggered.
+  let appliedData: PageData = data;
+  $effect(() => {
+    const next = data;
+    if (next === appliedData) return;
+    appliedData = next;
+    untrack(() => {
+      productId = next.productFilter.productId ?? "";
+      productTypeId = next.productFilter.productTypeId ?? "";
+      selectedProduct = next.selectedProduct ?? null;
+    });
+  });
+
+  // Deduplicated by name, matching the orders and stocks list pages: the same
+  // logical type exists once per merchant with a different uuid, and the reports
+  // filter on the shared name.
+  const productTypeOptions = $derived.by(() => {
+    const byName = new Map<string, { id: string; label: string }>();
+    for (const pt of data.productTypes ?? []) {
+      const name = String(pt?.name ?? "").trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      if (byName.has(key)) continue;
+      byName.set(key, { id: pt.id, label: formatProductTypeLabel(name) });
+    }
+    return [...byName.values()].sort((a, b) => a.label.localeCompare(b.label));
+  });
+
+  const hasProductFilter = $derived(Boolean(productId || productTypeId));
+
   let loading = $state(false);
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+
+  // Product picks refetch immediately, so cover the gap between the click and the
+  // data actually landing instead of relying on the 600ms date debounce.
+  let productNavPending = $state(false);
+  const reportsLoading = $derived(loading || productNavPending);
+
+  function clearProductFilters() {
+    productId = "";
+    productTypeId = "";
+    selectedProduct = null;
+  }
 
   function openDatePicker(el: HTMLInputElement | null) {
     if (!el) return;
@@ -128,13 +186,15 @@
     { value: formatMoney(data.outstandingCredit), label: $_('dashboardOutstandingCredit'), icon: CreditCard, iconBg: "bg-red-50 dark:bg-red-500/15", iconColor: "text-red-600 dark:text-red-400" },
   ]);
 
-  function navigateWithDates() {
+  async function navigateWithDates() {
     const params = new URLSearchParams();
     if (dateFrom) params.set("from", dateFrom);
     if (dateTo) params.set("to", dateTo);
     if (groupPeriod) params.set("groupBy", groupPeriod);
+    if (productId) params.set("product_id", productId);
+    if (productTypeId) params.set("product_type_id", productTypeId);
     const qs = params.toString();
-    goto(qs ? `/dashboard?${qs}` : "/dashboard", { replaceState: true, keepFocus: true });
+    await goto(qs ? `/dashboard?${qs}` : "/dashboard", { replaceState: true, keepFocus: true });
   }
 
   $effect(() => {
@@ -153,10 +213,24 @@
 
     return () => clearTimeout(debounceTimer);
   });
+
+  // Product / product type picks are discrete, so they refetch without the debounce.
+  $effect(() => {
+    const pid = productId;
+    const ptid = productTypeId;
+    const urlPid = $page.url.searchParams.get("product_id") ?? "";
+    const urlPtid = $page.url.searchParams.get("product_type_id") ?? "";
+    if (pid === urlPid && ptid === urlPtid) return;
+
+    productNavPending = true;
+    navigateWithDates().finally(() => {
+      productNavPending = false;
+    });
+  });
 </script>
 
 <div class="space-y-6">
-  <!-- Row 1: Welcome + Date Selector -->
+  <!-- Row 1: Welcome + Filters (From / To / Product / Product type) -->
   <div class="flex flex-wrap items-center justify-between gap-4">
     <div>
       <h1 class="font-[Sora] text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-50">
@@ -164,11 +238,11 @@
       </h1>
       <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{$_('dashboardSubtitle')}</p>
     </div>
-    <div class="flex flex-col md:flex-row items-center gap-3">
+    <div class="flex flex-wrap items-center justify-end gap-x-4 gap-y-3">
       <label class="flex items-center gap-2">
-        <span class="text-sm font-medium text-gray-500 dark:text-gray-400">{$_('from')}</span>
+        <span class="shrink-0 whitespace-nowrap text-sm font-medium text-gray-500 dark:text-gray-400">{$_('from')}</span>
         <input
-          class="h-[34px] rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-gray-800 focus:border-[#4DA0E6] focus:outline-none focus:ring-2 focus:ring-[#4DA0E6]/20 dark:border-white/10 dark:bg-[#111827] dark:text-gray-200 dark:[color-scheme:dark]"
+          class="h-8 rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-gray-800 focus:border-[#4DA0E6] focus:outline-none focus:ring-2 focus:ring-[#4DA0E6]/20 dark:border-white/10 dark:bg-[#111827] dark:text-gray-200 dark:[color-scheme:dark]"
           type="date"
           max={todayStr}
           bind:value={dateFrom}
@@ -178,10 +252,11 @@
           onchange={onDateInputChange}
         />
       </label>
+
       <label class="flex items-center gap-2">
-        <span class="text-sm font-medium text-gray-500 dark:text-gray-400">{$_('to')}</span>
+        <span class="shrink-0 whitespace-nowrap text-sm font-medium text-gray-500 dark:text-gray-400">{$_('to')}</span>
         <input
-          class="h-[34px] rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-gray-800 focus:border-[#4DA0E6] focus:outline-none focus:ring-2 focus:ring-[#4DA0E6]/20 dark:border-white/10 dark:bg-[#111827] dark:text-gray-200 dark:[color-scheme:dark]"
+          class="h-8 rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-gray-800 focus:border-[#4DA0E6] focus:outline-none focus:ring-2 focus:ring-[#4DA0E6]/20 dark:border-white/10 dark:bg-[#111827] dark:text-gray-200 dark:[color-scheme:dark]"
           type="date"
           max={todayStr}
           bind:value={dateTo}
@@ -191,6 +266,47 @@
           onchange={onDateInputChange}
         />
       </label>
+
+      <div class="{mc.tableToolbarFilter} h-8!">
+        <label class={mc.tableToolbarFilterLabel} for="dashboard-product-filter">{$_('dashboardProductFilter')}</label>
+        <div class="w-[13rem]">
+          <SearchSelect
+            id="dashboard-product-filter"
+            bind:value={productId}
+            bind:selected={selectedProduct}
+            companyId={data.companyId ?? ''}
+            branchId={data.branchId ?? ''}
+            placeholder={$_('dashboardAllProducts')}
+            disabled={!data.companyId}
+          />
+        </div>
+      </div>
+
+      <div class="{mc.tableToolbarFilter} h-8!">
+        <label class={mc.tableToolbarFilterLabel} for="dashboard-product-type-filter">{$_('productType')}</label>
+        <div class="w-[11rem]">
+          <select
+            id="dashboard-product-type-filter"
+            class="{mc.filterSelect} h-8!"
+            bind:value={productTypeId}
+          >
+            <option value="">{$_('dashboardAllProductTypes')}</option>
+            {#each productTypeOptions as opt (opt.id)}
+              <option value={opt.id}>{opt.label}</option>
+            {/each}
+          </select>
+        </div>
+      </div>
+
+      {#if hasProductFilter}
+        <button
+          type="button"
+          class="{mc.tableBtn} h-8!"
+          onclick={clearProductFilters}
+        >
+          {$_('dashboardClearFilters')}
+        </button>
+      {/if}
     </div>
   </div>
 
@@ -203,7 +319,7 @@
         icon={stat.icon}
         iconBg={stat.iconBg}
         iconColor={stat.iconColor}
-        {loading}
+        loading={reportsLoading}
       />
     {/each}
   </div>
@@ -238,7 +354,7 @@
             <option value="this_month">{$_('dashboardThisMonth')}</option>
           </select>
         </div>
-        <WeeklySalesChart data={salesTrend} {loading} groupPeriod={groupPeriod} />
+        <WeeklySalesChart data={salesTrend} loading={reportsLoading} groupPeriod={groupPeriod} />
       </div>
 
       <!-- Top Customers header -->
@@ -249,7 +365,7 @@
         </a>
       </div>
 
-      <TopCustomersTable customers={data.topCustomers} {loading} />
+      <TopCustomersTable customers={data.topCustomers} loading={reportsLoading} />
 
       <!-- Unpaid Orders header -->
       <div class="flex items-center justify-between">
@@ -259,14 +375,14 @@
         </a>
       </div>
 
-      <UnpaidOrdersTable orders={data.unpaidOrders} {loading} />
+      <UnpaidOrdersTable orders={data.unpaidOrders} loading={reportsLoading} />
     </div>
 
     <!-- Right Column (35%) -->
     <div class="flex flex-col gap-6">
-      <LowStockProducts products={data.lowStockProducts} {loading} />
-      <TopSellingProducts products={data.topProducts} {loading} />
-      <RecentStocks stocks={data.recentStocks} {loading} />
+      <LowStockProducts products={data.lowStockProducts} loading={reportsLoading} />
+      <TopSellingProducts products={data.topProducts} loading={reportsLoading} />
+      <RecentStocks stocks={data.recentStocks} loading={reportsLoading} />
     </div>
   </div>
 </div>

@@ -11,7 +11,21 @@ import {
   fetchLowStockProducts,
   fetchTopCustomers,
   fetchUnpaidOrders,
+  fetchProductLabel,
+  fetchProductTypeName,
+  type DashboardProductFilter,
 } from "$lib/dashboard.server";
+import { fetchProductTypes } from "$lib/inventory/productTypes.server";
+import type { ProductTypeRow } from "$lib/inventory/productTypes.server";
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Reject anything that is not a uuid so bad query params cannot reach Hasura. */
+function readUuidParam(url: URL, key: string): string | null {
+  const value = url.searchParams.get(key);
+  return value && UUID_PATTERN.test(value) ? value : null;
+}
 
 export const load: PageServerLoad = async ({ request, parent, url }) => {
   const { merchantContext } = await parent();
@@ -21,6 +35,26 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
   const from = url.searchParams.get("from") ?? "";
   const to = url.searchParams.get("to") ?? "";
   const groupBy = url.searchParams.get("groupBy") ?? "per_week";
+
+  const productId = readUuidParam(url, "product_id");
+  const productTypeId = readUuidParam(url, "product_type_id");
+
+  const companyId = merchantContext?.companyId ?? null;
+  const branchId = merchantContext?.branch ?? null;
+
+  // Same catalogue as the orders and stocks list pages, so all three filters
+  // offer the same options.
+  const [productTypes, selectedProduct, productTypeName] = await Promise.all([
+    fetchProductTypes(merchantId),
+    fetchProductLabel(productId),
+    fetchProductTypeName(productTypeId),
+  ]);
+
+  const productFilter: DashboardProductFilter = {
+    productId,
+    productTypeId,
+    productTypeName,
+  };
 
   if (!merchantId) {
     return {
@@ -34,6 +68,11 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
       recentStocks: [],
       salesTrend: [],
       lowStockProducts: [],
+      productTypes,
+      selectedProduct,
+      productFilter,
+      companyId,
+      branchId: branchId?.id ?? null,
     };
   }
 
@@ -41,8 +80,6 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
     merchantContext?.merchantBranchId ?? (await fetchBranchId(merchantId));
 
   let branchIds: string[] = [];
-  const companyId = merchantContext?.companyId ?? null;
-  const branchId = merchantContext?.branch ?? null;
   if (companyId) {
     branchIds = await fetchCompanyBranchIds(companyId);
   } else if (merchantBranchId) {
@@ -59,15 +96,15 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
     salesTrend,
     lowStockProducts,
   ] = await Promise.all([
-    fetchStats(merchantId, from, to),
-    fetchOutstandingCredit(merchantId, from, to),
-    fetchTopCustomers(merchantId, from, to),
-    fetchUnpaidOrders(merchantId, from, to),
-    fetchTopSellingProducts(merchantId, from, to),
-    fetchRecentStocks(branchIds),
-    fetchWeeklySalesTrend(merchantId, from, to, groupBy),
+    fetchStats(merchantId, from, to, productFilter),
+    fetchOutstandingCredit(merchantId, from, to, productFilter),
+    fetchTopCustomers(merchantId, from, to, productFilter),
+    fetchUnpaidOrders(merchantId, from, to, productFilter),
+    fetchTopSellingProducts(merchantId, from, to, productFilter),
+    fetchRecentStocks(branchIds, productFilter),
+    fetchWeeklySalesTrend(merchantId, from, to, groupBy, productFilter),
     companyId
-      ? fetchLowStockProducts(companyId, branchId?.id ?? null)
+      ? fetchLowStockProducts(companyId, branchId?.id ?? null, productFilter)
       : Promise.resolve([]),
   ]);
 
@@ -82,5 +119,10 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
     recentStocks,
     salesTrend,
     lowStockProducts,
+    productTypes,
+    selectedProduct,
+    productFilter,
+    companyId,
+    branchId: branchId?.id ?? null,
   };
 };
