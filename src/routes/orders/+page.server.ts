@@ -640,6 +640,12 @@ function parseMoney(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function isDuplicateOrderRequestError(error: unknown): boolean {
+  return (
+    error instanceof Error && error.message.includes("orders_request_hash_key")
+  );
+}
+
 async function fetchMerchantOrderForCancel(
   orderId: string,
   merchantId: string,
@@ -961,7 +967,8 @@ export const load: PageServerLoad = async ({ request, parent, url }) => {
   const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
   const pageSize = Math.max(1, Number(url.searchParams.get("pageSize")) || 10);
   const offset = (page - 1) * pageSize;
-  const tab = url.searchParams.get("tab") === "archived" ? "archived" : "active";
+  const tab =
+    url.searchParams.get("tab") === "archived" ? "archived" : "active";
 
   const conditions: Record<string, unknown>[] = [
     { created_by: { _eq: merchantId } },
@@ -1301,7 +1308,9 @@ export const actions: Actions = {
       await incrementStockSlices(allSlices).catch(() => {});
       return {
         success: false,
-        message: `Failed to create order: ${err instanceof Error ? err.message : "Unknown error"}`,
+        message: isDuplicateOrderRequestError(err)
+          ? "This order may have already been submitted. Please refresh the page and check your orders before trying again."
+          : `Failed to create order: ${err instanceof Error ? err.message : "Unknown error"}`,
       };
     }
 
