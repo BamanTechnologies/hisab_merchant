@@ -17,6 +17,8 @@ export type SubscriptionPlanPricing = {
 export type CompanySubscription = {
 	id: string;
 	company_id: string;
+	start_date: string | null;
+	end_date: string | null;
 	trial_started_at: string | null;
 	trial_ends_at: string | null;
 	current_period_start: string | null;
@@ -34,6 +36,7 @@ export type SubscriptionSnapshot = {
 
 export type SubscriptionLoadResult = {
 	subscription: CompanySubscription | null;
+	hasActiveSubscription: boolean | null;
 	error: string | null;
 	loaded: boolean;
 };

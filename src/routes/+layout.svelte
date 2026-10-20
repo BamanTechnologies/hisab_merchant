@@ -97,7 +97,6 @@
 
 	const subscriptionBarVisible = $derived(
 		$subscriptionStore.loaded &&
-			!$subscriptionStore.error &&
 			$subscriptionSnapshot.showWarningBar &&
 			!!$subscriptionSnapshot.warningMessage,
 	);

@@ -589,6 +589,7 @@
       });
 
       const result = deserialize(await response.text());
+      const toast = toastFromActionResult(result);
       if (result.type !== "success" || !("data" in result) || !result.data) {
         createError = "Could not create orders";
         showToast("Could not create orders", "error");
@@ -596,11 +597,11 @@
       }
       const payload = result.data as { success?: boolean; message?: string };
       if (!payload.success) {
-        createError = payload.message ?? "Could not create orders";
-        showToast(payload.message ?? "Could not create orders", "error");
+        createError = toast?.message ?? "Could not create orders";
+        showToast(toast?.message ?? "Could not create orders", "error");
         return;
       }
-      showToast(payload.message ?? "Orders created", "success");
+      showToast(toast?.message ?? payload.message ?? "Orders created", "success");
       successMessage = "";
       errorMessage = "";
       closeCreateModal(true);
