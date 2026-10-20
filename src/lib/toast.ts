@@ -1,5 +1,6 @@
 import { writable } from "svelte/store";
 import type { ActionResult } from "@sveltejs/kit";
+import { SUBSCRIPTION_BLOCKED_MESSAGE } from "$lib/subscription/status";
 
 export type ToastVariant = "success" | "error";
 
@@ -17,6 +18,10 @@ let toastSeq = 0;
 export const TOAST_MS = 2600;
 
 const USER_FACING_ERROR_MESSAGES: Array<[RegExp, string]> = [
+  [
+    /active subscription is required|active subscription required|subscription has expired/i,
+    SUBSCRIPTION_BLOCKED_MESSAGE,
+  ],
   [
     /unique constraint|duplicate key|already exists|uniqueness violation/i,
     "A record with these details already exists.",
@@ -175,7 +180,16 @@ export function toastFromActionResult(result: ActionResult): {
     return { message: "Request failed", variant: "error" };
   }
   if (result.type === "success") {
-    const data = result.data as { success?: boolean; message?: string } | undefined;
+    if (typeof result.data === "string") {
+      return {
+        message: userFacingErrorMessage(result.data),
+        variant: "error",
+      };
+    }
+
+    const data = result.data as
+      | { success?: boolean; message?: string }
+      | undefined;
     if (data && typeof data === "object" && "success" in data) {
       const ok = data.success === true;
       return {

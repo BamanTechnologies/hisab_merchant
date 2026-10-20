@@ -14,16 +14,21 @@
 
 	const snapshot = $derived($subscriptionSnapshot);
 	const storeState = $derived($subscriptionStore);
+	const subscriptionExpired = $derived(
+		!storeState.subscription || storeState.hasActiveSubscription === false
+	);
 
 	const visible = $derived(
 		storeState.loaded &&
-			!storeState.error &&
 			snapshot.showWarningBar &&
 			snapshot.warningMessage
 	);
 
-	/** Stronger primary banner — urgency ramps via border/shadow, not a different hue. */
 	const strengthClass = $derived.by(() => {
+		if (subscriptionExpired) {
+			return 'border-l-red-200 bg-red-600 shadow-[0_2px_10px_rgba(185,28,28,0.45)] ring-red-500/60 dark:bg-red-700';
+		}
+
 		switch (snapshot.status) {
 			case 'SUSPENDED':
 				return 'border-l-white/90 shadow-[0_2px_10px_rgba(61,143,212,0.45)] ring-[#3d8fd4]/50';
