@@ -20,6 +20,7 @@ const FETCH_ORDER_FOR_MERCHANT_QUERY = `
       limit: 1
     ) {
       created_by
+      created_at
       customer_address
       customer_name
       customer_phone
