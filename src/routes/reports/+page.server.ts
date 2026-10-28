@@ -149,6 +149,14 @@ const SEND_REPORT_MUTATION = `
   }
 `;
 
+const UPLOAD_FILE_MUTATION = `
+  mutation uploadFile($files: [UploadInput!]!) {
+    upload_files(args: $files) {
+      secure_url
+    }
+  }
+`;
+
 async function fetchReports(
   merchantId: string,
   search: string,
@@ -485,6 +493,51 @@ async function sendReport(reportData: any) {
   return result.data.send_sms;
 }
 
+async function uploadReportPdf(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  const base64String = btoa(binary);
+  const headers = getGraphQLHeaders();
+  const response = await fetch(config.graphql.endpoint, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      query: UPLOAD_FILE_MUTATION,
+      variables: {
+        files: [
+          {
+            base64String,
+            folder: "investor-reports",
+            type: file.type || "application/pdf",
+          },
+        ],
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `File upload failed with status ${response.status}: ${errorText}`,
+    );
+  }
+
+  const result = await response.json();
+  if (result.errors) {
+    throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
+  }
+
+  const secureUrl = result.data?.upload_files?.[0]?.secure_url;
+  if (typeof secureUrl !== "string" || !secureUrl) {
+    throw new Error("File upload did not return a secure URL");
+  }
+  return secureUrl;
+}
+
 export const load: PageServerLoad = async ({ request, parent, url }) => {
   const { merchantContext } = await parent();
   const merchantId =
@@ -578,6 +631,30 @@ export const actions: Actions = {
       return {
         success: false,
         message: `Failed to send report: ${error instanceof Error ? error.message : "Unknown error"}`,
+      };
+    }
+  },
+  shareReport: async ({ request }) => {
+    const blocked = await subscriptionWriteActionBlockedForRequest(request);
+    if (blocked) return blocked;
+
+    if (!getMerchantIdFromRequest(request)) {
+      return { success: false, message: "Authentication required" };
+    }
+
+    const formData = await request.formData();
+    const file = formData.get("file");
+    if (!(file instanceof File) || file.size === 0) {
+      return { success: false, message: "A report PDF is required" };
+    }
+
+    try {
+      const secureUrl = await uploadReportPdf(file);
+      return { success: true, secureUrl };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to upload report: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   },

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { enhance } from "$app/forms";
+  import { deserialize, enhance } from "$app/forms";
   import { goto } from "$app/navigation";
   import { navigating } from "$app/state";
   import { page } from "$app/stores";
@@ -20,6 +20,10 @@
   import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
   import { _ } from "svelte-i18n";
   import { get } from "svelte/store";
+  import Share2 from "@lucide/svelte/icons/share-2";
+  import Copy from "@lucide/svelte/icons/copy";
+  import Send from "@lucide/svelte/icons/send";
+  import MessageCircle from "@lucide/svelte/icons/message-circle";
 
   type Report = {
     id: string;
@@ -28,6 +32,8 @@
     message: string;
     updated_at: string;
   };
+
+  type SharePlatform = "telegram" | "whatsapp";
 
   type Investor = {
     id: string;
@@ -112,6 +118,10 @@
   let generateReportPending = $state(false);
   let sendReportPending = $state(false);
   let resendReportPending = $state(false);
+  let shareReportPending = $state(false);
+  let shareReport = $state<Report | null>(null);
+  let shareLinks = $state<{ telegram: string; whatsapp: string } | null>(null);
+  let copiedPlatform = $state<SharePlatform | null>(null);
   const subscriptionLocked = $derived($subscriptionBlocksMutations);
   let searchQuery = $state($page.url.searchParams.get("search") ?? "");
   let tablePage = $state(Number($page.url.searchParams.get("page")) || 1);
@@ -333,6 +343,176 @@
     selectedReport = null;
   }
 
+  function openShareModal(report: Report) {
+    shareReport = report;
+    shareLinks = null;
+    copiedPlatform = null;
+    void prepareShareLinks();
+  }
+
+  function closeShareModal() {
+    if (shareReportPending) return;
+    shareReport = null;
+    shareLinks = null;
+    copiedPlatform = null;
+  }
+
+  async function createReportPdf(report: Report): Promise<File> {
+    const { default: JsPDF } = await import("jspdf");
+    const pdf = new JsPDF({ unit: "mm", format: "a4" });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 16;
+    const contentWidth = pageWidth - margin * 2;
+    const colors = {
+      brand: [45, 114, 170] as [number, number, number],
+      brandDark: [29, 78, 121] as [number, number, number],
+      ink: [31, 41, 55] as [number, number, number],
+      muted: [107, 114, 128] as [number, number, number],
+      border: [226, 232, 240] as [number, number, number],
+      soft: [243, 248, 252] as [number, number, number],
+      success: [43, 122, 76] as [number, number, number],
+    };
+    let y = 22;
+
+    const drawFooter = (pageNumber: number, totalPages: number) => {
+      pdf.setDrawColor(...colors.border);
+      pdf.line(margin, pageHeight - 14, pageWidth - margin, pageHeight - 14);
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(8);
+      pdf.setTextColor(...colors.muted);
+      pdf.text("BamanStock • Investor Report", margin, pageHeight - 8);
+      pdf.text(`Page ${pageNumber} of ${totalPages}`, pageWidth - margin, pageHeight - 8, {
+        align: "right",
+      });
+    };
+
+    const addPageIfNeeded = (height: number) => {
+      if (y + height <= pageHeight - 22) return;
+      pdf.addPage();
+      y = 22;
+    };
+
+    pdf.setFillColor(...colors.brandDark);
+    pdf.rect(0, 0, pageWidth, 10, "F");
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(20);
+    pdf.setTextColor(...colors.brandDark);
+    pdf.text("BamanStock", margin, y);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(9);
+    pdf.setTextColor(...colors.muted);
+    pdf.text("MERCHANT INVESTOR REPORT", margin, y + 7);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(17);
+    pdf.setTextColor(...colors.ink);
+    pdf.text("Investor Report", pageWidth - margin, y + 2, { align: "right" });
+    y += 18;
+
+    pdf.setFillColor(...colors.soft);
+    pdf.roundedRect(margin, y, contentWidth, 31, 2, 2, "F");
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(8);
+    pdf.setTextColor(...colors.muted);
+    pdf.text("INVESTOR PHONE", margin + 7, y + 8);
+    pdf.text("REPORT DATE", margin + contentWidth / 2, y + 8);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(11);
+    pdf.setTextColor(...colors.ink);
+    pdf.text(report.investor_phone || "—", margin + 7, y + 15);
+    pdf.text(formatDate(report.updated_at), margin + contentWidth / 2, y + 15);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(8);
+    pdf.setTextColor(...colors.muted);
+    pdf.text("DELIVERY STATUS", margin + 7, y + 24);
+    pdf.setTextColor(...colors.success);
+    pdf.text(String(report.sms_status || "—").toUpperCase(), margin + 42, y + 24);
+    y += 42;
+
+    pdf.setFillColor(...colors.brand);
+    pdf.roundedRect(margin, y, contentWidth, 12, 2, 2, "F");
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(10);
+    pdf.setTextColor(255, 255, 255);
+    pdf.text("REPORT SUMMARY", margin + 7, y + 7.5);
+    y += 19;
+
+    const message = report.message?.trim() || "No report message";
+    const lines = pdf.splitTextToSize(message, contentWidth - 14);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(10);
+    for (const line of lines) {
+      addPageIfNeeded(7);
+      pdf.setTextColor(...colors.ink);
+      pdf.text(line, margin, y);
+      y += 5.5;
+    }
+
+    y += 8;
+    addPageIfNeeded(25);
+    pdf.setFillColor(...colors.soft);
+    pdf.roundedRect(margin, y, contentWidth, 20, 2, 2, "F");
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(9);
+    pdf.setTextColor(...colors.brandDark);
+    pdf.text("Prepared for secure sharing", margin + 7, y + 8);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(8.5);
+    pdf.setTextColor(...colors.muted);
+    pdf.text("This report was generated by BamanStock and uploaded as a secure PDF.", margin + 7, y + 14);
+
+    const totalPages = pdf.getNumberOfPages();
+    for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
+      pdf.setPage(pageNumber);
+      drawFooter(pageNumber, totalPages);
+    }
+    return new File([pdf.output("blob")], `investor-report-${report.id.slice(0, 8)}.pdf`, {
+      type: "application/pdf",
+    });
+  }
+
+  async function prepareShareLinks() {
+    if (!shareReport || shareReportPending) return;
+    shareReportPending = true;
+    errorMessage = "";
+    try {
+      const file = await createReportPdf(shareReport);
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch("?/shareReport", { method: "POST", body: formData });
+      const result = deserialize(await response.text()) as {
+        type?: string;
+        data?: { success?: boolean; secureUrl?: string; message?: string };
+      };
+      const data = result.data;
+      if (!response.ok || !data?.success || !data.secureUrl) {
+        throw new Error(data?.message ?? "Failed to upload report");
+      }
+      const text = `Investor report (${formatDate(shareReport.updated_at)})`;
+      shareLinks = {
+        telegram: `https://t.me/share/url?url=${encodeURIComponent(data.secureUrl)}&text=${encodeURIComponent(text)}`,
+        whatsapp: `https://wa.me/?text=${encodeURIComponent(`${text}: ${data.secureUrl}`)}`,
+      };
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : "Failed to prepare report";
+    } finally {
+      shareReportPending = false;
+    }
+  }
+
+  async function copyShareLink(platform: SharePlatform) {
+    if (!shareLinks) return;
+    try {
+      await navigator.clipboard.writeText(shareLinks[platform]);
+      copiedPlatform = platform;
+      setTimeout(() => {
+        if (copiedPlatform === platform) copiedPlatform = null;
+      }, 2000);
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : "Could not copy share link";
+    }
+  }
+
   function openGenerateModal() {
     if (subscriptionLocked) return;
     showGenerateModal = true;
@@ -434,6 +614,18 @@
                   }}
                 >
                   {$_('viewMessage')}
+                </button>
+                <button
+                  type="button"
+                  class={mc.tableBtn}
+                  aria-label={$_('shareReport')}
+                  title={$_('shareReport')}
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    openShareModal(report);
+                  }}
+                >
+                  <Share2 size={15} />
                 </button>
               </td>
             </tr>
@@ -558,6 +750,68 @@
           </form>
         {/if}
       </footer>
+    </div>
+  </div>
+{/if}
+
+{#if shareReport}
+  <div
+    class="modal-overlay"
+    role="button"
+    tabindex="0"
+    onclick={closeShareModal}
+    onkeydown={(e) => e.key === "Escape" && closeShareModal()}
+  >
+    <div
+      class="modal share-modal"
+      role="dialog"
+      aria-modal="true"
+      tabindex="0"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.stopPropagation()}
+    >
+      <header>
+        <h2>{$_('shareReport')}</h2>
+        <button class="icon" aria-label="Close" onclick={closeShareModal}>✕</button>
+      </header>
+      <div class="share-content">
+        <p>{$_('shareReportDescription')}</p>
+        {#if errorMessage}
+          <p class="share-error">{errorMessage}</p>
+        {/if}
+        {#if !shareLinks}
+          <button class="primary" type="button" onclick={prepareShareLinks} disabled={shareReportPending}>
+            {shareReportPending ? $_('preparingShare') : $_('prepareShare')}
+          </button>
+        {:else}
+          <div class="share-options">
+            <button
+              type="button"
+              class="share-option telegram"
+              aria-label={$_('telegram')}
+              title={$_('telegram')}
+              onclick={() => copyShareLink("telegram")}
+            >
+            <span class="flex items-center gap-1">
+              <Send size={22} strokeWidth={2.25} aria-hidden="true" /> Telegram
+            </span>
+            {#if copiedPlatform === "telegram"}<span>{$_('copied')}</span>{:else}<Copy size={16} />{/if}
+            </button>
+            <button
+              type="button"
+              class="share-option whatsapp"
+              aria-label={$_('whatsapp')}
+              title={$_('whatsapp')}
+              onclick={() => copyShareLink("whatsapp")}
+            >
+            <span class="flex items-center gap-1">
+              <MessageCircle size={22} strokeWidth={2.25} aria-hidden="true" /> WhatsApp
+            </span>
+              {#if copiedPlatform === "whatsapp"}<span>{$_('copied')}</span>{:else}<Copy size={16} />{/if}
+            </button>
+          </div>
+        {/if}
+      </div>
     </div>
   </div>
 {/if}
@@ -1066,6 +1320,46 @@
   .primary:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .share-modal {
+    max-width: 440px;
+  }
+
+  .share-content {
+    display: grid;
+    gap: 1rem;
+    padding: 1.5rem;
+    color: #374151;
+  }
+
+  .share-error {
+    color: #b91c1c;
+    font-size: 0.875rem;
+  }
+
+  .share-options {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .share-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid #e6eaed;
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .share-option.telegram {
+    color: #168acd;
+  }
+
+  .share-option.whatsapp {
+    color: #128c7e;
   }
 
   .modal.large {

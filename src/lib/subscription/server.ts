@@ -9,7 +9,11 @@ const GET_COMPANY_SUBSCRIPTION_QUERY = `
     companies_by_pk(id: $companyId) {
       has_active_subscription
     }
-     billing_subscriptions(where: {company_id: {_eq: $companyId}}, limit: 1) {
+    subscriptions: billing_subscriptions(
+      where: {company_id: {_eq: $companyId}}
+      order_by: {end_date: desc}
+      limit: 1
+    ) {
     id
     company_id
     start_date
