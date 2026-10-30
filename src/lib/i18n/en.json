@@ -249,7 +249,7 @@
   "smsStatus": "SMS Status",
   "viewMessage": "View Message",
   "shareReport": "Share Report",
-  "shareReportDescription": "A PDF will be prepared and uploaded before you copy a sharing link.",
+  "shareReportDescription": "A PDF will be prepared and uploaded before you open a sharing link.",
   "prepareShare": "Prepare share link",
   "preparingShare": "Preparing…",
   "telegram": "Telegram",

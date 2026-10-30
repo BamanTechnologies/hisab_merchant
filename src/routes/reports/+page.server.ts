@@ -9,6 +9,7 @@ import { config, getGraphQLHeaders } from "$lib/config";
 import { soldUnitPriceForReportOrder } from "$lib/reportSoldPrice";
 import { buildStockLabel } from "$lib/stockLabel";
 import { subscriptionWriteActionBlockedForRequest } from "$lib/subscription/server";
+import { PDF_MERCHANT_FIELDS } from "$lib/pdf/kit";
 
 const FETCH_REPORTS_QUERY = `
   query GetReports($filter: reports_bool_exp, $order: [reports_order_by!], $limit: Int, $offset: Int) {
@@ -156,6 +157,92 @@ const UPLOAD_FILE_MUTATION = `
     }
   }
 `;
+
+const FETCH_REPORT_FOR_PDF_QUERY = `
+  query ReportForPdf($id: uuid!, $merchantId: uuid!) {
+    reports(where: { id: { _eq: $id }, merchant_id: { _eq: $merchantId } }, limit: 1) {
+      id
+      investor_id
+      investor_phone
+      sms_status
+      message
+      meta
+      created_at
+      merchant {
+        ${PDF_MERCHANT_FIELDS}
+      }
+    }
+  }
+`;
+
+/** Previous report for the same investor marks where this report's period starts. */
+const FETCH_REPORT_PDF_CONTEXT_QUERY = `
+  query ReportPdfContext($merchantId: uuid!, $investorPhone: String!, $before: timestamptz!, $investorId: uuid!, $hasInvestor: Boolean!) {
+    previous: reports(
+      where: {
+        merchant_id: { _eq: $merchantId }
+        investor_phone: { _eq: $investorPhone }
+        created_at: { _lt: $before }
+      }
+      order_by: { created_at: desc }
+      limit: 1
+    ) {
+      created_at
+    }
+    investor_by_pk(id: $investorId) @include(if: $hasInvestor) {
+      first_name
+      last_name
+      phone_number
+    }
+  }
+`;
+
+async function fetchReportForPdf(reportId: string, merchantId: string) {
+  const post = async (query: string, variables: Record<string, unknown>) => {
+    const response = await fetch(config.graphql.endpoint, {
+      method: "POST",
+      headers: getGraphQLHeaders(),
+      body: JSON.stringify({ query, variables }),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const result = await response.json();
+    if (result.errors) {
+      throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
+    }
+    return result.data;
+  };
+
+  const data = await post(FETCH_REPORT_FOR_PDF_QUERY, { id: reportId, merchantId });
+  const report = data.reports?.[0];
+  if (!report) return null;
+
+  const investorId = typeof report.investor_id === "string" ? report.investor_id : null;
+  const context = await post(FETCH_REPORT_PDF_CONTEXT_QUERY, {
+    merchantId,
+    investorPhone: report.investor_phone ?? "",
+    before: report.created_at,
+    // Placeholder keeps the variable non-null when the directive skips the field.
+    investorId: investorId ?? "00000000-0000-0000-0000-000000000000",
+    hasInvestor: investorId !== null,
+  });
+
+  const meta =
+    typeof report.meta === "string" ? JSON.parse(report.meta) : (report.meta ?? null);
+
+  return {
+    id: report.id as string,
+    createdAt: report.created_at as string,
+    previousReportAt: (context.previous?.[0]?.created_at as string | undefined) ?? null,
+    investorPhone: (report.investor_phone as string | null) ?? "",
+    investor: context.investor_by_pk ?? null,
+    smsStatus: (report.sms_status as string | null) ?? null,
+    message: (report.message as string | null) ?? null,
+    meta,
+    merchant: report.merchant ?? null,
+  };
+}
 
 async function fetchReports(
   merchantId: string,
@@ -631,6 +718,31 @@ export const actions: Actions = {
       return {
         success: false,
         message: `Failed to send report: ${error instanceof Error ? error.message : "Unknown error"}`,
+      };
+    }
+  },
+  reportPdfData: async ({ request }) => {
+    const merchantId = getMerchantIdFromRequest(request);
+    if (!merchantId) {
+      return { success: false, message: "Authentication required" };
+    }
+
+    const formData = await request.formData();
+    const reportId = formData.get("report_id");
+    if (typeof reportId !== "string" || !reportId) {
+      return { success: false, message: "Report ID is required" };
+    }
+
+    try {
+      const report = await fetchReportForPdf(reportId, merchantId);
+      if (!report) {
+        return { success: false, message: "Report not found" };
+      }
+      return { success: true, report };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to load report: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   },

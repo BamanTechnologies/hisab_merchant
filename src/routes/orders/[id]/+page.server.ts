@@ -12,6 +12,7 @@ import { createPaymentRecord } from "$lib/payments.server";
 import { insertCustomerTransaction } from "$lib/customerTransactions.server";
 import { subscriptionWriteActionBlockedForRequest } from "$lib/subscription/server";
 import { setOrderSoftDeleted } from "$lib/inventory/orders.server";
+import { PDF_MERCHANT_FIELDS } from "$lib/pdf/kit";
 
 const FETCH_ORDER_FOR_MERCHANT_QUERY = `
   query GetOrderForMerchant($id: uuid!, $merchantId: uuid!) {
@@ -33,6 +34,19 @@ const FETCH_ORDER_FOR_MERCHANT_QUERY = `
       total_amount
       outstanding_amount
       unit
+      merchant {
+        ${PDF_MERCHANT_FIELDS}
+      }
+      payment_allocations(order_by: [{ created_at: asc }, { id: asc }]) {
+        id
+        amount
+        created_at
+        payment {
+          id
+          payment_method
+          created_at
+        }
+      }
       order_items(order_by: [{ created_at: asc }, { id: asc }]) {
         id
         stock_id

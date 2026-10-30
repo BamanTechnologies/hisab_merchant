@@ -10,7 +10,8 @@
     subscriptionBlocksMutations,
   } from "$lib/subscription/client";
   import { paginateSlice } from "$lib/pagination.js";
-  import { formatCoffeeCapacityWithUnit, formatProductTypeLabel } from "$lib/stockLabel";
+  import { buildStockDescriptor, formatCoffeeCapacityWithUnit, formatProductTypeLabel } from "$lib/stockLabel";
+  import type { PdfMerchantInfo } from "$lib/pdf/kit";
   import { PRODUCT_TYPE_FIELDS, normalizeProductTypeName } from "$lib/inventory/parseForm";
   import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
   import type { PageData } from "./$types";
@@ -98,6 +99,13 @@
     unit?: string | null;
     order_items?: OrderItem[] | null;
     stock?: OrderStock | null;
+    merchant?: PdfMerchantInfo | null;
+    payment_allocations?: Array<{
+      id: string;
+      amount: number | string;
+      created_at: string;
+      payment?: { id: string; payment_method?: string | null; created_at: string } | null;
+    }> | null;
   };
 
   function orderQuantityLabel(o: Order) {
@@ -395,190 +403,64 @@ const remainingAfterPay = $derived.by(() => {
     // No preventDefault needed
   }
 
-  function pdfMoney(value: number | string | null | undefined): string {
-    const amount = parseMoney(value ?? 0);
-    return `ETB ${amount.toLocaleString("en-US", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`;
-  }
-
-  function pdfDate(value: string | null | undefined): string {
-    if (!value) return "—";
-    const date = new Date(value);
-    return Number.isNaN(date.getTime())
-      ? value
-      : date.toLocaleDateString("en-US", {
-          year: "numeric",
-          month: "short",
-          day: "2-digit",
-        });
-  }
-
-  function pdfText(value: unknown): string {
-    if (value === null || value === undefined || value === "") return "—";
-    return String(value);
-  }
-
   async function downloadOrderPdf() {
     if (!order || downloadingPdf) return;
 
     downloadingPdf = true;
     try {
-      const { default: JsPDF } = await import("jspdf");
-      const pdf = new JsPDF({ unit: "mm", format: "a4" });
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const margin = 16;
-      const contentWidth = pageWidth - margin * 2;
-      const primary: [number, number, number] = [77, 160, 230];
-      const dark: [number, number, number] = [31, 41, 55];
-      const muted: [number, number, number] = [107, 114, 128];
-      let y = 18;
-
-      const addPageIfNeeded = (height: number) => {
-        if (y + height <= pageHeight - 18) return;
-        pdf.addPage();
-        y = 18;
-      };
-
-      const drawLabelValue = (label: string, value: unknown, x: number, width: number) => {
-        const text = pdfText(value);
-        pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(8);
-        pdf.setTextColor(...muted);
-        pdf.text(label.toUpperCase(), x, y);
-        pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(10);
-        pdf.setTextColor(...dark);
-        pdf.text(pdf.splitTextToSize(text, width), x, y + 5);
-      };
-
-      pdf.setFillColor(...primary);
-      pdf.rect(0, 0, pageWidth, 7, "F");
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(22);
-      pdf.setTextColor(...primary);
-      pdf.text("ORDER INVOICE", margin, y);
-      pdf.setFontSize(9);
-      pdf.setTextColor(...muted);
-      pdf.text("BamanStock Merchant", margin, y + 7);
-      pdf.setFillColor(...primary);
-      pdf.roundedRect(pageWidth - margin - 48, 15, 48, 14, 2, 2, "F");
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(9);
-      pdf.setTextColor(255, 255, 255);
-      pdf.text(`ORDER #${order.id.slice(0, 8).toUpperCase()}`, pageWidth - margin - 44, 23);
-      y = 47;
-
-      pdf.setDrawColor(229, 231, 235);
-      pdf.line(margin, y - 4, pageWidth - margin, y - 4);
-      drawLabelValue("Order date", pdfDate(order.created_at), margin, 40);
-      drawLabelValue("Status", order.status, margin + 58, 40);
-      drawLabelValue("Total", pdfMoney(order.total_amount), pageWidth - margin - 48, 48);
-      y += 24;
-
-      addPageIfNeeded(36);
-      pdf.setFillColor(247, 250, 252);
-      pdf.roundedRect(margin, y, contentWidth, 31, 2, 2, "F");
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(9);
-      pdf.setTextColor(...primary);
-      pdf.text("CUSTOMER", margin + 6, y + 8);
-      pdf.setFontSize(12);
-      pdf.setTextColor(...dark);
-      pdf.text(pdfText(order.customer_name), margin + 6, y + 15);
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(9);
-      pdf.setTextColor(...muted);
-      pdf.text(pdfText(order.customer_phone), margin + 6, y + 22);
-      pdf.text(
-        pdf.splitTextToSize(pdfText(order.customer_address), contentWidth / 2 - 12),
-        margin + contentWidth / 2,
-        y + 15,
-      );
-      y += 43;
-
-      addPageIfNeeded(18);
-      const columns = [8, 66, 22, 34, 42];
-      const headers = ["#", "ITEM", "QTY", "UNIT PRICE", "TOTAL"];
-      const tableX = margin;
-      const tableWidth = contentWidth;
-      const rowHeight = 9;
-      pdf.setFillColor(...primary);
-      pdf.rect(tableX, y, tableWidth, rowHeight, "F");
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(8);
-      pdf.setTextColor(255, 255, 255);
-      let x = tableX + 3;
-      headers.forEach((header, index) => {
-        pdf.text(header, x, y + 6);
-        x += columns[index];
-      });
-      y += rowHeight;
-
-      for (const [index, item] of orderItems.entries()) {
+      const { buildOrderInvoicePdf } = await import("$lib/pdf/orderInvoice");
+      const lines = orderItems.map((item) => {
         const stock = item.stock;
-        const description = [
-          stock ? reportStockTypeLabel(stockTypeKey(stock)) : "Item",
-          stock ? orderStockAttrEntries(stock).map(([key, value]) => `${attrLabel(key)}: ${value}`).join(" · ") : "",
-        ]
-          .filter(Boolean)
-          .join(" — ");
-        const lines = pdf.splitTextToSize(description || "—", columns[1] - 5);
-        const height = Math.max(rowHeight, lines.length * 4 + 5);
-        addPageIfNeeded(height + 1);
-        if (index % 2 === 0) {
-          pdf.setFillColor(247, 250, 252);
-          pdf.rect(tableX, y, tableWidth, height, "F");
-        }
-        pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(8);
-        pdf.setTextColor(...dark);
-        pdf.text(String(index + 1), tableX + 3, y + 6);
-        pdf.text(lines, tableX + columns[0] + 3, y + 5);
-        pdf.text(`${item.quantity} ${item.unit ?? stock?.unit ?? ""}`.trim(), tableX + columns[0] + columns[1] + 3, y + 6);
-        pdf.text(pdfMoney(item.unit_price ?? stock?.selling_price), tableX + columns[0] + columns[1] + columns[2] + 3, y + 6);
-        pdf.setFont("helvetica", "bold");
-        pdf.text(
-          pdfMoney(item.line_total ?? Number(item.quantity) * Number(item.unit_price ?? stock?.selling_price ?? 0)),
-          tableX + columns[0] + columns[1] + columns[2] + columns[3] + 3,
-          y + 6,
-        );
-        pdf.setDrawColor(229, 231, 235);
-        pdf.line(tableX, y + height, tableX + tableWidth, y + height);
-        y += height;
-      }
-
-      addPageIfNeeded(46);
-      y += 9;
-      const totalsX = pageWidth - margin - 70;
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(10);
-      pdf.setTextColor(...muted);
-      pdf.text("Subtotal", totalsX, y);
-      pdf.setTextColor(...dark);
-      pdf.text(pdfMoney(order.total_amount), pageWidth - margin, y, { align: "right" });
-      y += 7;
-      pdf.setTextColor(...muted);
-      pdf.text("Outstanding", totalsX, y);
-      pdf.setTextColor(...dark);
-      pdf.text(pdfMoney(order.outstanding_amount), pageWidth - margin, y, { align: "right" });
-      y += 8;
-      pdf.setFillColor(...primary);
-      pdf.roundedRect(totalsX - 4, y - 5, 74, 13, 1.5, 1.5, "F");
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(11);
-      pdf.setTextColor(255, 255, 255);
-      pdf.text("TOTAL", totalsX, y + 3);
-      pdf.text(pdfMoney(order.total_amount), pageWidth - margin - 3, y + 3, { align: "right" });
-
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(9);
-      pdf.setTextColor(...muted);
-      pdf.text("Thank you for your business!", margin, pageHeight - 17);
-      pdf.text("Generated by BamanStock", pageWidth - margin, pageHeight - 17, { align: "right" });
-      pdf.save(`order-${order.id.slice(0, 8)}.pdf`);
+        const unitPrice = item.unit_price ?? stock?.selling_price;
+        const batches = (item.order_item_batches ?? [])
+          .map((b) => b.stock?.batch_number?.trim())
+          .filter(Boolean);
+        const details = stock
+          ? [
+              reportStockTypeLabel(stockTypeKey(stock)),
+              ...orderStockAttrEntries(stock)
+                .filter(([, v]) => v.trim() !== "")
+                .map(([k, v]) => `${attrLabel(k)}: ${v}`),
+              batches.length ? `Batch: ${batches.join(", ")}` : "",
+            ]
+              .filter(Boolean)
+              .join(" · ")
+          : "";
+        return {
+          name: stock
+            ? buildStockDescriptor({
+                ...stock,
+                type: stockTypeKey(stock),
+                attributes: { ...(stock.product?.attributes ?? {}), ...(stock.attributes ?? {}) },
+              })
+            : "Item",
+          details,
+          quantity: `${item.quantity} ${item.unit ?? stock?.unit ?? ""}`.trim(),
+          unitPrice,
+          amount: item.line_total ?? Number(item.quantity) * parseMoney(unitPrice ?? 0),
+        };
+      });
+      const { pdf, fileName } = await buildOrderInvoicePdf({
+        id: order.id,
+        createdAt: order.created_at,
+        status: order.status,
+        archived: isArchived,
+        totalAmount: order.total_amount,
+        outstandingAmount: order.outstanding_amount,
+        customer: {
+          name: order.customer_name,
+          phone: order.customer_phone,
+          address: order.customer_address,
+        },
+        merchant: order.merchant,
+        lines,
+        payments: (order.payment_allocations ?? []).map((a) => ({
+          date: a.payment?.created_at ?? a.created_at,
+          method: a.payment?.payment_method,
+          amount: a.amount,
+        })),
+      });
+      pdf.save(fileName);
     } catch (error) {
       showToast(
         error instanceof Error ? `Could not download order: ${error.message}` : "Could not download order",
