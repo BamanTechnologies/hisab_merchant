@@ -6,25 +6,32 @@ export type SubscriptionStoreState = {
 	loaded: boolean;
 	error: string | null;
 	subscription: CompanySubscription | null;
+	hasActiveSubscription: boolean | null;
 };
 
 const initialState: SubscriptionStoreState = {
 	loaded: false,
 	error: null,
-	subscription: null
+	subscription: null,
+	hasActiveSubscription: null
 };
 
 const state = writable<SubscriptionStoreState>(initialState);
 
 export const subscriptionSnapshot = derived(state, ($state): SubscriptionSnapshot =>
-	computeSubscriptionSnapshot($state.subscription)
+	computeSubscriptionSnapshot(
+		$state.subscription,
+		$state.hasActiveSubscription,
+		new Date(),
+		$state.error
+	)
 );
 
 export const subscriptionBlocksMutations = derived(
-	[state, subscriptionSnapshot],
-	([$state, $snapshot]) => {
+	state,
+	($state) => {
 		if (!$state.loaded || $state.error) return false;
-		return $snapshot.status === 'SUSPENDED';
+		return $state.hasActiveSubscription === false;
 	}
 );
 
@@ -32,13 +39,15 @@ export const subscriptionStore = {
 	subscribe: state.subscribe,
 	setFromServer(payload: {
 		subscription: CompanySubscription | null;
+		hasActiveSubscription: boolean | null;
 		error: string | null;
 		loaded?: boolean;
 	}) {
 		state.set({
 			loaded: payload.loaded ?? true,
 			error: payload.error,
-			subscription: payload.subscription
+			subscription: payload.subscription,
+			hasActiveSubscription: payload.hasActiveSubscription
 		});
 	},
 	reset() {

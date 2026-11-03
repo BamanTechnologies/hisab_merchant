@@ -15,7 +15,12 @@
     SUBSCRIPTION_BLOCKED_MESSAGE,
     subscriptionBlocksMutations,
   } from "$lib/subscription/client";
-  import { afterToast, showToast, TOAST_MS } from "$lib/toast";
+  import {
+    afterToast,
+    showToast,
+    toastFromActionResult,
+    TOAST_MS,
+  } from "$lib/toast";
   import type { PageData } from "./$types";
 
   type ExpenseRow = PageData["expenses"][number];
@@ -304,6 +309,7 @@
       });
 
       const result = deserialize(await response.text());
+      const toast = toastFromActionResult(result);
       if (result.type !== "success" || !("data" in result) || !result.data) {
         formError = get(_)("couldNotSave");
         showToast(get(_)("couldNotSave"), "error");
@@ -311,11 +317,11 @@
       }
       const payload = result.data as { success?: boolean; message?: string };
       if (!payload.success) {
-        formError = payload.message ?? get(_)("couldNotSave");
-        showToast(payload.message ?? get(_)("couldNotSave"), "error");
+        formError = toast?.message ?? get(_)("couldNotSave");
+        showToast(toast?.message ?? get(_)("couldNotSave"), "error");
         return;
       }
-      showToast(payload.message ?? get(_)("expenseSaved"), "success");
+      showToast(toast?.message ?? payload.message ?? get(_)("expenseSaved"), "success");
       closeModal(true);
       afterToast(TOAST_MS, () => window.location.reload());
     } catch {

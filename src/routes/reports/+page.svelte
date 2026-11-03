@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { enhance } from "$app/forms";
+  import { deserialize, enhance } from "$app/forms";
   import { goto } from "$app/navigation";
   import { navigating } from "$app/state";
   import { page } from "$app/stores";
@@ -20,6 +20,10 @@
   import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
   import { _ } from "svelte-i18n";
   import { get } from "svelte/store";
+  import Share2 from "@lucide/svelte/icons/share-2";
+  import Send from "@lucide/svelte/icons/send";
+  import MessageCircle from "@lucide/svelte/icons/message-circle";
+  import { buildInvestorReportPdf, type InvestorReportInput } from "$lib/pdf/investorReport";
 
   type Report = {
     id: string;
@@ -112,6 +116,9 @@
   let generateReportPending = $state(false);
   let sendReportPending = $state(false);
   let resendReportPending = $state(false);
+  let shareReportPending = $state(false);
+  let shareReport = $state<Report | null>(null);
+  let shareLinks = $state<{ telegram: string; whatsapp: string } | null>(null);
   const subscriptionLocked = $derived($subscriptionBlocksMutations);
   let searchQuery = $state($page.url.searchParams.get("search") ?? "");
   let tablePage = $state(Number($page.url.searchParams.get("page")) || 1);
@@ -333,6 +340,62 @@
     selectedReport = null;
   }
 
+  function openShareModal(report: Report) {
+    shareReport = report;
+    shareLinks = null;
+    void prepareShareLinks();
+  }
+
+  function closeShareModal() {
+    if (shareReportPending) return;
+    shareReport = null;
+    shareLinks = null;
+  }
+
+  async function createReportPdf(report: Report): Promise<File> {
+    const formData = new FormData();
+    formData.append("report_id", report.id);
+    const response = await fetch("?/reportPdfData", { method: "POST", body: formData });
+    const result = deserialize(await response.text()) as {
+      data?: { success?: boolean; message?: string; report?: InvestorReportInput };
+    };
+    const payload = result.data;
+    if (!response.ok || !payload?.success || !payload.report) {
+      throw new Error(payload?.message ?? "Failed to load report details");
+    }
+    const { pdf, fileName } = await buildInvestorReportPdf(payload.report);
+    return new File([pdf.output("blob")], fileName, { type: "application/pdf" });
+  }
+
+  async function prepareShareLinks() {
+    if (!shareReport || shareReportPending) return;
+    shareReportPending = true;
+    errorMessage = "";
+    try {
+      const file = await createReportPdf(shareReport);
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch("?/shareReport", { method: "POST", body: formData });
+      const result = deserialize(await response.text()) as {
+        type?: string;
+        data?: { success?: boolean; secureUrl?: string; message?: string };
+      };
+      const data = result.data;
+      if (!response.ok || !data?.success || !data.secureUrl) {
+        throw new Error(data?.message ?? "Failed to upload report");
+      }
+      const text = `Investor report (${formatDate(shareReport.updated_at)})`;
+      shareLinks = {
+        telegram: `https://t.me/share/url?url=${encodeURIComponent(data.secureUrl)}&text=${encodeURIComponent(text)}`,
+        whatsapp: `https://wa.me/?text=${encodeURIComponent(`${text}: ${data.secureUrl}`)}`,
+      };
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : "Failed to prepare report";
+    } finally {
+      shareReportPending = false;
+    }
+  }
+
   function openGenerateModal() {
     if (subscriptionLocked) return;
     showGenerateModal = true;
@@ -434,6 +497,18 @@
                   }}
                 >
                   {$_('viewMessage')}
+                </button>
+                <button
+                  type="button"
+                  class={mc.tableBtn}
+                  aria-label={$_('shareReport')}
+                  title={$_('shareReport')}
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    openShareModal(report);
+                  }}
+                >
+                  <Share2 size={15} />
                 </button>
               </td>
             </tr>
@@ -558,6 +633,68 @@
           </form>
         {/if}
       </footer>
+    </div>
+  </div>
+{/if}
+
+{#if shareReport}
+  <div
+    class="modal-overlay"
+    role="button"
+    tabindex="0"
+    onclick={closeShareModal}
+    onkeydown={(e) => e.key === "Escape" && closeShareModal()}
+  >
+    <div
+      class="modal share-modal"
+      role="dialog"
+      aria-modal="true"
+      tabindex="0"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.stopPropagation()}
+    >
+      <header>
+        <h2>{$_('shareReport')}</h2>
+        <button class="icon" aria-label="Close" onclick={closeShareModal}>✕</button>
+      </header>
+      <div class="share-content">
+        <p>{$_('shareReportDescription')}</p>
+        {#if errorMessage}
+          <p class="share-error">{errorMessage}</p>
+        {/if}
+        {#if !shareLinks}
+          <button class="primary" type="button" onclick={prepareShareLinks} disabled={shareReportPending}>
+            {shareReportPending ? $_('preparingShare') : $_('prepareShare')}
+          </button>
+        {:else}
+          <div class="share-options">
+            <a
+              class="share-option telegram"
+              aria-label={$_('telegram')}
+              title={$_('telegram')}
+              href={shareLinks.telegram}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+            <span class="flex items-center gap-1">
+              <Send size={22} strokeWidth={2.25} aria-hidden="true" /> Telegram
+            </span>
+            </a>
+            <a
+              class="share-option whatsapp"
+              aria-label={$_('whatsapp')}
+              title={$_('whatsapp')}
+              href={shareLinks.whatsapp}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+            <span class="flex items-center gap-1">
+              <MessageCircle size={22} strokeWidth={2.25} aria-hidden="true" /> WhatsApp
+            </span>
+            </a>
+          </div>
+        {/if}
+      </div>
     </div>
   </div>
 {/if}
@@ -1066,6 +1203,46 @@
   .primary:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .share-modal {
+    max-width: 440px;
+  }
+
+  .share-content {
+    display: grid;
+    gap: 1rem;
+    padding: 1.5rem;
+    color: #374151;
+  }
+
+  .share-error {
+    color: #b91c1c;
+    font-size: 0.875rem;
+  }
+
+  .share-options {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .share-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid #e6eaed;
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .share-option.telegram {
+    color: #168acd;
+  }
+
+  .share-option.whatsapp {
+    color: #128c7e;
   }
 
   .modal.large {

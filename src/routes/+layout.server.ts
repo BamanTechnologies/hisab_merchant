@@ -15,7 +15,12 @@ export const load: LayoutServerLoad = async ({ request }) => {
   if (!merchantId) {
     return {
       merchantContext: null,
-      subscriptionLoad: { subscription: null, error: null, loaded: false },
+      subscriptionLoad: {
+        subscription: null,
+        hasActiveSubscription: null,
+        error: null,
+        loaded: false,
+      },
     };
   }
 
