@@ -2,7 +2,7 @@
   import { enhance } from "$app/forms";
   import { invalidateAll } from "$app/navigation";
   import { deserialize } from "$app/forms";
-  import { ArchiveRestore } from "@lucide/svelte";
+  import { ArchiveRestore, Download } from "@lucide/svelte";
   import TablePagination from "$lib/components/TablePagination.svelte";
   import { mc, statusChipClass } from "$lib/merchant-styles.js";
   import {
@@ -10,7 +10,8 @@
     subscriptionBlocksMutations,
   } from "$lib/subscription/client";
   import { paginateSlice } from "$lib/pagination.js";
-  import { formatCoffeeCapacityWithUnit, formatProductTypeLabel } from "$lib/stockLabel";
+  import { buildStockDescriptor, formatCoffeeCapacityWithUnit, formatProductTypeLabel } from "$lib/stockLabel";
+  import type { PdfMerchantInfo } from "$lib/pdf/kit";
   import { PRODUCT_TYPE_FIELDS, normalizeProductTypeName } from "$lib/inventory/parseForm";
   import { afterToast, showToast, toastFromActionResult, TOAST_MS } from "$lib/toast";
   import type { PageData } from "./$types";
@@ -85,6 +86,7 @@
   type Order = {
     id: string;
     created_by: string;
+    created_at?: string | null;
     customer_address: string;
     customer_name: string;
     customer_phone: string;
@@ -97,6 +99,13 @@
     unit?: string | null;
     order_items?: OrderItem[] | null;
     stock?: OrderStock | null;
+    merchant?: PdfMerchantInfo | null;
+    payment_allocations?: Array<{
+      id: string;
+      amount: number | string;
+      created_at: string;
+      payment?: { id: string; payment_method?: string | null; created_at: string } | null;
+    }> | null;
   };
 
   function orderQuantityLabel(o: Order) {
@@ -367,6 +376,7 @@
   ] as const;
 
   let showPay = $state(false);
+  let downloadingPdf = $state(false);
   const subscriptionLocked = $derived($subscriptionBlocksMutations);
   let paymentFormPending = $state(false);
   let payAmount = $state<number | undefined>(undefined);
@@ -393,6 +403,74 @@ const remainingAfterPay = $derived.by(() => {
     // No preventDefault needed
   }
 
+  async function downloadOrderPdf() {
+    if (!order || downloadingPdf) return;
+
+    downloadingPdf = true;
+    try {
+      const { buildOrderInvoicePdf } = await import("$lib/pdf/orderInvoice");
+      const lines = orderItems.map((item) => {
+        const stock = item.stock;
+        const unitPrice = item.unit_price ?? stock?.selling_price;
+        const batches = (item.order_item_batches ?? [])
+          .map((b) => b.stock?.batch_number?.trim())
+          .filter(Boolean);
+        const details = stock
+          ? [
+              reportStockTypeLabel(stockTypeKey(stock)),
+              ...orderStockAttrEntries(stock)
+                .filter(([, v]) => v.trim() !== "")
+                .map(([k, v]) => `${attrLabel(k)}: ${v}`),
+              batches.length ? `Batch: ${batches.join(", ")}` : "",
+            ]
+              .filter(Boolean)
+              .join(" · ")
+          : "";
+        return {
+          name: stock
+            ? buildStockDescriptor({
+                ...stock,
+                type: stockTypeKey(stock),
+                attributes: { ...(stock.product?.attributes ?? {}), ...(stock.attributes ?? {}) },
+              })
+            : "Item",
+          details,
+          quantity: `${item.quantity} ${item.unit ?? stock?.unit ?? ""}`.trim(),
+          unitPrice,
+          amount: item.line_total ?? Number(item.quantity) * parseMoney(unitPrice ?? 0),
+        };
+      });
+      const { pdf, fileName } = await buildOrderInvoicePdf({
+        id: order.id,
+        createdAt: order.created_at,
+        status: order.status,
+        archived: isArchived,
+        totalAmount: order.total_amount,
+        outstandingAmount: order.outstanding_amount,
+        customer: {
+          name: order.customer_name,
+          phone: order.customer_phone,
+          address: order.customer_address,
+        },
+        merchant: order.merchant,
+        lines,
+        payments: (order.payment_allocations ?? []).map((a) => ({
+          date: a.payment?.created_at ?? a.created_at,
+          method: a.payment?.payment_method,
+          amount: a.amount,
+        })),
+      });
+      pdf.save(fileName);
+    } catch (error) {
+      showToast(
+        error instanceof Error ? `Could not download order: ${error.message}` : "Could not download order",
+        "error",
+      );
+    } finally {
+      downloadingPdf = false;
+    }
+  }
+
 </script>
 
 <section class={mc.pageHeader}>
@@ -409,6 +487,16 @@ const remainingAfterPay = $derived.by(() => {
   </div>
   {#if order}
     <div class="flex flex-wrap gap-2">
+      <button
+        type="button"
+        class={mc.ghostBtn}
+        onclick={downloadOrderPdf}
+        disabled={downloadingPdf}
+        aria-label="Download order as PDF"
+      >
+        <Download size={15} strokeWidth={2} />
+        {downloadingPdf ? "Preparing…" : "Download PDF"}
+      </button>
       {#if isArchived}
         <button
           type="button"
