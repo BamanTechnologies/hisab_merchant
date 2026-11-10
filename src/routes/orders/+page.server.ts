@@ -17,7 +17,6 @@ import {
   decrementStockSlices,
   fetchCancelRestoreSlices,
   incrementStockSlices,
-  insertOrderItemBatches,
   planOrderLines,
   restoreOrderStockEffects,
 } from "$lib/inventory/orders.server";
@@ -308,19 +307,14 @@ const CANCEL_ORDER_MUTATION = `
   }
 `;
 
+// Order, items and batches go in as one nested insert: the deferred
+// `billing.guard_order_subscription` trigger rejects an order whose
+// transaction commits without any order items.
 const CREATE_ORDER_MUTATION = `
   mutation CreateOrder($object: orders_insert_input!) {
     insert_orders_one(object: $object) {
       id
-    }
-  }
-`;
-
-const CREATE_ORDER_ITEMS_BULK_MUTATION = `
-  mutation CreateOrderItemsBulk($objects: [order_items_insert_input!]!) {
-    insert_order_items(objects: $objects) {
-      affected_rows
-      returning {
+      order_items {
         id
       }
     }
@@ -845,8 +839,16 @@ type OrderInsertObject = {
   unit: string | null;
 };
 
+type OrderItemBatchInsertObject = {
+  stock_id: string;
+  quantity: number;
+  unit_price: number;
+  factor_snapshot: number;
+  line_total: number;
+  created_by: string;
+};
+
 type OrderItemInsertObject = {
-  order_id: string;
   stock_id: string;
   product_id: string;
   quantity: number;
@@ -855,33 +857,35 @@ type OrderItemInsertObject = {
   line_total: number;
   unit: string | null;
   created_by: string;
+  batches: OrderItemBatchInsertObject[];
 };
 
-async function insertOrder(object: OrderInsertObject): Promise<{ id: string }> {
+async function insertOrder(
+  object: OrderInsertObject,
+  items: OrderItemInsertObject[],
+): Promise<{ id: string }> {
+  if (items.length === 0) throw new Error("No order items to insert");
   const data = await gql<{
-    insert_orders_one: { id: string } | null;
-  }>(CREATE_ORDER_MUTATION, { object });
+    insert_orders_one: { id: string; order_items: { id: string }[] } | null;
+  }>(CREATE_ORDER_MUTATION, {
+    object: {
+      ...object,
+      order_items: {
+        data: items.map(({ batches, ...item }) => ({
+          ...item,
+          order_item_batches: { data: batches },
+        })),
+      },
+    },
+  });
   const row = data.insert_orders_one;
   if (!row?.id) throw new Error("Order insert returned no row");
-  return row;
-}
-
-async function insertOrderItemsBulk(objects: OrderItemInsertObject[]) {
-  if (objects.length === 0) throw new Error("No order items to insert");
-  const data = await gql<{
-    insert_order_items: {
-      affected_rows: number;
-      returning: { id: string }[];
-    };
-  }>(CREATE_ORDER_ITEMS_BULK_MUTATION, { objects });
-  const inserted = data.insert_order_items?.returning ?? [];
-  const affected = data.insert_order_items?.affected_rows ?? 0;
-  if (affected !== objects.length || inserted.length !== objects.length) {
+  if ((row.order_items ?? []).length !== items.length) {
     throw new Error(
-      `Order items insert mismatch: expected ${objects.length} rows, got ${inserted.length} (affected_rows=${affected})`,
+      `Order items insert mismatch: expected ${items.length} rows, got ${row.order_items?.length ?? 0}`,
     );
   }
-  return inserted;
+  return row;
 }
 
 type StockRowForOrder = {
@@ -1255,10 +1259,9 @@ export const actions: Actions = {
 
     let inserted: { id: string };
     try {
-      inserted = await insertOrder(orderObject);
-      const insertedItems = await insertOrderItemsBulk(
+      inserted = await insertOrder(
+        orderObject,
         plans.map((plan) => ({
-          order_id: inserted.id,
           stock_id: plan.legacy_stock_id,
           product_id: plan.product_id,
           quantity: plan.quantity,
@@ -1267,36 +1270,16 @@ export const actions: Actions = {
           line_total: plan.line_total,
           unit: plan.unit,
           created_by: userId,
-        })),
-      );
-
-      const batchObjects: Array<{
-        order_item_id: string;
-        stock_id: string;
-        quantity: number;
-        unit_price: number;
-        factor_snapshot: number;
-        line_total: number;
-        created_by: string;
-      }> = [];
-
-      for (let i = 0; i < plans.length; i++) {
-        const itemId = insertedItems[i]?.id;
-        if (!itemId) throw new Error("Order item insert missing id");
-        for (const slice of plans[i].slices) {
-          batchObjects.push({
-            order_item_id: itemId,
+          batches: plan.slices.map((slice) => ({
             stock_id: slice.stock_id,
             quantity: slice.quantity,
             unit_price: slice.unit_price_snapshot,
             factor_snapshot: slice.factor_snapshot,
             line_total: slice.line_total,
             created_by: userId,
-          });
-        }
-      }
-
-      await insertOrderItemBatches(batchObjects);
+          })),
+        })),
+      );
       await applyOrderStockEffects({
         plans,
         companyId,
